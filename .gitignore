@@ -1,0 +1,19 @@
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*~
+
+# Editor/IDE folders
+.vscode/
+.idea/
+
+# Transport Fever 2 build/package artifacts
+*.zip
+*.tfsave
+construction/
+build/
+dist/
+
+# Do not ignore mod.lua, documents/, or res/ (mod source files)
