@@ -476,6 +476,35 @@ Demand determines the target allocation.
 
 Safe empty-vehicle opportunities determine when that target is actually implemented.
 
+## Standby/Holding Pool via `setVehicleManualDeparture`
+
+### Origin
+
+Raised while re-reading `COMMANDS.md`'s confirmed-command table: `setVehicleManualDeparture` is already live and working in this mod (`vehicles.setManualDeparture`, used by `line_splitter.lua`, `route_injector.lua`, `fleet_allocator.lua`, `dispatcher.lua`), but only ever as a **brief hold-reassign-release within one operation** — hold the vehicle, confirm it's stopped, call `setLine`, then release it again, all inside a few seconds. That pattern is proven safe. This idea is a different, larger use of the same command: holding a vehicle indefinitely as a genuine parked/standby spare, not releasing it again until the Planner/Dispatcher decides it's actually needed somewhere.
+
+### The idea
+
+When a truck returns to its hub and nothing currently needs it, instead of leaving it running its existing (possibly redundant) line, hold it there (`manual = true`) as a standby spare. When the Opportunistic Dispatcher (see "Runtime Fleet Rebalancing" above) later identifies an under-served service, pull a held vehicle from the standby pool, reassign its line, and release the hold. This is also a candidate for the "safe reassignment" moment itself, separate from standby: hold on arrival → confirm cargo is empty → change line → release, potentially cleaner than trying to catch a moving empty vehicle mid-route.
+
+`setUserStopped` (present in the command surface, unconfirmed by anyone checked) is a different, adjacent command worth distinguishing before using either one for standby: it's presumed to be the equivalent of the player manually pressing Stop, a more general/blunt tool, versus `setVehicleManualDeparture`'s narrower "won't depart from its current stop" behaviour. Which one is actually right for an indefinite hold (rather than the momentary hold already proven) hasn't been tested.
+
+### Economic motivation
+
+Not just a traffic/dispatch smoothing idea — player reports TF2 gives a stopped vehicle roughly a **40% reduction in depreciation** while it isn't running. If real, that changes this from a "nicer to look at" idea into one with a direct in-game money benefit: surplus fleet sitting idle in a standby pool would depreciate slower than the same trucks left running an under-used line just to look busy. This number is player-recalled, not yet checked against the game's own vehicle-value display — worth confirming (park one vehicle, compare its value/depreciation rate stopped vs. running over the same time window) before it's used to justify the feature, same as any other unverified claim in this file.
+
+### What's actually confirmed vs. still a story
+
+**Confirmed**: `setVehicleManualDeparture` is real, works, and is already load-bearing in shipped logic — but only ever held for a few seconds at a time, always followed by a release in the same operation.
+
+**Not yet confirmed**:
+- Whether holding a vehicle for a long, indefinite period (minutes/hours of game time, not seconds) has the same safe behaviour as the brief holds already proven, or surfaces some different edge case (e.g. does TF2 route other traffic around it fine, does its line/cargo association stay valid while held).
+- Whether a vehicle held this way blocks the physical terminal/parking bay it's sitting in for other traffic — this hub only has a handful of physical terminals, and parking even a modest number of surplus trucks there risks congestion (several standby vehicles occupying terminals that lines actively needed would want to use).
+- `setUserStopped` vs `setVehicleManualDeparture` for this specific purpose — not compared or tested against each other.
+
+### If it does pan out
+
+Conservative to start: at most a small number of standby vehicles at the existing station, or none at all until the congestion question is actually tested — this mod's hub has limited physical terminal space, unlike the separate "custom Distribution Centre with dedicated parking bays" concept discussed elsewhere, which could absorb far more standby vehicles without conflict. Worth a small, scoped live test (hold one already-idle vehicle for several real minutes, watch for any traffic/terminal side effects, then release it) before this becomes part of the real Dispatcher — the same evidence-first treatment as everything else in this file, not an assumption that "it worked for a few seconds" implies "it's fine indefinitely."
+
 ## Event-Driven Demand Reassessment
 
 **Research update**: the "may not have a real event, might just be cheap polling" uncertainty PROGRESS.md carried for this is now partly resolved — see `TECHNICAL_RESEARCH.md`. A `handleEvent(src, id, name, param)` field on `data()`'s returned table is confirmed real, live-documented from shipped base-game code (`res/scripts/mission/arrivaltracker.lua`), listening for `id == "SimCargoSystem", name == "OnToArriveAtDestination"` — a genuine per-cargo-entity delivery event, not a poll. No complementary "cargo newly waiting" event has turned up yet (searched the full shipped script set), so this covers the delivery/arrival side of demand change, not necessarily the generation side — the "material change threshold" polling approach below may still be needed for that half. Not yet used by this mod.
