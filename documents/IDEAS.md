@@ -413,6 +413,21 @@ Only compatible vehicles may be reassigned to that service.
 
 The Brain therefore manages a shared fleet containing compatibility sub-pools rather than assuming every truck is identical.
 
+**Refinement — cargo profile, not just instantaneous cargo.** Current waiting cargo alone can mislead the planner: a service that normally handles Fuel, Food, and Construction Materials might show only Fuel waiting at the exact moment of reassessment (the other two just delivered and cleared, or not yet arrived), and a naive allocator would conclude it only needs Fuel-compatible trucks — then a train drops 150 Food thirty seconds later and the service is stuck with specialist tankers that can't touch it.
+
+**Design principle for V1**: compatibility should be based on the service's observed cargo profile (current + recent history), not solely the cargo visible at the instant of reassessment.
+
+Proposed weighting, strongest to weakest:
+1. **Current waiting cargo** — strongest signal, what needs moving right now.
+2. **Recently observed cargo** (station's own recent load/unload history) — keeps a cargo type's compatibility "alive" even when its current count is temporarily zero.
+3. **Longer-window history** — a fallback so a seasonal/intermittent cargo type doesn't get silently forgotten between deliveries.
+
+**Research question, not yet checked**: `stations.getItemTotals` already reads a station's real `itemsLoaded`/`itemsUnloaded` (confirmed in Foundation/Done — PROGRESS.md), and it's known to include some historical breakdown (last-month/last-year structures were seen in that data). Before inventing a separate history-tracking system, check whether that existing structure already breaks down *by cargo type* with a usable time window — if it does, the planner can read cargo-profile history for free instead of building new tracking.
+
+**Also proposed**: don't over-optimize allocation so tightly that the fleet becomes brittle the instant the cargo mix shifts. Favour universal (broadly-compatible) vehicles when a service's cargo mix is uncertain or historically variable, reserve specialists for services with a clearly dominant, stable cargo type, and deliberately hold back a small slice of a service's target allocation as "flexibility reserve" — broadly-compatible trucks kept on hand rather than assigned purely to match the current instantaneous mix.
+
+This is a refinement to make before the Planner actually starts choosing which vehicles to reassign (Not Started #4 in PROGRESS.md) — the underlying per-vehicle compatibility data it depends on is already proven (Decision 27), what's missing is the profile/history layer on top of it.
+
 ---
 
 #### 4. Terminal Physical Congestion
