@@ -675,8 +675,12 @@ end
 local function splitAllManagedLines(
     stationGroupId,
     managedLines,
-    index
+    index,
+    sourceLineIds
 )
+
+    sourceLineIds =
+        sourceLineIds or {}
 
     local lineInfo =
         managedLines[index]
@@ -701,10 +705,29 @@ local function splitAllManagedLines(
         end
 
 
+        -- LIVE-CONFIRMED BUG: without excluding the line(s) just
+        -- split, stockTakeExistingLoad (terminal_allocator.lua)
+        -- treats the ORIGINAL combined line -- still alive right now,
+        -- about to be deleted by a LATER "Assign & Balance Fleet"
+        -- click -- as real, permanent occupancy exactly like Grain.
+        -- That ties every terminal it touches with Grain's terminal
+        -- on line count, and the load tiebreak then picks Grain's
+        -- terminal for the first freshly-split candidate, doubling
+        -- them up unnecessarily. Player hit this live: Grain and the
+        -- highest-ranked new line shared terminal 1, the other 4 new
+        -- lines spread fine, and re-running the whole button a
+        -- SECOND time (after the source line had since been deleted
+        -- by a separate Assign & Balance click) "fixed" it --
+        -- coincidentally, not because retrying helped. Passing the
+        -- just-split source line IDs through so stock-take can
+        -- exclude them too (same treatment as already-managed lines)
+        -- fixes this without depending on deletion having already
+        -- happened.
         local ok, err =
             pcall(
                 terminal_allocator.spreadLinesAcrossTerminals,
                 stationGroupId,
+                sourceLineIds,
 
                 function(processedCount)
 
@@ -776,12 +799,17 @@ local function splitAllManagedLines(
         splitAllManagedLines(
             stationGroupId,
             managedLines,
-            index + 1
+            index + 1,
+            sourceLineIds
         )
 
         return
 
     end
+
+
+    sourceLineIds[#sourceLineIds + 1] =
+        lineInfo.id
 
 
     line_splitter.splitLineIntoDestinations(
@@ -793,7 +821,8 @@ local function splitAllManagedLines(
             splitAllManagedLines(
                 stationGroupId,
                 managedLines,
-                index + 1
+                index + 1,
+                sourceLineIds
             )
 
         end

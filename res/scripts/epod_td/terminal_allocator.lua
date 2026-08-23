@@ -287,12 +287,31 @@ end
 -- from this real baseline instead of an all-zero one.
 -- ============================================================
 
-local function stockTakeExistingLoad(hubStationGroup, terminalCount)
+-- LIVE-CONFIRMED BUG: the assignment loop below used to compare
+-- terminals by terminalLoad alone. When every candidate is a
+-- freshly-split line with 0 waiting demand (the normal state right
+-- after Stage 1, before Stage 2/3 or real gameplay have generated
+-- any activity), assigning a candidate to a terminal never changes
+-- that terminal's tracked load (+= 0) -- so the "lowest load"
+-- terminal never changes either, and every single candidate piles
+-- onto the SAME terminal instead of spreading. Player hit this live:
+-- all 5 freshly-split lines landed on terminal 0, twice in a row
+-- (retrying didn't help, since nothing about the bug depended on
+-- how many times it ran). Fixed by tracking a per-terminal LINE
+-- COUNT alongside load, seeded here from real pre-existing
+-- occupancy, and using it as a tiebreaker -- see the assignment loop
+-- in M.spreadLinesAcrossTerminals for the actual comparison logic.
+local function stockTakeExistingLoad(hubStationGroup, terminalCount, excludeLineIdSet)
+
+    excludeLineIdSet =
+        excludeLineIdSet or {}
 
     local terminalLoad = {}
+    local terminalLineCount = {}
 
     for terminalIndex = 0, terminalCount - 1 do
         terminalLoad[terminalIndex] = 0
+        terminalLineCount[terminalIndex] = 0
     end
 
     local ok, allLineIds =
@@ -301,14 +320,16 @@ local function stockTakeExistingLoad(hubStationGroup, terminalCount)
         end)
 
     if not ok or allLineIds == nil then
-        return terminalLoad
+        return terminalLoad, terminalLineCount
     end
 
     for _, lineId in ipairs(allLineIds) do
 
         local name = lines.getName(lineId)
 
-        if not managed_registry.isManaged(lineId) then
+        if not managed_registry.isManaged(lineId)
+            and not excludeLineIdSet[lineId]
+        then
 
             local line = lines.get(lineId)
             local stops = line ~= nil and lines.safeField(line, "stops") or nil
@@ -340,6 +361,9 @@ local function stockTakeExistingLoad(hubStationGroup, terminalCount)
                             terminalLoad[terminal] =
                                 terminalLoad[terminal] + waiting
 
+                            terminalLineCount[terminal] =
+                                terminalLineCount[terminal] + 1
+
                             log.info(
                                 "STOCK TAKE: "
                                     .. tostring(name)
@@ -364,7 +388,7 @@ local function stockTakeExistingLoad(hubStationGroup, terminalCount)
 
     end
 
-    return terminalLoad
+    return terminalLoad, terminalLineCount
 
 end
 
@@ -407,7 +431,26 @@ local function processAssignmentsNext(assignments, index, onComplete)
 end
 
 
-function M.spreadLinesAcrossTerminals(hubStationGroup, onComplete)
+-- excludeLineIds: line entity IDs to treat as non-permanent
+-- occupancy in the stock-take, alongside already-managed lines --
+-- specifically, the ORIGINAL combined line(s) this same button-click
+-- chain just split apart, still alive right now but about to be
+-- deleted by a later "Assign & Balance Fleet" click. See the big
+-- comment on the caller side (epod_truck_distribution.lua's
+-- splitAllManagedLines) for the live bug this fixes. Optional --
+-- pass nil/{} when calling this outside that chain (e.g. re-running
+-- terminal spread on an already-settled hub with no source line in
+-- flight).
+function M.spreadLinesAcrossTerminals(hubStationGroup, excludeLineIds, onComplete)
+
+    excludeLineIds =
+        excludeLineIds or {}
+
+    local excludeLineIdSet = {}
+
+    for _, lineId in ipairs(excludeLineIds) do
+        excludeLineIdSet[lineId] = true
+    end
 
     log.info("----------------------------------------")
     log.info("STAGE 4: SPREAD LINES ACROSS TERMINALS")
@@ -460,20 +503,44 @@ function M.spreadLinesAcrossTerminals(hubStationGroup, onComplete)
     -- already placed -- no separate "dedicated vs. shared" branch
     -- needed, sharing just emerges once every terminal has real load
     -- on it.
-    local terminalLoad =
-        stockTakeExistingLoad(hubStationGroup, terminalCount)
+    local terminalLoad, terminalLineCount =
+        stockTakeExistingLoad(hubStationGroup, terminalCount, excludeLineIdSet)
 
     local assignments = {}
 
     for _, candidate in ipairs(candidates) do
 
+        -- Compare (lineCount, load) as a pair, LINE COUNT FIRST.
+        -- LIVE-CONFIRMED this ordering matters, not just the
+        -- presence of a tiebreaker: comparing load first (tried
+        -- first, then reverted) still failed on the real case that
+        -- surfaced this bug, because the source line's leftover
+        -- stops made terminals 1-5 PERMANENTLY more "loaded" than
+        -- terminal 0 (535 vs 230, never tied) -- a zero-demand
+        -- candidate never closes that gap no matter how many land on
+        -- terminal 0, so a load-first comparison never rolls over to
+        -- another terminal at all, tie or no tie. Comparing line
+        -- count first fixes this directly and actually matches the
+        -- feature's own stated design better: give every candidate
+        -- its own terminal while capacity allows (lineCount
+        -- naturally differentiates every terminal immediately,
+        -- regardless of demand), and only fall back to load -- i.e.
+        -- share where it costs least -- once every terminal already
+        -- has at least one line and lineCount ties.
         local bestTerminal = 0
+        local bestLineCount = terminalLineCount[0]
         local bestLoad = terminalLoad[0]
 
         for terminalIndex = 0, terminalCount - 1 do
 
-            if terminalLoad[terminalIndex] < bestLoad then
-                bestLoad = terminalLoad[terminalIndex]
+            local lineCount = terminalLineCount[terminalIndex]
+            local load = terminalLoad[terminalIndex]
+
+            if lineCount < bestLineCount
+                or (lineCount == bestLineCount and load < bestLoad)
+            then
+                bestLineCount = lineCount
+                bestLoad = load
                 bestTerminal = terminalIndex
             end
 
@@ -481,6 +548,9 @@ function M.spreadLinesAcrossTerminals(hubStationGroup, onComplete)
 
         terminalLoad[bestTerminal] =
             terminalLoad[bestTerminal] + candidate.waiting
+
+        terminalLineCount[bestTerminal] =
+            terminalLineCount[bestTerminal] + 1
 
         assignments[#assignments + 1] = {
             lineId = candidate.id,
