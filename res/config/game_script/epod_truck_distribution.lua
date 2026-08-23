@@ -29,6 +29,8 @@ local line_splitter = require("epod_td.line_splitter")
 local fleet_allocator = require("epod_td.fleet_allocator")
 local terminal_allocator = require("epod_td.terminal_allocator")
 local managed_registry = require("epod_td.managed_registry")
+local settings = require("epod_td.settings")
+local fleet_naming = require("epod_td.fleet_naming")
 local gui = require("gui")
 
 
@@ -1151,6 +1153,166 @@ end
 
 
 -- ============================================================
+-- VEHICLE RENAME / COLOUR TEST BUTTON (config.DEBUG only)
+--
+-- Single click, immediate. See
+-- route_injector.M.testVehicleRenameAndColor for the full protocol
+-- -- settles whether setName/setColor actually work on a vehicle
+-- entity (IDEAS.md's vehicle-naming idea currently has zero live
+-- evidence either way for this).
+-- ============================================================
+
+local function handleVehicleRenameTestButtonClick()
+
+    local ok, err =
+        pcall(route_injector.testVehicleRenameAndColor)
+
+    if not ok then
+
+        logUi(
+            "VEHICLE RENAME/COLOUR TEST FAILED: "
+                .. tostring(err)
+        )
+
+    end
+
+end
+
+
+-- ============================================================
+-- RENAME FLEET TO HUB IDENTITY (config.DEBUG only)
+--
+-- Real feature, not a disposable test -- see fleet_naming.lua for
+-- the full design. Renames every managed vehicle at the currently
+-- selected hub to "● <Hub Name> - Fleet (N)" and leaves it renamed;
+-- unlike the single-vehicle test above, there is no restore step.
+-- Player-triggered only, per Decision 4 / the player's own "stay in
+-- our lane" feedback on automation -- this never runs on its own.
+-- ============================================================
+
+local function handleRenameFleetButtonClick()
+
+    if distributionState.selectedStationGroupId == nil then
+
+        logUi(
+            "RENAME FLEET: no station selected."
+        )
+
+        return
+
+    end
+
+    if distributionState.textViews ~= nil
+        and distributionState.textViews.renameFleetButtonLabel ~= nil
+    then
+
+        distributionState.textViews.renameFleetButtonLabel:setText(
+            "[ Working... (see log) ]",
+            WINDOW_WIDTH
+        )
+
+    end
+
+    local hubStationGroupId =
+        distributionState.selectedStationGroupId
+
+    local ok, err =
+        pcall(
+            fleet_naming.renameFleetToHubIdentity,
+            hubStationGroupId,
+
+            function(renamedCount)
+
+                if distributionState.textViews ~= nil
+                    and distributionState.textViews.renameFleetButtonLabel ~= nil
+                then
+
+                    distributionState.textViews.renameFleetButtonLabel:setText(
+                        "[ Rename Fleet to Hub Identity (done: "
+                            .. tostring(renamedCount)
+                            .. " renamed -- see log) ]",
+                        WINDOW_WIDTH
+                    )
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "RENAME FLEET FAILED: "
+                .. tostring(err)
+        )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.renameFleetButtonLabel ~= nil
+        then
+
+            distributionState.textViews.renameFleetButtonLabel:setText(
+                "[ Rename Fleet to Hub Identity (crashed -- see log) ]",
+                WINDOW_WIDTH
+            )
+
+        end
+
+    end
+
+end
+
+
+-- ============================================================
+-- AUTO REDISTRIBUTE TOGGLE (config.DEBUG only, wired to nothing yet)
+--
+-- Deliberately built and persisted (settings.lua, same io.open
+-- pattern as managed_registry.lua -- Decision 26) before any real
+-- behavior depends on it. Per the design agreed live: this toggle
+-- only ever controls whether the Planner (once it exists) is
+-- ALLOWED to execute its plan automatically -- it must never control
+-- whether the Planner calculates at all. Turning this off should
+-- mean "ask me first," not "stop thinking." Currently does nothing
+-- beyond flipping and persisting the setting -- kept DEBUG-gated and
+-- honestly labelled until the Dispatcher actually reads it.
+-- ============================================================
+
+local function autoRedistributeLabelText()
+
+    if settings.get("autoRedistribute") then
+        return "[ Auto Redistribute: ON (DEBUG, not wired yet) ]"
+    end
+
+    return "[ Auto Redistribute: OFF (DEBUG, not wired yet) ]"
+
+end
+
+local function handleAutoRedistributeToggleButtonClick()
+
+    local newValue =
+        not settings.get("autoRedistribute")
+
+    settings.set("autoRedistribute", newValue)
+
+    if distributionState.textViews ~= nil
+        and distributionState.textViews.autoRedistributeButtonLabel ~= nil
+    then
+
+        distributionState.textViews.autoRedistributeButtonLabel:setText(
+            autoRedistributeLabelText(),
+            WINDOW_WIDTH
+        )
+
+    end
+
+    logUi(
+        "AUTO REDISTRIBUTE setting: "
+            .. tostring(newValue)
+    )
+
+end
+
+
+-- ============================================================
 -- CREATE THE DISTRIBUTION WINDOW
 --
 -- IMPORTANT TF2 UI RULE LEARNED DURING TESTING:
@@ -1374,6 +1536,85 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             bugBTestButton
+
+
+        -- Initial label reflects whatever was actually persisted
+        -- (settings.lua), not a hardcoded "OFF" -- the toggle should
+        -- show its real state immediately on window creation,
+        -- including after a save/reload.
+        distributionState.textViews.autoRedistributeButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".autoRedistributeButtonLabel",
+                autoRedistributeLabelText(),
+                WINDOW_WIDTH,
+                false
+            )
+
+        local autoRedistributeButton =
+            gui.button_create(
+                WINDOW_ID .. ".autoRedistributeButton",
+                distributionState.textViews.autoRedistributeButtonLabel
+            )
+
+        autoRedistributeButton:onClick(
+            handleAutoRedistributeToggleButtonClick
+        )
+
+        distributionState.autoRedistributeButton =
+            autoRedistributeButton
+
+        fixedViews[#fixedViews + 1] =
+            autoRedistributeButton
+
+
+        distributionState.textViews.vehicleRenameTestButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".vehicleRenameTestButtonLabel",
+                "[ Test Vehicle Rename/Colour (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local vehicleRenameTestButton =
+            gui.button_create(
+                WINDOW_ID .. ".vehicleRenameTestButton",
+                distributionState.textViews.vehicleRenameTestButtonLabel
+            )
+
+        vehicleRenameTestButton:onClick(
+            handleVehicleRenameTestButtonClick
+        )
+
+        distributionState.vehicleRenameTestButton =
+            vehicleRenameTestButton
+
+        fixedViews[#fixedViews + 1] =
+            vehicleRenameTestButton
+
+
+        distributionState.textViews.renameFleetButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".renameFleetButtonLabel",
+                "[ Rename Fleet to Hub Identity (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local renameFleetButton =
+            gui.button_create(
+                WINDOW_ID .. ".renameFleetButton",
+                distributionState.textViews.renameFleetButtonLabel
+            )
+
+        renameFleetButton:onClick(
+            handleRenameFleetButtonClick
+        )
+
+        distributionState.renameFleetButton =
+            renameFleetButton
+
+        fixedViews[#fixedViews + 1] =
+            renameFleetButton
 
     end
 

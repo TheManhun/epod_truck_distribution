@@ -18,11 +18,33 @@ When an idea reaches a definite outcome, it must be removed from `IDEAS.md`.
 `PROGRESS.md` = what currently exists and works.
 _______________________________________________________________________________________________________________________________
 
-## Decouple Managed-Line Identity From the `●` Name Prefix
+## Vehicle Identity Naming and Fleet Colour-Coding
 
-**Built** — see `DECISIONS.md` Decision 26 for the full design and reasoning. `managed_registry.lua` now owns membership (entity-ID-based, persisted via `io.open`, validate-and-migrate on first use each session); every real runtime check across the codebase uses it instead of `name:sub(1, 4) == "● "`; the `●` prefix is now purely cosmetic, exactly as this entry originally specified.
+### Origin
 
-**Not yet resolved — the only reason this is still here**: not live-tested. Needs an in-game pass before being trusted: confirm existing `●` lines from a prior session migrate into the registry correctly on first load, confirm renaming a managed line (removing/changing the `●`) genuinely does not stop DD from managing it, and confirm a fresh Stage 1 split registers its new lines immediately (not just on the next migration pass). Once verified, this entry should be removed per the maintenance rule above.
+Raised alongside the auto-redistribute toggle discussion, as a natural extension once trucks start dynamically moving between services under one hub's pooled fleet: a truck could go from Queens Road → Grain → The Grove, and visually it would help to see it's still part of the same Hendon East fleet the whole time.
+
+### The idea
+
+Rename DD-managed vehicles to reflect their home hub rather than their current service — e.g. `● Hendon East` rather than naming after whichever line they happen to be on right now, since that would go stale the moment the vehicle gets reassigned (the exact lesson already learned the hard way from the `●` line-name situation, Decision 26 — name the OWNER, not the current assignment). A per-hub fleet colour was also proposed, purely optional and defaulting to "player controlled" (DD never touches colour unless explicitly told to), since players often colour-code their own networks deliberately and DD silently recolouring them would be unwelcome.
+
+Both would need to be genuinely optional toggles, off by default for colour, and the identity itself must remain entity-ID-based (already true via `managed_registry.lua`) regardless of what any player does to the name or colour afterward.
+
+### Naming — built
+
+**Live-confirmed and built.** `setName` works on a vehicle entity (`route_injector.testVehicleRenameAndColor`, verified by re-reading the entity, not just the command's success flag — see `COMMANDS.md`). `fleet_naming.lua`'s `M.renameFleetToHubIdentity`, wired to the "Rename Fleet to Hub Identity (DEBUG)" button, renames every managed vehicle at the selected hub to `● <Hub Name> - Fleet (N)` — a plain ASCII hyphen, not the em-dash originally proposed in chat, since that glyph has never been tested in TF2's fonts and this renames real, persistent vehicles rather than a disposable test (the same discipline that picked `●`/`↔` for line names over the untested `◆ ■ ►`). Player-triggered only, never automatic, per Decision 4.
+
+**Live-confirmed at real scale too**: run against a real ~90+ vehicle fleet, visible correctly in TF2's own vehicle list. One cosmetic quirk was noticed and fixed same-session: the vehicle list sorts by name as a plain string, so `Fleet (10)`-`(19)` were landing before `Fleet (2)`. Fixed by dropping the parentheses and zero-padding the number to match the fleet's own size (`Fleet 001`, `Fleet 118`, etc. — width computed from the actual vehicle count, so small fleets don't carry pointless leading zeros).
+
+**Open**: numbering is sequential by current discovery order each time it runs, not a stable per-vehicle ID — re-running after the fleet changes size will renumber everyone. No evidence yet that this matters in practice; a persisted stable number (same `io.open` pattern as `managed_registry.lua`) is possible later if it turns out to.
+
+### Colour — confirmed working, still no real feature built
+
+**Live-confirmed, by accident.** No colour field exists on a vehicle to re-read programmatically, so the command's own `RESULT: true` wasn't full proof by itself — but the test deliberately never restores colour (nothing to restore to), so the one test vehicle was left magenta/purple. The player spotted it running around the map, unprompted, real minutes later, and correctly traced it back to the test. Genuine visual confirmation: `setColor` works on a vehicle entity. No real "per-hub fleet colour" feature has been built yet — only the disposable single-vehicle test exists. If picked back up: a genuinely optional toggle, defaulting to "player controlled" (DD never touches colour unless explicitly told to), matching the reasoning already agreed on.
+
+### If it does pan out
+
+Cosmetic/UX polish, not core plumbing — belongs in the same later bucket as `IDEAS.md`'s "Final GUI Research and Cleanup Phase," after the Planner/Dispatcher work is functional, not alongside it. First concrete step if picked back up: a single throwaway live test of `setName` against one vehicle entity, mirroring how every other command in `COMMANDS.md` earned its "confirmed" tier.
 
 
 # TF2 Distribution Manager — Ideas / Backlog

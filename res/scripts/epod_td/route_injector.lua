@@ -3041,4 +3041,272 @@ function M.testCargoCompatibility()
 end
 
 
+-- ============================================================
+-- VEHICLE RENAME / COLOUR LIVE TEST (config.DEBUG only)
+--
+-- IDEAS.md's "Vehicle Identity Naming and Fleet Colour-Coding" idea
+-- needs to know whether setName/setColor actually work on a VEHICLE
+-- entity at all -- confirmed present in api.cmd.make (COMMANDS.md),
+-- but zero live evidence either way from this mod or the one
+-- reference mod checked (LineManager only ever displays rename
+-- suggestions, never calls setName itself). This settles it directly
+-- rather than inferring from "it sits alongside other generic
+-- commands."
+--
+-- Single click, immediate, picks one confirmed-empty vehicle off any
+-- currently-managed line (same finder the Bug B test uses, so this
+-- never touches a vehicle mid-delivery):
+--   1. Read its current name.
+--   2. setName it to a test string, re-read, log whether it stuck.
+--   3. Restore the original name (re-read once more to confirm the
+--      restore itself worked -- don't just assume it did).
+--   4. setColor it to a test colour. NOT auto-restored: unlike name,
+--      no colour field was ever found on a vehicle in the full
+--      entity dump (SAMPLE MANAGED-LINE VEHICLE, PROGRESS.md/Done),
+--      so there is nothing to read back and no honest way to
+--      restore the exact original colour programmatically. Logged
+--      clearly so this is a deliberate, known trade-off, not a
+--      silent side effect -- one test vehicle's colour is trivially
+--      fixable by hand in-game afterward if desired.
+-- ============================================================
+
+function M.testVehicleRenameAndColor()
+
+    log.info("----------------------------------------")
+    log.info("VEHICLE RENAME / COLOUR TEST")
+    log.info("----------------------------------------")
+
+    local source = findEmptyVehicleOnManagedLine()
+
+    if source == nil then
+
+        log.info(
+            "FAILED: no managed (\"● \") line with a confirmed-empty "
+                .. "vehicle was found right now. Try again in a "
+                .. "moment."
+        )
+
+        return { success = false, reason = "no-empty-vehicle-found" }
+
+    end
+
+    local vehicleId = source.vehicleId
+
+    log.info(
+        "Vehicle: "
+            .. tostring(vehicleId)
+            .. " (on "
+            .. tostring(source.lineName)
+            .. ")"
+    )
+
+    local okEntity, entityBefore =
+        pcall(game.interface.getEntity, vehicleId)
+
+    if not okEntity or entityBefore == nil then
+
+        log.info(
+            "FAILED: could not read the vehicle entity before testing."
+        )
+
+        return { success = false, reason = "entity-read-failed" }
+
+    end
+
+    local originalName =
+        lines.safeField(entityBefore, "name")
+
+    log.info(
+        "BEFORE: name=" .. tostring(originalName)
+    )
+
+    local testName =
+        "● RENAME TEST " .. tostring(vehicleId)
+
+    local okNameCommand, nameCommandOrError =
+        pcall(
+            api.cmd.make.setName,
+            vehicleId,
+            testName
+        )
+
+    if not okNameCommand then
+
+        log.info(
+            "setName COMMAND ERROR: " .. tostring(nameCommandOrError)
+        )
+
+        return { success = false, reason = "setname-command-failed" }
+
+    end
+
+    api.cmd.sendCommand(
+        nameCommandOrError,
+
+        function(cmd, renameSuccess)
+
+            log.info(
+                "setName RESULT: " .. tostring(renameSuccess)
+            )
+
+            local okAfter, entityAfter =
+                pcall(game.interface.getEntity, vehicleId)
+
+            local nameAfter =
+                okAfter and entityAfter ~= nil
+                    and lines.safeField(entityAfter, "name")
+                    or nil
+
+            log.info(
+                "AFTER RENAME: name=" .. tostring(nameAfter)
+            )
+
+            log.info(
+                "VERDICT (name): "
+                    .. (
+                        nameAfter == testName
+                            and "setName WORKS on a vehicle entity -- LIVE CONFIRMED"
+                            or "setName did NOT change the vehicle's name -- unconfirmed/failed"
+                    )
+            )
+
+            -- Restore original name regardless of verdict above --
+            -- never leave the player's real vehicle renamed just
+            -- because the test was run.
+            local okRestoreCommand, restoreCommandOrError =
+                pcall(
+                    api.cmd.make.setName,
+                    vehicleId,
+                    originalName
+                )
+
+            if not okRestoreCommand then
+
+                log.info(
+                    "RESTORE setName COMMAND ERROR: "
+                        .. tostring(restoreCommandOrError)
+                        .. " -- vehicle "
+                        .. tostring(vehicleId)
+                        .. " may still show the test name, rename it "
+                        .. "back by hand if so."
+                )
+
+            else
+
+                api.cmd.sendCommand(
+                    restoreCommandOrError,
+
+                    function(cmd2, restoreSuccess)
+
+                        log.info(
+                            "RESTORE setName RESULT: "
+                                .. tostring(restoreSuccess)
+                        )
+
+                        local okRestored, entityRestored =
+                            pcall(game.interface.getEntity, vehicleId)
+
+                        local nameRestored =
+                            okRestored and entityRestored ~= nil
+                                and lines.safeField(entityRestored, "name")
+                                or nil
+
+                        log.info(
+                            "AFTER RESTORE: name="
+                                .. tostring(nameRestored)
+                                .. " (original was "
+                                .. tostring(originalName)
+                                .. ")"
+                        )
+
+                    end
+                )
+
+            end
+
+
+            -- Colour test, run after the name restore is at least
+            -- issued -- NOT auto-restored, see the big comment above.
+            local okColor, testColor =
+                pcall(
+                    api.type.Vec3f.new,
+                    1.0,
+                    0.0,
+                    1.0
+                )
+
+            if not okColor or testColor == nil then
+
+                log.info(
+                    "COLOUR TEST SKIPPED: could not build a test "
+                        .. "colour value: "
+                        .. tostring(testColor)
+                )
+
+                return
+
+            end
+
+            local okColorCommand, colorCommandOrError =
+                pcall(
+                    api.cmd.make.setColor,
+                    vehicleId,
+                    testColor
+                )
+
+            if not okColorCommand then
+
+                log.info(
+                    "setColor COMMAND ERROR: "
+                        .. tostring(colorCommandOrError)
+                )
+
+                return
+
+            end
+
+            api.cmd.sendCommand(
+                colorCommandOrError,
+
+                function(cmd3, colorSuccess)
+
+                    log.info(
+                        "setColor RESULT: " .. tostring(colorSuccess)
+                    )
+
+                    log.info(
+                        "VERDICT (colour): "
+                            .. (
+                                colorSuccess
+                                    and "setColor command SUCCEEDED on a "
+                                        .. "vehicle entity -- check the "
+                                        .. "vehicle visually in-game to "
+                                        .. "confirm it actually changed "
+                                        .. "(no colour field was found "
+                                        .. "to re-read and verify "
+                                        .. "programmatically)"
+                                    or "setColor command FAILED/rejected "
+                                        .. "-- unconfirmed"
+                            )
+                    )
+
+                    log.info(
+                        "NOTE: vehicle "
+                            .. tostring(vehicleId)
+                            .. "'s colour was NOT restored -- no "
+                            .. "readable original value to restore to. "
+                            .. "Recolour it by hand in-game if wanted."
+                    )
+
+                end
+            )
+
+        end
+    )
+
+    return { success = true, pending = true, vehicleId = vehicleId }
+
+end
+
+
 return M
