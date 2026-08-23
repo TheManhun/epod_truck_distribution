@@ -2,27 +2,18 @@
 -- TF2 Truck Distribution
 -- epod_truck_distribution.lua
 --
--- READ-ONLY DISTRIBUTION MONITOR
+-- MANUALLY-TRIGGERED DISTRIBUTION MANAGER
 --
--- Responsibilities:
---   * follow the currently selected station/stationGroup
---   * discover managed truck lines using that station
---   * count assigned trucks
---   * read waiting cargo by destination
---   * display the information in the Truck Distribution window
+-- Started as a read-only monitor; now runs the real pipeline
+-- (Decisions 19-23) whenever the player presses a button:
+--   * Split Into Lines & Organize Terminals -- always visible,
+--     purely additive, never touches the source line.
+--   * Assign & Balance Fleet -- DEBUG-gated, moves real vehicles.
+--   * Test Bug B / Park-Stop -- DEBUG-gated diagnostic.
 --
--- DOES NOT:
---   * alter the real "Truck - CD - Hendon" or "Grain" lines
---   * assign vehicles
---   * dispatch vehicles
---   * modify cargo
---
--- EXCEPTION, config.DEBUG only: fires route_injector.
--- runCreateLineTest() once at script load -- a self-contained,
--- self-cleaning proof-of-concept for api.cmd.make.createLine that
--- creates one throwaway 2-stop test line, verifies it, deletes it,
--- and verifies the deletion, all logged. See route_injector.lua
--- for why this exists and what it deliberately does not touch.
+-- Every managed line's identity is tracked in a persistent registry
+-- (managed_registry.lua, Decision 26), not by parsing the line's
+-- display name -- the "●" prefix is cosmetic only.
 --
 -- Names are display-only.
 -- Behaviour is driven by entity IDs.
@@ -185,238 +176,6 @@ local distributionState = {
         0
 
 }
-
-
--- ============================================================
--- PERSISTENCE PROOF OF CONCEPT (save/load hooks)
---
--- Nothing in this codebase has ever persisted any state across a
--- save/reload -- flagged as a foundational gap in PROGRESS.md/
--- Outstanding Unknowns, blocking almost everything past it (a
--- network fingerprint, remembering which hub is "managed", any of
--- the autonomous-brain ideas in IDEAS.md).
---
--- The mechanism found: `save`/`load` fields on the same table
--- data() already returns alongside guiHandleEvent/guiUpdate.
--- Confirmed live in two independent shipped base-game scripts:
--- res/scripts/guidesystem.lua and res/scripts/mission/
--- arrivaltracker.lua.
---
--- Full history of what was tried, live-tested, and why each attempt
--- failed is in DECISIONS.md Decision 24 -- summarized here:
---   v1: crashed the game. load() mutated state every call; TF2's
---       engine calls load() more than once per session as its own
---       internal consistency check and hard-crashes if two save()
---       snapshots taken close together disagree (CGame::StartGameSim,
---       Game.cpp:330).
---   v2-v3: stopped the crash (load()/save() made fully passive), but
---       the counting mechanism itself (guiUpdate-driven, "once per
---       process") was never the right trigger -- save()/load() fire
---       continuously throughout ordinary gameplay for reasons
---       unrelated to the player actually saving/loading.
---   v4: moved mutation to a deliberate DEBUG button, fully decoupled
---       from load()/save()'s own cadence -- but still didn't survive
---       a real save/quit/relaunch/load cycle.
---   v5-v6: two different "adopt incoming state only once" guards,
---       each reasoned through carefully, each disproven live by
---       checking the actual on-disk .sav.lua file directly (not just
---       the log) -- the guard kept latching on stale/pre-button data.
---   v7: gated on the player's action instead of guessing load()'s
---       timing -- still failed the same way when checked against
---       the .sav.lua file.
---   FINDING #7, LIVE-CONFIRMED (this is the one that actually
---       explains it): added a per-instance fingerprint to every
---       save()/load()/button-click log line. Proved THREE separate
---       module instances existed within one session, and the
---       button's mutation landed on a DIFFERENT instance than the
---       one whose save() was actually being used for real
---       serialization -- two disconnected Lua closures, entirely
---       unreachable from each other. No guard logic inside load()/
---       save() can fix this; a `local` cannot be shared across
---       separate executions of the same chunk. The engine appears to
---       re-execute this script's top-level code more than once per
---       session (matches the early boot log's repeated "Mods
---       changed, recreating data..." messages) and, evidently, keeps
---       GUI bindings (guiUpdate/button clicks) pointed at a later
---       instantiation than the one its save/load registration used.
---
--- v8 (current, working design): persistedState now lives in a
--- uniquely-namespaced Lua GLOBAL instead of a module-level `local`.
--- Globals live in the single shared _G table for the whole Lua VM,
--- so even if this chunk's top-level code gets re-executed multiple
--- times, every instantiation reads/writes the SAME underlying data
--- -- there is no more "which instance" question. save()/load() are
--- still fully passive (Decision 24's crash constraint is untouched
--- by WHERE the data lives, only by whether load()/save() compute
--- anything, which they still never do).
-local PERSISTED_STATE_GLOBAL_KEY = "__EPOD_TD_PERSISTED_STATE__"
-
--- The mutation guard must ALSO live in _G, not as a module-level
--- `local`, for the exact same reason persistedState does: since
--- Finding #7 proved multiple separate instances of this chunk can
--- be alive at once, a per-instance guard would only protect the ONE
--- instance whose button actually got clicked. A DIFFERENT instance
--- -- whose own guard was never flipped, since it never received the
--- click -- would still freely let its own load() calls overwrite the
--- now-shared global state out from under the click's instance.
-local HAS_MUTATED_PERSISTED_STATE_GLOBAL_KEY = "__EPOD_TD_HAS_MUTATED_PERSISTED_STATE__"
-
-if _G[PERSISTED_STATE_GLOBAL_KEY] == nil then
-    _G[PERSISTED_STATE_GLOBAL_KEY] = {
-        loadCount = 0
-    }
-end
-
-local function getPersistedState()
-    return _G[PERSISTED_STATE_GLOBAL_KEY]
-end
-
-local function savePersistedState()
-    return getPersistedState()
-end
-
-local function loadPersistedState(state, reset)
-
-    if _G[HAS_MUTATED_PERSISTED_STATE_GLOBAL_KEY] then
-        return
-    end
-
-    if state == nil
-        or type(state) ~= "table"
-        or next(state) == nil
-        or reset
-    then
-        return
-    end
-
-    _G[PERSISTED_STATE_GLOBAL_KEY] = state
-
-end
-
-local function bumpPersistenceTestCounter()
-
-    _G[HAS_MUTATED_PERSISTED_STATE_GLOBAL_KEY] = true
-
-    local persistedState = getPersistedState()
-
-    persistedState.loadCount =
-        (persistedState.loadCount or 0) + 1
-
-    print(
-        "[EPOD-TD] PERSISTENCE TEST: counter bumped to "
-            .. tostring(persistedState.loadCount)
-            .. ". Save the game, fully quit and relaunch TF2, then "
-            .. "load that save and check this counter's value in the "
-            .. "log -- if it's still "
-            .. tostring(persistedState.loadCount)
-            .. " (not reset to 0), save/load is genuinely round-tripping."
-    )
-
-end
-
-
--- ============================================================
--- FILE I/O PROOF OF CONCEPT (alternative persistence path)
---
--- v8's shared-global fix (above) STILL failed live -- loadCount
--- stayed 0 on disk even though save()/load()/persistedState were
--- moved into _G, which should have made every script instance read
--- and write the exact same data. That points to something even more
--- fundamental than instance-sharing within one Lua state: TF2's mod
--- sandbox may give each script instantiation a genuinely ISOLATED
--- Lua environment, where not even _G is actually shared -- in which
--- case NO in-Lua storage mechanism (local or global) could ever
--- bridge across instances, and the engine's own save/load hooks
--- would be the only thing capable of crossing that boundary (which
--- is presumably why they exist as engine-level hooks in the first
--- place, rather than something a mod could reimplement in pure Lua).
---
--- This tests a completely different, orthogonal approach: real file
--- I/O via Lua's io library, writing our own file directly rather
--- than going through the engine's save/load hooks at all. Wrapped in
--- pcall throughout since it's unknown whether io is even exposed to
--- game_script mods -- no shipped base-game script under
--- res/config/game_script/ was found using it (grepped), which is a
--- hint, not proof, that it may be sandboxed out entirely.
--- ============================================================
-
--- LIVE-CONFIRMED: io.open works in this sandbox. First test wrote
--- successfully and read the content back within the same session,
--- landing at the TF2 install directory root (not ideal for a real
--- feature long-term -- Steam can touch that folder on verify/update,
--- and it isn't scoped per-savegame -- but fine for proving the
--- mechanism itself). This version turns it into a counter, exactly
--- like the save/load proof-of-concept, so a single quit/relaunch
--- cycle can directly test whether a value survives a real process
--- restart: read whatever's currently on disk (if anything), bump it,
--- write it back. If a fresh process reads back a HIGHER number than
--- the previous process wrote, this crosses process boundaries
--- cleanly -- unlike save()/load(), completely independent of
--- whatever multi-instantiation behavior broke Decision 24.
-local FILE_IO_TEST_PATH = "epod_td_file_io_test.txt"
-
-local function testFileIo()
-
-    local previousCount = 0
-
-    local readOk, readResult = pcall(function()
-
-        local file = io.open(FILE_IO_TEST_PATH, "r")
-
-        if file == nil then
-            return nil
-        end
-
-        local content = file:read("*a")
-        file:close()
-
-        return tonumber(content)
-
-    end)
-
-    if readOk and readResult ~= nil then
-        previousCount = readResult
-    end
-
-    local newCount = previousCount + 1
-
-    local writeOk, writeErr = pcall(function()
-
-        local file, openErr = io.open(FILE_IO_TEST_PATH, "w")
-
-        if file == nil then
-            error("io.open (write mode) failed: " .. tostring(openErr))
-        end
-
-        file:write(tostring(newCount))
-        file:close()
-
-    end)
-
-    if not writeOk then
-
-        print(
-            "[EPOD-TD] FILE IO TEST: WRITE FAILED -- "
-                .. tostring(writeErr)
-        )
-
-        return
-
-    end
-
-    print(
-        "[EPOD-TD] FILE IO TEST: read "
-            .. tostring(previousCount)
-            .. " from disk, wrote "
-            .. tostring(newCount)
-            .. " back. Save the game, fully quit and relaunch TF2 (or "
-            .. "even just click this again in a moment), then click "
-            .. "this button again -- if the number keeps climbing "
-            .. "across a real process restart, file I/O genuinely "
-            .. "persists independent of the engine's save/load hooks."
-    )
-
-end
 
 
 -- ============================================================
@@ -1282,91 +1041,6 @@ end
 
 
 -- ============================================================
--- LOADED VEHICLE JOURNEY TEST (config.DEBUG only)
---
--- Two clicks: first picks a real, currently-loaded, single-vehicle
--- managed line and reassigns that vehicle exactly the way Stage 2
--- does; second (click again after a few real minutes of play)
--- reports on that same vehicle. Answers the two open Partial safety
--- items in PROGRESS.md -- loaded-cargo survival through actual
--- delivery, and whether Decision 12's Truck Park bug is actually
--- triggered by Stage 2's bare setLine -- from one real observation
--- instead of an inconclusive aggregate. See
--- route_injector.M.runLoadedVehicleJourneyTestStep for the full
--- protocol.
--- ============================================================
-
-local function handleJourneyTestButtonClick()
-
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.journeyTestButtonLabel ~= nil
-    then
-
-        distributionState.textViews.journeyTestButtonLabel:setText(
-            "[ Working... (see log) ]",
-            WINDOW_WIDTH
-        )
-
-    end
-
-
-    local ok, err =
-        pcall(
-            route_injector.runLoadedVehicleJourneyTestStep,
-
-            function(success, reason)
-
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.journeyTestButtonLabel ~= nil
-                then
-
-                    local label =
-                        "[ Test Loaded Vehicle Journey ("
-                            .. tostring(reason)
-                            .. " -- see log) ]"
-
-                    if reason == "watching" then
-
-                        label =
-                            "[ Test Loaded Vehicle Journey "
-                                .. "(watching -- click again later) ]"
-
-                    end
-
-                    distributionState.textViews.journeyTestButtonLabel:setText(
-                        label,
-                        WINDOW_WIDTH
-                    )
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        logUi(
-            "JOURNEY TEST FAILED: "
-                .. tostring(err)
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.journeyTestButtonLabel ~= nil
-        then
-
-            distributionState.textViews.journeyTestButtonLabel:setText(
-                "[ Test Loaded Vehicle Journey (crashed -- see log) ]",
-                WINDOW_WIDTH
-            )
-
-        end
-
-    end
-
-end
-
-
--- ============================================================
 -- BUG B TEST BUTTON (config.DEBUG only)
 --
 -- Two clicks, same pattern as the journey test above but for a
@@ -1444,38 +1118,6 @@ local function handleBugBTestButtonClick()
 
     end
 
-end
-
-
--- ============================================================
--- BUMP PERSISTENCE TEST COUNTER (config.DEBUG only)
---
--- See the big comment above persistedState's declaration
--- (Decision 24) for why this mutation lives in a deliberate button
--- click rather than inside load()/save() or any guiUpdate-driven
--- one-shot guard -- both were tried, both were wrong, because
--- load()/save() fire continuously for reasons unrelated to a real
--- player save/load, and the guiUpdate guard is scoped to "once per
--- process," not "once per load." This handler is the only thing
--- that ever mutates persistedState.loadCount.
--- ============================================================
-
-local function handlePersistenceBumpButtonClick()
-    bumpPersistenceTestCounter()
-end
-
-
--- ============================================================
--- TEST FILE I/O (config.DEBUG only)
---
--- See the big comment above testFileIo's declaration for why this
--- exists -- an orthogonal, engine-save-hook-independent way to
--- persist data, being tried because the save/load approach (Decision
--- 24) failed live even after moving state into a shared Lua global.
--- ============================================================
-
-local function handleFileIoTestButtonClick()
-    testFileIo()
 end
 
 
@@ -1680,31 +1322,6 @@ local function ensureDistributionWindow()
             assignBalanceButton
 
 
-        distributionState.textViews.journeyTestButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".journeyTestButtonLabel",
-                "[ Test Loaded Vehicle Journey (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local journeyTestButton =
-            gui.button_create(
-                WINDOW_ID .. ".journeyTestButton",
-                distributionState.textViews.journeyTestButtonLabel
-            )
-
-        journeyTestButton:onClick(
-            handleJourneyTestButtonClick
-        )
-
-        distributionState.journeyTestButton =
-            journeyTestButton
-
-        fixedViews[#fixedViews + 1] =
-            journeyTestButton
-
-
         distributionState.textViews.bugBTestButtonLabel =
             gui.textView_create(
                 WINDOW_ID .. ".bugBTestButtonLabel",
@@ -1728,56 +1345,6 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             bugBTestButton
-
-
-        local persistenceBumpButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".persistenceBumpButtonLabel",
-                "[ Bump Persistence Counter (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local persistenceBumpButton =
-            gui.button_create(
-                WINDOW_ID .. ".persistenceBumpButton",
-                persistenceBumpButtonLabel
-            )
-
-        persistenceBumpButton:onClick(
-            handlePersistenceBumpButtonClick
-        )
-
-        distributionState.persistenceBumpButton =
-            persistenceBumpButton
-
-        fixedViews[#fixedViews + 1] =
-            persistenceBumpButton
-
-
-        local fileIoTestButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".fileIoTestButtonLabel",
-                "[ Test File I/O (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local fileIoTestButton =
-            gui.button_create(
-                WINDOW_ID .. ".fileIoTestButton",
-                fileIoTestButtonLabel
-            )
-
-        fileIoTestButton:onClick(
-            handleFileIoTestButtonClick
-        )
-
-        distributionState.fileIoTestButton =
-            fileIoTestButton
-
-        fixedViews[#fixedViews + 1] =
-            fileIoTestButton
 
     end
 
@@ -2101,29 +1668,18 @@ local function updateDistributionWindow()
                 )
 
 
-            -- ------------------------------------------------
-            -- CONNECTED STATIONS DIAGNOSTIC
-            --
-            -- Logs every stop connected to this line -- including
-            -- the hub's own bucket, now that buildDestinationMap
-            -- covers every stop rather than only ones adjacent to
-            -- the hub (see demand.lua). This is data-gathering
-            -- only: it does not change what the GUI renders, which
-            -- still only shows non-hub destinations (see the GUI
-            -- layout work still pending). demand.printReport()
-            -- re-scans internally rather than reusing lineInfo.demand
-            -- above; harmless here since this is a debug-only,
-            -- read-only diagnostic, not a hot path.
-            -- ------------------------------------------------
-
-            if config.DEBUG then
-
-                demand.printReport(
-                    lineInfo.id,
-                    stationGroupId
-                )
-
-            end
+            -- demand.printReport() used to fire here every refresh,
+            -- for every managed line -- a full second re-scan
+            -- (demand.scan already runs above, into lineInfo.demand)
+            -- purely to print a diagnostic report. IDEAS.md's
+            -- "Refresh Cost at Late-Game Scale" already flagged this
+            -- exact call as doubling the single most expensive part
+            -- of a refresh for no reason once the panel itself
+            -- doesn't need it -- removed at the player's request when
+            -- logs were getting too full each run. Still available
+            -- to call manually (demand.printReport(lineId,
+            -- stationGroupId)) if a specific line's destination
+            -- breakdown is ever needed for debugging again.
 
         end
 
@@ -2833,9 +2389,14 @@ local function runStartupDiagnosticsOnce()
 
     dumpAvailableCommands()
 
-    if config.DEBUG then
-        route_injector.runCreateLineTest()
-    end
+    -- route_injector.runCreateLineTest() used to fire here every
+    -- session -- a self-cleaning createLine/deleteLine proof-of-
+    -- concept, useful while that command surface was unproven.
+    -- createLine is now used for real in every Stage 1 split, so the
+    -- once-per-boot self-test just added log volume for no ongoing
+    -- purpose. Removed at the player's request when logs were
+    -- getting too full each run -- still available to call manually
+    -- (route_injector.M.runCreateLineTest) if ever needed again.
 
     -- The glyph naming question is settled (● and ↔ safe, ◆ ■ ►
     -- tofu -- TECHNICAL_RESEARCH.md) and baked into line_splitter.lua's
@@ -2847,189 +2408,26 @@ local function runStartupDiagnosticsOnce()
         route_injector.cleanupLineNamingGlyphTest()
     end
 
-    if config.DEBUG then
+    -- A "STATION GROUP TERMINAL DUMP" (stations.dumpStationGroupTerminals)
+    -- used to fire here every session too -- answered "can we read a
+    -- station's real terminal count/structure," which is long since
+    -- resolved and in real use (Stage 4's terminal_allocator.lua,
+    -- PROGRESS.md/Done/Foundation). Removed for the same reason as
+    -- the two below -- still available to call manually
+    -- (stations.dumpStationGroupTerminals(stationGroupId)) if needed.
 
-        local ok, err =
-            pcall(
-                function()
-
-                    local _, hubStop =
-                        stations.findStopByNameAnywhere(
-                            config.HUB_NAME
-                        )
-
-                    if hubStop == nil then
-
-                        logUi(
-                            "Cannot dump hub terminals: "
-                                .. config.HUB_NAME
-                                .. " stop not found."
-                        )
-
-                        return
-
-                    end
-
-                    local hubStationGroup =
-                        lines.safeField(
-                            hubStop,
-                            "stationGroup"
-                        )
-
-                    stations.dumpStationGroupTerminals(
-                        hubStationGroup
-                    )
-
-                end
-            )
-
-        if not ok then
-
-            logUi(
-                "Hub terminal dump failed: "
-                    .. tostring(err)
-            )
-
-        end
-
-    end
-
-    -- Read-only: does game.interface.getEntity() expose anything
-    -- about a vehicle's current onboard cargo/load? It already does
-    -- for LINE, STATION_GROUP, and STATION (see the "Auto Line
-    -- Namer" workshop mod's bundled reference dump), but this has
-    -- never been checked for a VEHICLE entity in this codebase --
-    -- TRANSPORT_VEHICLE's own component fields do not include one.
-    -- Answering this directly (rather than guessing) is the
-    -- prerequisite for a "skip vehicles currently carrying a load"
-    -- check before Stage 2/3 reassign anything, requested live.
-    if config.DEBUG then
-
-        local ok, err =
-            pcall(
-                function()
-
-                    local allLineIds =
-                        game.interface.getLines()
-
-                    for _, lineId in ipairs(allLineIds or {}) do
-
-                        local name = lines.getName(lineId)
-
-                        if managed_registry.isManaged(lineId) then
-
-                            local vehicleIds =
-                                vehicles.getVehiclesForLine(lineId)
-
-                            if #vehicleIds > 0 then
-
-                                vehicles.dumpEntityInfo(
-                                    vehicleIds[1],
-                                    "SAMPLE MANAGED-LINE VEHICLE "
-                                        .. "(game.interface.getEntity)"
-                                )
-
-                                return
-
-                            end
-
-                        end
-
-                    end
-
-                    logUi(
-                        "No managed (\"● \") line with a vehicle "
-                            .. "was found to sample."
-                    )
-
-                end
-            )
-
-        if not ok then
-
-            logUi(
-                "Sample vehicle entity dump failed: "
-                    .. tostring(err)
-            )
-
-        end
-
-    end
-
-    -- Read-only: raised live -- "can you detect if it's only a drop
-    -- off station?" -- e.g. a destination that structurally never
-    -- sends anything back toward the hub, versus one that's just
-    -- currently at 0 waiting but could have real demand later. A
-    -- destination's game.interface.getEntity() (STATION_GROUP)
-    -- already exposes itemsLoaded/itemsUnloaded historical totals
-    -- (confirmed real fields in the "Auto Line Namer" workshop mod's
-    -- bundled reference dump) -- the hypothesis is that a station
-    -- whose itemsLoaded has never had anything in it is a genuine
-    -- pure drop-off point (loading is the act of putting cargo ONTO
-    -- a vehicle FROM that station), which would be a reliable signal
-    -- for the "don't show a permanently-0 return row" panel idea.
-    -- Untested until now -- dumps every real destination currently
-    -- known for the focused hub so that hypothesis can be checked
-    -- against real data before any display logic is built on it.
-    if config.DEBUG then
-
-        local ok, err =
-            pcall(
-                function()
-
-                    local _, hubStop =
-                        stations.findStopByNameAnywhere(
-                            config.HUB_NAME
-                        )
-
-                    if hubStop == nil then
-                        return
-                    end
-
-                    local hubStationGroup =
-                        lines.safeField(hubStop, "stationGroup")
-
-                    local managedLines =
-                        vehicles.getManagedLinesForStation(hubStationGroup)
-
-                    local seen = {}
-
-                    for _, lineInfo in ipairs(managedLines) do
-
-                        for _, destination in ipairs(lineInfo.destinations or {}) do
-
-                            if destination.stationGroup ~= hubStationGroup
-                                and not seen[destination.stationGroup]
-                            then
-
-                                seen[destination.stationGroup] = true
-
-                                vehicles.dumpEntityInfo(
-                                    destination.stationGroup,
-                                    "DESTINATION STATION_GROUP ("
-                                        .. tostring(destination.name)
-                                        .. ")"
-                                )
-
-                            end
-
-                        end
-
-                    end
-
-                end
-            )
-
-        if not ok then
-
-            logUi(
-                "Destination itemsLoaded/itemsUnloaded dump failed: "
-                    .. tostring(err)
-            )
-
-        end
-
-    end
+    -- Two more one-time research dumps used to fire here every
+    -- session: a "SAMPLE MANAGED-LINE VEHICLE" entity dump (answered
+    -- "can we read a vehicle's onboard cargo/capacities at all" --
+    -- yes, see cargoLoad/capacities/allCapacities, PROGRESS.md/Done/
+    -- Foundation and Decision 27) and a "DESTINATION STATION_GROUP"
+    -- dump per connected destination (answered "can we detect a
+    -- pure drop-off station" -- yes, see the permanently-zero-rows
+    -- panel logic, PROGRESS.md/Done/Panel-GUI). Both questions are
+    -- fully resolved and documented; removed at the player's request
+    -- when logs were getting too full each run. vehicles.dumpEntityInfo
+    -- is still available to call manually against any entity ID if a
+    -- full raw field dump is ever needed again.
 
 end
 
@@ -3099,13 +2497,7 @@ function data()
             end,
 
         guiUpdate =
-            guiUpdate,
-
-        save =
-            savePersistedState,
-
-        load =
-            loadPersistedState
+            guiUpdate
 
     }
 

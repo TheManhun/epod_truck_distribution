@@ -1820,6 +1820,103 @@ end
 
 
 -- ============================================================
+-- VEHICLE CARGO COMPATIBILITY (PROGRESS.md Not Started #4)
+--
+-- Distinct from cargoLoad/isVehicleEmpty above: those read what a
+-- vehicle is CURRENTLY carrying (changes trip to trip). This reads
+-- what a vehicle's model is FIXED to be able to carry at all --
+-- allCapacities, confirmed real via game.interface.getEntity (see
+-- PROGRESS.md/Done/Foundation) but not yet wrapped in a proper API
+-- or tested across multiple vehicle types/eras until now. A hard
+-- prerequisite for any future cross-line fleet reassignment: once a
+-- hub's connected lines carry different cargo types, nothing can
+-- safely decide "move this truck to that line" without first
+-- knowing the truck can actually carry what that line needs.
+-- ============================================================
+
+function M.getAllCapacities(vehicleId)
+
+    if vehicleId == nil then
+        return nil
+    end
+
+    local ok, entity =
+        pcall(game.interface.getEntity, vehicleId)
+
+    if not ok or entity == nil then
+        return nil
+    end
+
+    return lines.safeField(entity, "allCapacities")
+
+end
+
+
+-- Returns true/false/nil -- same nil-means-unconfirmed convention as
+-- isVehicleEmpty above, so callers can treat nil the same as "not
+-- confirmed compatible" rather than assuming safe.
+function M.isCompatibleWithCargoType(vehicleId, cargoType)
+
+    local allCapacities = M.getAllCapacities(vehicleId)
+
+    if allCapacities == nil or cargoType == nil then
+        return nil
+    end
+
+    local ok, capacity =
+        pcall(function()
+            return allCapacities[cargoType]
+        end)
+
+    if not ok then
+        return nil
+    end
+
+    return capacity ~= nil and capacity > 0
+
+end
+
+
+-- Returns a simple list of cargo type names this vehicle's model can
+-- carry (the keys of allCapacities), or nil if it could not be
+-- determined. Convenience for logging/diagnostics -- most real
+-- compatibility checks should use isCompatibleWithCargoType directly
+-- against one known target type rather than building this list.
+function M.getCompatibleCargoTypes(vehicleId)
+
+    local allCapacities = M.getAllCapacities(vehicleId)
+
+    if allCapacities == nil then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+
+            local types = {}
+
+            for cargoType, capacity in pairs(allCapacities) do
+
+                if capacity ~= nil and capacity > 0 then
+                    types[#types + 1] = cargoType
+                end
+
+            end
+
+            return types
+
+        end)
+
+    if not ok then
+        return nil
+    end
+
+    return result
+
+end
+
+
+-- ============================================================
 -- LIVE SET-LINE COMMAND
 --
 -- Proven TF2 command path from earlier EPOD-TD testing.

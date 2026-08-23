@@ -2913,4 +2913,132 @@ function M.runBugBTestStep(onComplete)
 end
 
 
+-- ============================================================
+-- CARGO COMPATIBILITY LIVE VERIFICATION (PROGRESS.md Not Started #4)
+--
+-- Single click, immediate -- unlike the two-click journey/Bug B
+-- tests above, this is a pure read with nothing to wait on.
+--
+-- FINDING, LIVE-CONFIRMED (first version of this test): sampling
+-- just one vehicle per managed line showed every single one with
+-- the IDENTICAL full 16-cargo-type list -- meaning the mechanism
+-- worked (no read failures) but never actually proved the
+-- classification DISCRIMINATES between vehicle types, since every
+-- vehicle sampled happened to be a generic "universal" model. This
+-- version scans every ROAD vehicle game-wide (not just managed
+-- lines, so a restricted truck sitting unassigned or on any line
+-- still gets caught) and groups them by their exact distinct
+-- capability profile, so real variation (or its absence) is visible
+-- directly rather than inferred from a handful of samples.
+-- ============================================================
+
+function M.testCargoCompatibility()
+
+    log.info("----------------------------------------")
+    log.info("CARGO COMPATIBILITY TEST")
+    log.info("----------------------------------------")
+
+    local ok, roadVehicleIds =
+        pcall(function()
+            return game.interface.getVehicles({ carrier = "ROAD" })
+        end)
+
+    if not ok or roadVehicleIds == nil then
+
+        log.info("FAILED: could not read road vehicle list.")
+
+        return { success = false, reason = "vehicle-list-unavailable" }
+
+    end
+
+    local profiles = {}
+    local profileOrder = {}
+    local uncheckable = 0
+
+    for _, vehicleId in ipairs(roadVehicleIds) do
+
+        local compatibleTypes = vehicles.getCompatibleCargoTypes(vehicleId)
+
+        if compatibleTypes == nil then
+
+            uncheckable = uncheckable + 1
+
+        else
+
+            local sorted = {}
+
+            for _, cargoType in ipairs(compatibleTypes) do
+                sorted[#sorted + 1] = cargoType
+            end
+
+            table.sort(sorted)
+
+            local profileKey = table.concat(sorted, ",")
+
+            if profiles[profileKey] == nil then
+
+                profiles[profileKey] = {
+                    count = 0,
+                    types = sorted,
+                    exampleVehicleId = vehicleId
+                }
+
+                profileOrder[#profileOrder + 1] = profileKey
+
+            end
+
+            profiles[profileKey].count = profiles[profileKey].count + 1
+
+        end
+
+    end
+
+    log.info(
+        "Total road vehicles: "
+            .. tostring(#roadVehicleIds)
+            .. " | distinct capability profiles: "
+            .. tostring(#profileOrder)
+            .. " | unreadable: "
+            .. tostring(uncheckable)
+    )
+
+    for _, profileKey in ipairs(profileOrder) do
+
+        local profile = profiles[profileKey]
+
+        log.info(
+            "  "
+                .. tostring(profile.count)
+                .. " vehicle(s) (e.g. "
+                .. tostring(profile.exampleVehicleId)
+                .. ") | compatible="
+                .. table.concat(profile.types, ",")
+        )
+
+    end
+
+    if #profileOrder <= 1 then
+
+        log.info(
+            "NOTE: every road vehicle in this save shares the same "
+                .. "capability profile -- the classification mechanism "
+                .. "is reading real data, but discrimination between "
+                .. "restricted and universal vehicles has not yet "
+                .. "been observed. Not a bug -- just means nothing "
+                .. "cargo-restricted exists in the fleet yet."
+        )
+
+    end
+
+    log.info("----------------------------------------")
+
+    return {
+        success = true,
+        totalVehicles = #roadVehicleIds,
+        distinctProfiles = #profileOrder
+    }
+
+end
+
+
 return M
