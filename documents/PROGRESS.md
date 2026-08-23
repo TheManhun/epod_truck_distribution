@@ -1,0 +1,114 @@
+# TF2 Distribution Manager — Progress
+
+Quick-reference stock-take: what's actually built and live-verified vs. what's still open. `ROADMAP.md` and `FEATURES.md` describe the long-term shape and constraints; this file tracks real status against them. `DECISIONS.md` has the full evidence trail for anything marked DONE; `IDEAS.md` has the full reasoning for anything still speculative.
+
+Update this file whenever a feature actually changes status — don't let it go stale the way `ROADMAP.md`/`FEATURES.md` did.
+
+## Current Playable Milestone
+
+The current build is a manually-triggered Distribution Manager.
+
+A player can take an existing multi-destination truck service and, through the development controls, convert it into dedicated services, redistribute the existing fleet according to real demand, spread those services across station terminals, and safely retire the obsolete source line:
+
+```text
+existing freight route
+        ↓
+split into persistent services
+        ↓
+recover and allocate existing fleet
+        ↓
+delete obsolete source safely
+        ↓
+organise terminal usage
+        ↓
+real TF2 cargo begins flowing
+```
+
+The remaining work toward V1 is primarily the shift from **player presses "reassess"** to **manager notices reassessment is warranted and acts safely** — safe autonomous monitoring/reallocation, persistence, multi-hub management, and final UX. That's a different kind of work from Stage 0's original question of whether TF2 would let the mod do any of this at all — that question is now answered; what's left is building the autonomy on top of a proven manual pipeline.
+
+## How to read this
+
+- **DONE** — live-verified, working code, currently wired into the panel.
+- **PARTIAL** — built, but with a known real gap (see the note).
+- **NOT STARTED** — an idea or requirement with no implementation yet.
+
+## Done
+
+### Foundation
+
+- **Vehicle/line classification by real carrier data**, not name-matching (`vehicles.classifyLineCarrier`, `game.interface.getVehicles({carrier="ROAD"})`).
+- **Bidirectional demand scanning** — `demand.scan()` reports waiting cargo in both directions on a line, not just outbound from the hub.
+- **Line creation and deletion** — `api.cmd.make.createLine` / `deleteLine`, proven end-to-end (create, verify, delete, verify gone).
+- **Safe line-naming convention** — `●` and `↔` confirmed to render in TF2's line-name font; `◆ ■ ►` confirmed as tofu boxes and avoided.
+- **Terminal assignment writes** — `Line.Stop.terminal` confirmed writable via `updateLine`, confirmed both in re-read data and visually in the game's own TERMINALS tab. UI display offset (`raw value + 1`) confirmed.
+- **Station terminal count** — `stations.getTerminalCount` reads a station's real terminal count.
+- **Historical items-loaded/unloaded per station** — `stations.getItemTotals` (`game.interface.getEntity`'s `itemsLoaded`/`itemsUnloaded`), used to tell a structural drop-off point from a currently-quiet producer.
+- **Per-vehicle onboard cargo, by type** — `game.interface.getEntity(vehicleId)` exposes a real `cargoLoad` table (e.g. `{ FOOD = 4 }`, empty `{}` when carrying nothing), confirmed live via the loaded-vehicle journey test. Also exposes `capacities`/`allCapacities` per cargo type for that specific vehicle. This resolves a previously-open question (whether TF2 exposes onboard load on the vehicle entity at all) and is the missing mechanism for both the "skip loaded vehicles" check and eventual cargo-compatibility classification (see Not Started #4).
+
+### The Split Pipeline (Stages 1–4)
+
+- **Stage 1 — Split Into Lines** (`line_splitter.splitLineIntoDestinations`) — takes an existing multi-destination line and creates one dedicated `●`-named line per real destination. Purely additive: never touches the source line or moves a vehicle. Always-visible button (not gated behind DEBUG) since it's the safe, reversible entry point.
+- **Stage 2 — Assign Trucks + Retire Stops** (`line_splitter.assignVehiclesAndRetireStops`) — pulls one vehicle per empty split line off the source line, confirms the reassignment succeeded, only then retires that destination's stop from the source line. Never retires a stop before its replacement is confirmed live.
+- **Stage 3 — Redistribute Spare Vehicles by Demand** (`fleet_allocator.redistributeSpareVehiclesByDemand`) — apportions whatever's left on the source line across the split lines by demand (largest-remainder method); a destination at 0 demand gets none of the spare pool.
+- **Stage 3.5 — Delete Empty Source Line** (`line_splitter.deleteEmptySourceLine`) — chained onto the end of the Stage 2/3 button; only deletes the source line if it's confirmed to have 0 vehicles and 0 real destinations left.
+- **Stage 4 — Spread Lines Across Terminals** (`terminal_allocator.spreadLinesAcrossTerminals`) — ranks managed lines by demand, does a real stock-take of pre-existing terminal occupancy from lines this mod doesn't manage (e.g. "Grain") before assigning, then always places the next line on the currently-least-loaded terminal.
+- All four stages have been run live at least once on the test save; Stages 1–3 combined were re-run cleanly a second time with the terminal-allocator bug fix in place.
+
+### Panel / GUI
+
+- Compact "Truck Distribution" panel: one row per stop, correct sizing/positioning, working close button (`window:onClose`), auto-closes on deselect (see Partial below — the vanilla-panel-X link specifically is unconfirmed).
+- Every managed line gets a `●` bullet in the display (not just mod-created ones) for visual consistency.
+- Destination rows use `->`/`<-` direction arrows instead of a text "(return)" suffix.
+- Cargo icons per destination, resolved via `api.res.cargoTypeRep`.
+- Permanently-zero rows are hidden, based on real per-station load/unload history, not just current value — a structural drop-off point never shows its dead row; a real-but-quiet producer still does.
+- Panel capacity (`MAX_MANAGED_LINES`, `MAX_TOTAL_ROWS`) raised with headroom after silently truncating real lines at the old ceiling.
+- Buttons use `[ bracket ]` styling so they read as clickable. Consolidated from 5 debug buttons down to 2 (`Assign & Balance Fleet`, `Spread Lines Across Terminals`) plus the always-visible `Split Into Lines` — superseded single-purpose tests (loaded-vehicle test, terminal test, glyph test) were removed once the real features existed, not just hidden.
+
+### Persistence
+
+- **File-based persistence, via direct `io.open` — not `data()`'s `save`/`load` hooks.** `save`/`load` are real and shipped-code-confirmed, but proved unusable here after eight live-tested attempts across two hard crashes — full saga in DECISIONS.md Decision 24. Root cause: the engine runs multiple, disconnected instances of this script's top-level code within one session, and the instance whose GUI the player interacts with is not reliably the same instance whose `save`/`load` the engine uses for real serialization — not even a shared Lua global bridges that gap. **Pivoted to plain file I/O instead, confirmed live-working across two full quit/relaunch cycles**: a counter written via `io.open` read back correctly and climbed (`0→1`, `1→2`) across real process restarts, with no guard or workaround needed — the mechanism just works, unlike every `save`/`load` attempt. Currently writes to the TF2 install directory root (a plain relative filename resolves there) — **not yet suitable for real state**: needs a proper per-savegame-scoped path (so different saves don't clobber each other's data) and shouldn't live inside the Steam install folder long-term. This is a DEBUG-only proof-of-concept (`Test File I/O` button); no real state is built on it yet.
+
+## Partial — built, with a known real gap
+
+- **Two distinct empty/loaded bugs — do not conflate them.**
+
+  **Bug A — losing cargo the vehicle is currently carrying.** A vehicle already loaded with cargo gets reassigned mid-journey — does that cargo get delivered, dropped, or silently lost? **Now sidestepped, not fixed**: `line_splitter.assignVehiclesAndRetireStops` (Stage 2) and `fleet_allocator.redistributeSpareVehiclesByDemand` (Stage 3) both now skip any vehicle that isn't confirmed empty (`vehicles.isVehicleEmpty`, built on the `cargoLoad` field below) rather than reassigning it — a candidate whose load can't be confirmed is treated the same as loaded, never assumed safe. This means Stage 2/3 should no longer be *able* to trigger Bug A going forward, which matters more in practice than formally resolving whether the underlying bug is real. The question itself is still open, though — `route_injector.M.runLoadedVehicleJourneyTestStep` (the two-click journey test) remains available to deliberately test it, since it intentionally picks an already-*loaded* vehicle to bypass the new skip logic.
+
+  **First real run, live data**: vehicle 85726 showed `cargoLoad = { FOOD = 4 }` before reassignment (via `Park Avenue` → `Highfield Road`), and `cargoLoad = {}` (empty) roughly 13 in-game hours later, still `EN_ROUTE`. The cargo is gone from the vehicle either way — consistent with *either* a successful delivery *or* a silent loss, and the log alone can't distinguish those. The source/destination lines both had other vehicles sharing them, so the line-scoped cargo counts in this run were flagged ambiguous — the `cargoLoad` per-vehicle read is the reading that actually matters here.
+
+  **Corroborating evidence, from the game's own UI, in two layers**:
+  - *Line-level* (LINE STATISTICS panel): `● Hendon East ↔ Highfield Road` shows real, ongoing activity — `5/15` FOOD, a 22/period rate, a genuine **$15,044 balance**, not `0/0` or `--`. Aggregate across all 3 vehicles on the line.
+  - *Per-vehicle* (each vehicle's own FINANCES tab, checked individually — closer to the itemized standard than the line aggregate): all 3 named vehicles on that line (`Road vehicle 5`, `15`, `20`) show real income clearly exceeding running costs in their most recent periods (~9-10K income vs. ~3-4K running costs) — a genuine, per-vehicle profit signal, not just a shared line total.
+
+  Neither layer is a literal single-parcel receipt for this one vehicle's tracked 4 units of FOOD specifically (TF2's UI has no such confirmation — checked, doesn't exist), so this still isn't the fully clean itemized proof the bar above calls for. But going from "the line overall earns something" to "every individual vehicle on it, checked one at a time, is currently profitable" is real, meaningfully stronger evidence that cargo pickup/delivery is working in practice for vehicles that arrived via bare `setLine`. Treat as **strongly encouraging, not formally conclusive** — the aggregate-observation caution this project has already been burned by once (the terminal-allocator stock-take bug) still applies, just with a higher bar cleared than before.
+
+  **Bug B — failing to pick up cargo at the new destination (Decision 12's Park-stop problem).** A vehicle reassigned via a bare `setLine`, with no intervening real stop-arrival event, fails to load cargo at its *new* line's first stop — regardless of whether it was carrying anything beforehand. `assignVehiclesAndRetireStops` currently reassigns with a bare `setLine` and does not call `route_injector.M.injectParkStops`, which exists and is proven to work but isn't wired into the live pipeline. The Highfield Road corroborating evidence above is relevant here too (every vehicle on that line got there via the exact scenario Bug B describes, and the line earns normally), but is still aggregate, not a clean single-vehicle isolation.
+
+  **Dedicated test built and run live once** (`route_injector.M.startBugBTest`/`checkBugBTest`/`runBugBTestStep`, wired to the "Test Bug B / Park-Stop (DEBUG)" button). Two clicks, same shape as the loaded-vehicle journey test: picks a confirmed-empty vehicle on a managed line (`vehicles.isVehicleEmpty`, mirroring exactly what Stage 2 uses in real play), reassigns it via the same bare `setLine` Stage 2 uses (no `injectParkStops`) to whichever other managed line currently shows the most waiting cargo, then on the second click reads the *watched vehicle's own* `cargoLoad` directly — a clean per-vehicle answer, unlike the journey test's line-scoped cargo counts, since other vehicles sharing the destination line no longer create ambiguity. (The destination-picking logic itself needed one fix first: it originally used `vehicles.snapshotLineCargo`, which turned out to only ever report cargo already on a vehicle — every managed line showed `totalCargo == onVehicleCargo` exactly, always zero "waiting." Switched to `demand.scan`, the same mechanism `fleet_allocator.lua` already uses successfully, which gave real numbers — 3, 195, 1, 14 waiting across four candidate lines.)
+
+  **First real run: the vehicle picked up cargo.** Reassigned to `● Hendon East ↔ The Grove` (195 waiting, the highest of the four candidates) via bare `setLine`; on the second check, `vehicles.getCargoLoad` showed the vehicle carrying real cargo, `isVehicleEmpty == false`. **Bug B did not trigger in this run** — a genuinely clean, single-vehicle, per-vehicle-cargo-read result, the strongest direct evidence so far that the bare `setLine` reassignment path used by Stage 2 does not need `injectParkStops`. One run is one data point, not a closed case — worth repeating a few more times (different vehicles, different destinations) before fully retiring the concern, but this is a real, encouraging result, not an aggregate proxy.
+
+- **Managed-line identity is now entity-ID-based, not name-based** (`res/scripts/epod_td/managed_registry.lua` — full history in DECISIONS.md Decision 26, from `IDEAS.md`'s PRIORITY entry). Replaced all 9 real `name:sub(1, 4) == "● "` membership checks across `epod_truck_distribution.lua`, `terminal_allocator.lua`, `line_splitter.lua`, `fleet_allocator.lua`, and `route_injector.lua` with `managed_registry.isManaged(lineId)`; Stage 1 now registers each new split line's real entity ID at creation time. State persists via `io.open` (Decision 24's proven mechanism), with a validate-and-migrate pass on first use each session that drops stale entries (a different save, or a deleted line) and adopts any existing `●`-named line not yet registered — matching the migration/validation approach `IDEAS.md` itself specified. The `●` prefix is untouched as a display-only cosmetic hint; renaming a line no longer affects whether DD manages it. **Not yet live-tested** — this touched five files and needs an in-game pass: confirm existing `●` lines migrate correctly on first load, confirm a rename doesn't break management, confirm a fresh Stage 1 split registers its lines. The file-location caveat from Decision 24 (shouldn't live in the Steam install folder long-term) applies here too.
+
+  Live runs "looking healthy" is not evidence either way for either bug — it's aggregate, after-the-fact observation, exactly the kind of conclusion this project has already had to walk back once actually checked (see the terminal-allocator stock-take bug, the first loaded-vehicle test's own overclaimed verdict). **Bug B in particular is still fully open** — nothing built so far tests or fixes it specifically.
+- **Window-closes-with-vanilla-panel.** Our own deselect handler now calls `window:close()`, but whether the vanilla Truck Station panel's own X actually fires that `mainView` deselect event has not been independently confirmed — plausible (the panel only exists while something is selected) but untested.
+
+## Not Started
+
+Roughly in the order it would make sense to build them — later items depend on earlier ones more than the reverse.
+
+1. **Resolve Bug B (see Partial above).** Bug A is now sidestepped by the skip-loaded-vehicle logic (Done/Partial), so this is specifically about Bug B — the Park-stop question — now more cleanly testable than before since Stage 2/3 only ever move confirmed-empty vehicles. Worth closing before building more automation on top of it.
+2. **Find a proper per-savegame file path for persistence, then build real state on top of it** — which managed hubs exist, network fingerprints, etc. The mechanism itself is confirmed working (see Done/Persistence above); what's left is picking a location that doesn't collide across different saves and isn't inside the Steam install folder, then replacing the DEBUG test counter with real data. This blocks almost everything below it.
+3. **Change-driven demand reassessment** (see `IDEAS.md`) — replace today's "player clicks a button" model with a real trigger: react to material waiting-cargo changes per service, not a fixed timer, with a slow safety-heartbeat fallback. **A real event hook has since been found** — `handleEvent` with `id == "SimCargoSystem", name == "OnToArriveAtDestination"`, confirmed live-documented from shipped code (see `TECHNICAL_RESEARCH.md`) — covering the delivery/arrival side of demand change; no complementary "cargo newly waiting" event has turned up yet, so the generation side may still need the cached-snapshot-comparison fallback this idea also describes. Directly answers the refresh-cost/late-game-scale concern already on record. Depends on persistence to know what to watch across a reload.
+4. **Vehicle cargo compatibility and capacity classification.** Determine each managed vehicle's supported cargo types/capacity from real vehicle/model data. This has to exist *before* autonomous cross-line fleet reassignment, not after — once a hub's connected lines carry different cargo types (Grain vs. Fuel, say), the planner cannot safely decide "move three trucks from Grain to Fuel" without first knowing those trucks can actually carry what the target service needs. **The mechanism is now confirmed** — `game.interface.getEntity(vehicleId)`'s `capacities`/`allCapacities` fields (see Done/Foundation) — but no actual classification logic is built on top of it yet, and it hasn't been tested across multiple vehicle types/eras. Previously filed as a "secondary refinement"; that was wrong — it's a hard prerequisite for #5, not an optional polish item.
+5. **Planner + Opportunistic Dispatcher** (see `IDEAS.md`) — the real autonomous rebalancing brain: a periodic planner calculates target allocation, an opportunistic dispatcher only moves vehicles that are already empty at a natural decision point. Depends on #1, #3, and #4.
+6. **Automatic network change detection + safe line shutdown** (see `IDEAS.md`) — detect when the player manually adds/edits/deletes a line touching a managed hub and adapt without fighting them; a "Close Managed Line" option that recovers vehicles before deleting, with a waiting-cargo warning first. Depends on persistence (the network fingerprint) and the planner.
+7. **Multi-hub support.** Everything built so far operates on one hub at a time (whichever station is currently selected). Extending to track several hubs simultaneously is mostly a scaling question once the single-hub version is solid on #1–#6.
+8. **UX polish**: one-click "Convert to Distribution Hub" (folds Split → Assign & Balance → Spread Terminals into one button once each stage has more clean runs behind it), a DD toolbar button / network overview window, native-styled buttons/tables instead of `[ bracket ]` text. Deliberately last — matches `IDEAS.md`'s own "Final GUI Research and Cleanup Phase," polish after mechanics are stable, not before.
+9. **Secondary refinements**: terminal-assignment hysteresis/stability (no evidence yet it's needed), cross-DC fleet sharing, player-set vehicle budget, sentinel/service vehicle, Detect-empty-and-reverse as a Park-stop alternative. All genuinely optional, correctly last.
+
+## Cross-reference
+
+- Full evidence trail for every DONE item: `DECISIONS.md`.
+- Full reasoning for every Not Started item: `IDEAS.md`.
+- Long-term shape and V1 constraints (still largely valid, though the "standby pool" framing has been superseded by Decisions 17/18's model): `ROADMAP.md`, `FEATURES.md`.

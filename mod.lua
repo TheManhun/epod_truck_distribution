@@ -13,7 +13,9 @@ function data()
                 },
             },
 
-            minorVersion = 0,
+            minorVersion = 1,
+            dependencies = {
+            },
 
             severityAdd = "NONE",
             severityRemove = "WARNING",

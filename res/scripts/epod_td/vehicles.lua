@@ -1,0 +1,2156 @@
+local config = require("epod_td.config")
+local lines = require("epod_td.lines")
+local stations = require("epod_td.stations")
+local log = require("epod_td.log")
+
+local M = {}
+
+
+-- ============================================================
+-- BASIC VEHICLE ACCESS
+-- ============================================================
+
+function M.get(vehicleId)
+
+    if vehicleId == nil
+        or vehicleId < 0
+    then
+        return nil
+    end
+
+
+    local ok, vehicle =
+        pcall(
+            api.engine.getComponent,
+            vehicleId,
+            api.type.ComponentType.TRANSPORT_VEHICLE
+        )
+
+
+    if not ok then
+        return nil
+    end
+
+
+    return vehicle
+
+end
+
+
+-- ============================================================
+-- VEHICLES ASSIGNED TO LINE
+-- ============================================================
+
+function M.getVehiclesForLine(lineId)
+
+    if lineId == nil then
+        return {}
+    end
+
+
+    local ok, result =
+        pcall(
+            api.engine.system.transportVehicleSystem.getLineVehicles,
+            lineId
+        )
+
+
+    if not ok
+        or result == nil
+    then
+        return {}
+    end
+
+
+    local vehicleIds = {}
+
+
+    for _, vehicleId
+        in ipairs(result)
+    do
+
+        vehicleIds[#vehicleIds + 1] =
+            vehicleId
+
+    end
+
+
+    return vehicleIds
+
+end
+
+
+-- ============================================================
+-- STATE NAME
+-- ============================================================
+
+function M.getStateName(state)
+
+    if state == 0 then
+        return "IN_DEPOT"
+    end
+
+    if state == 1 then
+        return "EN_ROUTE"
+    end
+
+    if state == 2 then
+        return "AT_TERMINAL"
+    end
+
+    if state == 3 then
+        return "GOING_TO_DEPOT"
+    end
+
+
+    return "UNKNOWN_"
+        .. tostring(state)
+
+end
+
+
+-- ============================================================
+-- ROUTE MAP
+--
+-- Build a Lua table describing every stop on the current line.
+--
+-- IMPORTANT:
+-- TransportVehicle.stopIndex appears to use ZERO-BASED route
+-- indexing, while the native Lua stops container is ONE-BASED.
+-- ============================================================
+
+function M.buildRouteMap(lineId)
+
+    local routeMap = {}
+
+    local line =
+        lines.get(lineId)
+
+
+    if line == nil then
+        return routeMap
+    end
+
+
+    local stops =
+        lines.safeField(
+            line,
+            "stops"
+        )
+
+
+    if stops == nil then
+        return routeMap
+    end
+
+
+    local count =
+        lines.safeLength(stops)
+
+
+    for luaIndex = 1, count do
+
+        local stop =
+            stops[luaIndex]
+
+
+        if stop ~= nil then
+
+            local stationGroup =
+                lines.safeField(
+                    stop,
+                    "stationGroup"
+                )
+
+
+            local name =
+                stations.getEntityName(
+                    stationGroup
+                )
+
+
+            local routeIndex =
+                luaIndex - 1
+
+
+            local role =
+                "DESTINATION"
+
+
+            if name
+                == config.PARK_NAME
+            then
+
+                role =
+                    "PARK"
+
+            elseif name
+                == config.HUB_NAME
+            then
+
+                role =
+                    "HUB"
+
+            end
+
+
+            routeMap[routeIndex] = {
+
+                stopIndex =
+                    routeIndex,
+
+                stationGroup =
+                    stationGroup,
+
+                name =
+                    name,
+
+                role =
+                    role
+
+            }
+
+        end
+
+    end
+
+
+    return routeMap
+
+end
+
+
+-- ============================================================
+-- READ ONE VEHICLE
+-- ============================================================
+
+function M.inspect(
+    vehicleId,
+    routeMap
+)
+
+    local vehicle =
+        M.get(vehicleId)
+
+
+    if vehicle == nil then
+
+        return {
+            id = vehicleId,
+            valid = false
+        }
+
+    end
+
+
+    local state =
+        lines.safeField(
+            vehicle,
+            "state"
+        )
+
+    local lineId =
+        lines.safeField(
+            vehicle,
+            "line"
+        )
+
+    local stopIndex =
+        lines.safeField(
+            vehicle,
+            "stopIndex"
+        )
+
+    local arrivalStationTerminal =
+        lines.safeField(
+            vehicle,
+            "arrivalStationTerminal"
+        )
+
+    local arrivalStationTerminalLocked =
+        lines.safeField(
+            vehicle,
+            "arrivalStationTerminalLocked"
+        )
+
+    local timeUntilLoad =
+        lines.safeField(
+            vehicle,
+            "timeUntilLoad"
+        )
+
+    local timeUntilCloseDoors =
+        lines.safeField(
+            vehicle,
+            "timeUntilCloseDoors"
+        )
+
+    local timeUntilDeparture =
+        lines.safeField(
+            vehicle,
+            "timeUntilDeparture"
+        )
+
+    local daysAtTerminal =
+        lines.safeField(
+            vehicle,
+            "daysAtTerminal"
+        )
+
+    local doorsOpen =
+        lines.safeField(
+            vehicle,
+            "doorsOpen"
+        )
+
+    local autoDeparture =
+        lines.safeField(
+            vehicle,
+            "autoDeparture"
+        )
+
+    local userStopped =
+        lines.safeField(
+            vehicle,
+            "userStopped"
+        )
+
+    local noPath =
+        lines.safeField(
+            vehicle,
+            "noPath"
+        )
+
+    local depot =
+        lines.safeField(
+            vehicle,
+            "depot"
+        )
+
+
+    local routeStop = nil
+
+
+    if routeMap ~= nil
+        and stopIndex ~= nil
+    then
+
+        routeStop =
+            routeMap[stopIndex]
+
+    end
+
+
+    local routeStopName =
+        "UNKNOWN"
+
+    local routeRole =
+        "UNKNOWN"
+
+    local stationGroup =
+        nil
+
+
+    if routeStop ~= nil then
+
+        routeStopName =
+            routeStop.name
+
+        routeRole =
+            routeStop.role
+
+        stationGroup =
+            routeStop.stationGroup
+
+    end
+
+
+    local parkServicing =
+        routeRole == "PARK"
+        and doorsOpen == true
+        and timeUntilDeparture ~= nil
+        and timeUntilDeparture > 0
+
+    local parkBound =
+        routeRole == "PARK"
+        and not parkServicing
+
+
+    return {
+
+        id =
+            vehicleId,
+
+        valid =
+            true,
+
+        name =
+            stations.getEntityName(
+                vehicleId
+            ),
+
+        line =
+            lineId,
+
+        state =
+            state,
+
+        stateName =
+            M.getStateName(
+                state
+            ),
+
+        stopIndex =
+            stopIndex,
+
+        routeStopName =
+            routeStopName,
+
+        routeRole =
+            routeRole,
+
+        routeStationGroup =
+            stationGroup,
+
+        parkAssociated =
+            routeRole == "PARK",
+
+        parkServicing =
+            parkServicing,
+
+        parkBound =
+            parkBound,
+
+        arrivalStationTerminal =
+            arrivalStationTerminal,
+
+        arrivalStationTerminalLocked =
+            arrivalStationTerminalLocked,
+
+        timeUntilLoad =
+            timeUntilLoad,
+
+        timeUntilCloseDoors =
+            timeUntilCloseDoors,
+
+        timeUntilDeparture =
+            timeUntilDeparture,
+
+        daysAtTerminal =
+            daysAtTerminal,
+
+        doorsOpen =
+            doorsOpen,
+
+        autoDeparture =
+            autoDeparture,
+
+        userStopped =
+            userStopped,
+
+        noPath =
+            noPath,
+
+        depot =
+            depot
+
+    }
+
+end
+
+
+-- ============================================================
+-- FIND PARK-ASSOCIATED VEHICLES
+--
+-- IMPORTANT:
+-- This does NOT yet mean "physically parked".
+--
+-- It only means TransportVehicle.stopIndex currently points to
+-- one of the route's EPOD Truck Park entries.
+-- ============================================================
+
+function M.findParkAssociatedVehicles(
+    lineId
+)
+
+    local routeMap =
+        M.buildRouteMap(
+            lineId
+        )
+
+
+    local vehicleIds =
+        M.getVehiclesForLine(
+            lineId
+        )
+
+
+    local result = {}
+
+
+    for _, vehicleId
+        in ipairs(vehicleIds)
+    do
+
+        local info =
+            M.inspect(
+                vehicleId,
+                routeMap
+            )
+
+
+        if info.valid
+            and info.parkAssociated
+        then
+
+            result[#result + 1] =
+                info
+
+        end
+
+    end
+
+
+    return result
+
+end
+
+
+-- ============================================================
+-- COPY LINE VEHICLE INFO
+--
+-- Required by route_injector.lua.
+-- This does NOT control trucks.
+-- ============================================================
+
+function M.copyLineVehicleInfo(
+    sourceLine,
+    destinationLine
+)
+
+    local sourceVehicleInfo =
+        lines.safeField(
+            sourceLine,
+            "vehicleInfo"
+        )
+
+    local destinationVehicleInfo =
+        lines.safeField(
+            destinationLine,
+            "vehicleInfo"
+        )
+
+
+    if sourceVehicleInfo == nil
+        or destinationVehicleInfo == nil
+    then
+        return
+    end
+
+
+    local defaultPrice =
+        lines.safeField(
+            sourceVehicleInfo,
+            "defaultPrice"
+        )
+
+
+    if defaultPrice ~= nil then
+
+        pcall(
+            function()
+
+                destinationVehicleInfo.defaultPrice =
+                    defaultPrice
+
+            end
+        )
+
+    end
+
+
+    local sourceModes =
+        lines.safeField(
+            sourceVehicleInfo,
+            "transportModes"
+        )
+
+    local destinationModes =
+        lines.safeField(
+            destinationVehicleInfo,
+            "transportModes"
+        )
+
+
+    lines.copyNativeSequence(
+        sourceModes,
+        destinationModes
+    )
+
+end
+
+
+-- ============================================================
+-- ROUTE MAP REPORT
+-- ============================================================
+
+local function printRouteMap(
+    routeMap
+)
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "VEHICLE SCANNER ROUTE MAP"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+
+    for stopIndex = 0, 999 do
+
+        local stop =
+            routeMap[stopIndex]
+
+
+        if stop ~= nil then
+
+            log.info(
+                tostring(stopIndex)
+                    .. " | "
+                    .. tostring(stop.role)
+                    .. " | "
+                    .. tostring(stop.name)
+                    .. " | group="
+                    .. tostring(
+                        stop.stationGroup
+                    )
+            )
+
+        elseif stopIndex > 20 then
+
+            break
+
+        end
+
+    end
+
+end
+
+
+-- ============================================================
+-- PARK SUMMARY
+-- ============================================================
+
+local function printParkSummary(
+    parkVehicles
+)
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "PARK VEHICLE CLASSIFICATION"
+    )
+
+    log.info(
+        "READ ONLY - NO VEHICLE CONTROL"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    local servicing = {}
+    local bound = {}
+
+    for _, info
+        in ipairs(parkVehicles)
+    do
+
+        if info.parkServicing then
+
+            servicing[
+                #servicing + 1
+            ] =
+                info
+
+        else
+
+            bound[
+                #bound + 1
+            ] =
+                info
+
+        end
+
+    end
+
+    log.info(
+        "PARK-SERVICING count: "
+            .. tostring(
+                #servicing
+            )
+    )
+
+    log.info(
+        "PARK-BOUND count: "
+            .. tostring(
+                #bound
+            )
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "PARK-SERVICING VEHICLES"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    if #servicing == 0 then
+
+        log.info(
+            "NONE"
+        )
+
+    else
+
+        for _, info
+            in ipairs(servicing)
+        do
+
+            log.info(
+                tostring(info.name)
+                    .. " | entity="
+                    .. tostring(info.id)
+            )
+
+            log.info(
+                "  Park stopIndex: "
+                    .. tostring(
+                        info.stopIndex
+                    )
+            )
+
+            log.info(
+                "  state: "
+                    .. tostring(
+                        info.stateName
+                    )
+            )
+
+            log.info(
+                "  doorsOpen: "
+                    .. tostring(
+                        info.doorsOpen
+                    )
+            )
+
+            log.info(
+                "  timeUntilDeparture: "
+                    .. tostring(
+                        info.timeUntilDeparture
+                    )
+            )
+
+            log.info(
+                "  terminalLocked: "
+                    .. tostring(
+                        info.arrivalStationTerminalLocked
+                    )
+            )
+
+            log.info(
+                "----------------------------------------"
+            )
+
+        end
+
+    end
+
+    log.info(
+        "PARK-BOUND VEHICLES"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    if #bound == 0 then
+
+        log.info(
+            "NONE"
+        )
+
+    else
+
+        for _, info
+            in ipairs(bound)
+        do
+
+            log.info(
+                tostring(info.name)
+                    .. " | entity="
+                    .. tostring(info.id)
+            )
+
+            log.info(
+                "  Park stopIndex: "
+                    .. tostring(
+                        info.stopIndex
+                    )
+            )
+
+            log.info(
+                "  state: "
+                    .. tostring(
+                        info.stateName
+                    )
+            )
+
+            log.info(
+                "  doorsOpen: "
+                    .. tostring(
+                        info.doorsOpen
+                    )
+            )
+
+            log.info(
+                "  timeUntilDeparture: "
+                    .. tostring(
+                        info.timeUntilDeparture
+                    )
+            )
+
+            log.info(
+                "  terminalLocked: "
+                    .. tostring(
+                        info.arrivalStationTerminalLocked
+                    )
+            )
+
+            log.info(
+                "----------------------------------------"
+            )
+
+        end
+
+    end
+
+end
+
+
+-- ============================================================
+-- FULL READ-ONLY SCANNER REPORT
+-- ============================================================
+
+function M.printScannerReport(
+    lineId
+)
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "VEHICLE SCANNER READ-ONLY TEST"
+    )
+
+    log.info(
+        "NO VEHICLE CONTROL"
+    )
+
+    log.info(
+        "Managed line: "
+            .. lines.getName(
+                lineId
+            )
+    )
+
+    log.info(
+        "Line entity: "
+            .. tostring(
+                lineId
+            )
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+
+    local routeMap =
+        M.buildRouteMap(
+            lineId
+        )
+
+
+    printRouteMap(
+        routeMap
+    )
+
+
+    local vehicleIds =
+        M.getVehiclesForLine(
+            lineId
+        )
+
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "Vehicles assigned to line: "
+            .. tostring(
+                #vehicleIds
+            )
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+
+    local parkVehicles = {}
+
+
+    for index, vehicleId
+        in ipairs(vehicleIds)
+    do
+
+        local info =
+            M.inspect(
+                vehicleId,
+                routeMap
+            )
+
+
+        if info.valid then
+
+            log.info(
+                string.format(
+                    "Vehicle %02d | entity=%s | name=%s",
+                    index,
+                    tostring(
+                        vehicleId
+                    ),
+                    tostring(
+                        info.name
+                    )
+                )
+            )
+
+            log.info(
+                "  state: "
+                    .. tostring(
+                        info.state
+                    )
+                    .. " ("
+                    .. tostring(
+                        info.stateName
+                    )
+                    .. ")"
+            )
+
+            log.info(
+                "  stopIndex: "
+                    .. tostring(
+                        info.stopIndex
+                    )
+            )
+
+            log.info(
+                "  route stop: "
+                    .. tostring(
+                        info.routeStopName
+                    )
+            )
+
+            log.info(
+                "  route role: "
+                    .. tostring(
+                        info.routeRole
+                    )
+            )
+
+            log.info(
+                "  PARK-associated: "
+                    .. tostring(
+                        info.parkAssociated
+                    )
+            )
+
+            log.info(
+                "  PARK-servicing: "
+                    .. tostring(
+                        info.parkServicing
+                    )
+            )
+
+            log.info(
+                "  PARK-bound: "
+                    .. tostring(
+                        info.parkBound
+                    )
+            )
+
+            log.info(
+                "  doorsOpen: "
+                    .. tostring(
+                        info.doorsOpen
+                    )
+            )
+
+            log.info(
+                "  daysAtTerminal: "
+                    .. tostring(
+                        info.daysAtTerminal
+                    )
+            )
+
+            log.info(
+                "  timeUntilDeparture: "
+                    .. tostring(
+                        info.timeUntilDeparture
+                    )
+            )
+
+            log.info(
+                "  arrivalStationTerminalLocked: "
+                    .. tostring(
+                        info.arrivalStationTerminalLocked
+                    )
+            )
+
+            log.info(
+                "  userStopped: "
+                    .. tostring(
+                        info.userStopped
+                    )
+            )
+
+            log.info(
+                "  noPath: "
+                    .. tostring(
+                        info.noPath
+                    )
+            )
+
+
+            if info.parkAssociated then
+
+                parkVehicles[
+                    #parkVehicles + 1
+                ] =
+                    info
+
+            end
+
+        else
+
+            log.info(
+                "Vehicle "
+                    .. tostring(
+                        vehicleId
+                    )
+                    .. " could not be inspected."
+            )
+
+        end
+
+
+        log.info(
+            "----------------------------------------"
+        )
+
+    end
+
+
+    printParkSummary(
+        parkVehicles
+    )
+
+
+    return {
+
+        vehicleIds =
+            vehicleIds,
+
+        parkVehicles =
+            parkVehicles,
+
+        routeMap =
+            routeMap
+
+    }
+
+end
+
+
+function M.findAvailableAtPark(lineId)
+
+    local routeMap =
+        M.buildRouteMap(
+            lineId
+        )
+
+    local vehicleIds =
+        M.getVehiclesForLine(
+            lineId
+        )
+
+    local available = {}
+
+    for _, vehicleId
+        in ipairs(vehicleIds)
+    do
+
+        local info =
+            M.inspect(
+                vehicleId,
+                routeMap
+            )
+
+        if info.valid
+            and info.parkServicing
+        then
+
+            available[
+                #available + 1
+            ] =
+                info
+
+        end
+
+    end
+
+    return available
+
+end
+
+
+local function readFirstKnownField(object, fieldNames)
+    if object == nil then
+        return nil
+    end
+
+    for _, fieldName in ipairs(fieldNames) do
+        local ok, value = pcall(
+            function()
+                return object[fieldName]
+            end
+        )
+
+        if ok and value ~= nil then
+            return value
+        end
+    end
+
+    return nil
+end
+
+
+function M.printLiveCargoTruckInventory()
+    local ok, lineIds = pcall(
+        function()
+            return game.interface.getLines()
+        end
+    )
+
+    if not ok or lineIds == nil then
+        log.info("LIVE CARGO LINE INVENTORY: no lines were available.")
+        return {}
+    end
+
+    local eligible = {}
+
+    log.info("----------------------------------------")
+    log.info("LIVE CARGO LINE INVENTORY")
+    log.info("READ-ONLY: no vehicle or line was modified.")
+    log.info("ALL LINE ENTITIES: no filter applied.")
+    log.info("----------------------------------------")
+
+    for _, lineId in ipairs(lineIds) do
+        local line = lines.get(lineId)
+        local lineName = lines.getName(lineId)
+        local stops = line and lines.safeField(line, "stops") or nil
+        local stopCount = lines.safeLength(stops)
+        local vehicleIds = M.getVehiclesForLine(lineId)
+        local vehicleCount = #vehicleIds
+        local stopIds = {}
+
+        for stopIndex = 1, stopCount do
+            local stop = stops and stops[stopIndex] or nil
+            if stop ~= nil then
+                stopIds[#stopIds + 1] = tostring(stop)
+            end
+        end
+
+        local transportMode = nil
+        local transportType = nil
+        local lineType = nil
+        local lineTypeRaw = nil
+        local transportModes = nil
+
+        if line ~= nil then
+            transportMode = readFirstKnownField(line, { "transportMode", "transportType", "lineType", "type" })
+            transportType = readFirstKnownField(line, { "transportType", "transportMode", "lineType", "type" })
+            lineType = readFirstKnownField(line, { "lineType", "type", "transportType", "transportMode" })
+            lineTypeRaw = readFirstKnownField(line, { "type", "lineType", "transportType", "transportMode" })
+            transportModes = lines.safeField(line, "transportModes")
+        end
+
+        local roadTruckValue = tostring(transportMode)
+        local cargoPassengerValue = tostring(lineTypeRaw)
+
+        local nameText = tostring(lineName)
+        local isTruckLike =
+            nameText:lower():find("truck") ~= nil
+            or nameText:lower():find("cargo") ~= nil
+            or roadTruckValue:lower():find("road") ~= nil
+            or roadTruckValue:lower():find("truck") ~= nil
+            or roadTruckValue:lower():find("cargo") ~= nil
+
+        local reason = "REJECTED: current eligibility test is false"
+        if stopCount == 0 then
+            reason = "REJECTED: stopCount == 0"
+        elseif vehicleCount == 0 then
+            reason = "REJECTED: vehicleCount == 0"
+        elseif isTruckLike then
+            reason = "ACCEPTED: current isTruckLike predicate matched the line name or transport value"
+        else
+            reason = "REJECTED: current isTruckLike predicate did not match the line name or transport value"
+        end
+
+        log.info(
+            string.format(
+                "Line entity=%s | name=%s | stopCount=%d | vehicleCount=%d",
+                tostring(lineId),
+                tostring(lineName),
+                stopCount,
+                vehicleCount
+            )
+        )
+        log.info("  fields used for transport-type detection: transportMode, transportType, lineType, type")
+        log.info("  transportMode = " .. tostring(transportMode))
+        log.info("  transportType = " .. tostring(transportType))
+        log.info("  lineType = " .. tostring(lineType))
+        log.info("  type = " .. tostring(lineTypeRaw))
+        log.info("  line.transportModes = " .. tostring(transportModes))
+        log.info("  road/truck decision raw value = " .. roadTruckValue)
+        log.info("  cargo/passenger decision raw value = " .. cargoPassengerValue)
+        log.info("  stopEntityIds = " .. table.concat(stopIds, ", ") )
+        log.info("  assignedVehicleIds = " .. table.concat(vehicleIds, ", ") )
+        log.info("  eligibilityPredicate = " .. tostring(isTruckLike))
+        log.info("  reason = " .. reason)
+
+        if isTruckLike then
+            eligible[#eligible + 1] = {
+                id = lineId,
+                name = lineName,
+                transport = roadTruckValue,
+                stopCount = stopCount,
+                stopIds = stopIds,
+                vehicles = vehicleIds,
+                vehicleCount = vehicleCount,
+                reason = reason
+            }
+        end
+
+        log.info("----------------------------------------")
+    end
+
+    if #eligible == 0 then
+        log.info("No eligible cargo truck line was detected in the current save.")
+        log.info("----------------------------------------")
+        return eligible
+    end
+
+    for index, lineRecord in ipairs(eligible) do
+        log.info(
+            string.format(
+                "ELIGIBLE LINE %d | entity=%s | name=%s | transport=%s | stops=%d | vehicles=%d",
+                index,
+                tostring(lineRecord.id),
+                tostring(lineRecord.name),
+                tostring(lineRecord.transport),
+                lineRecord.stopCount,
+                lineRecord.vehicleCount
+            )
+        )
+        log.info("  reason = " .. tostring(lineRecord.reason))
+
+        for _, vehicleId in ipairs(lineRecord.vehicles) do
+            local vehicle = M.get(vehicleId)
+            local state = nil
+            local stopIndex = nil
+            local cargo = nil
+            local moving = nil
+            local waiting = nil
+            local atStop = nil
+
+            if vehicle ~= nil then
+                state = readFirstKnownField(vehicle, { "state", "currentState" })
+                stopIndex = readFirstKnownField(vehicle, { "stopIndex", "currentStopIndex" })
+                cargo = readFirstKnownField(vehicle, { "cargo", "cargoLoad", "load", "currentCargo", "loadedCargo" })
+                moving = readFirstKnownField(vehicle, { "moving", "isMoving", "inMotion" })
+                waiting = readFirstKnownField(vehicle, { "waiting", "isWaiting" })
+                atStop = readFirstKnownField(vehicle, { "atStop", "isAtStop" })
+            end
+
+            local movementState = "UNKNOWN"
+            if moving == true then
+                movementState = "MOVING"
+            elseif waiting == true then
+                movementState = "WAITING"
+            elseif atStop == true then
+                movementState = "AT_STOP"
+            elseif stopIndex ~= nil then
+                movementState = "AT_STOP"
+            end
+
+            log.info(
+                string.format(
+                    "  vehicle | entity=%s | stopIndex=%s | state=%s | cargo=%s | movement=%s",
+                    tostring(vehicleId),
+                    tostring(stopIndex),
+                    tostring(state),
+                    tostring(cargo),
+                    tostring(movementState)
+                )
+            )
+        end
+
+        log.info("----------------------------------------")
+    end
+
+    return eligible
+end
+
+
+-- ============================================================
+-- ROAD/TRUCK LINE CLASSIFICATION
+--
+-- Classifies a line by the carrier of its currently-assigned
+-- vehicles rather than by line/station NAME. game.interface.
+-- getVehicles({ carrier = "ROAD" }) is a base-game filter proven
+-- in shipped TF2 campaign mission scripts (e.g.
+-- mods/urbangames_campaign_mission_01_1/res/scripts/part2.lua,
+-- which calls game.interface.getVehicles({ carrier = "ROAD" })
+-- and cross-references the returned entity IDs against
+-- getEntity(id).line) but NOT YET independently confirmed against
+-- a live test line in this mod the way demand.lua's
+-- SIM_ENTITY_AT_TERMINAL scan was proven. Logged verbosely below
+-- so the next EPOD-TD session capture can confirm real output.
+--
+-- Replaces the previous line.transportMode / line NAME
+-- string-matching heuristic, which silently failed to classify
+-- any truck line whose name did not contain "truck" or "cargo"
+-- (transportMode, transportType, lineType and type all read nil
+-- on real lines -- see EPOD-LOG.txt).
+--
+-- KNOWN LIMITATION: a line with zero currently-assigned vehicles
+-- has no vehicle to check the carrier of, so it is reported
+-- UNCLASSIFIED rather than guessed true or false. Whether an
+-- empty line needs classifying at all is an open follow-up, not
+-- solved here -- see DECISIONS.md Outstanding Unknowns.
+-- ============================================================
+
+local function buildRoadVehicleIdSet()
+
+    local ok, roadVehicleIds = pcall(
+        function()
+            return game.interface.getVehicles({ carrier = "ROAD" })
+        end
+    )
+
+    if not ok or roadVehicleIds == nil then
+        log.info(
+            "ROAD VEHICLE LOOKUP FAILED: "
+                .. tostring(roadVehicleIds)
+        )
+        return {}
+    end
+
+    local roadSet = {}
+
+    for _, vehicleId in ipairs(roadVehicleIds) do
+        roadSet[vehicleId] = true
+    end
+
+    log.debug(
+        "ROAD VEHICLE LOOKUP: "
+            .. tostring(#roadVehicleIds)
+            .. " road-carrier vehicles found game-wide."
+    )
+
+    return roadSet
+end
+
+
+-- classification.status is one of "ROAD", "NOT_ROAD", "UNCLASSIFIED".
+function M.classifyLineCarrier(lineId, roadVehicleSet)
+    local vehicleIds = M.getVehiclesForLine(lineId)
+
+    if #vehicleIds == 0 then
+        return {
+            status = "UNCLASSIFIED",
+            reason = "no-vehicles-assigned"
+        }
+    end
+
+    for _, vehicleId in ipairs(vehicleIds) do
+        if roadVehicleSet[vehicleId] then
+            return {
+                status = "ROAD",
+                matchedVehicleId = vehicleId
+            }
+        end
+    end
+
+    return { status = "NOT_ROAD" }
+end
+
+
+function M.isRoadTruckLine(lineId)
+    if lineId == nil or lineId < 0 then
+        return false
+    end
+
+    local roadVehicleSet = buildRoadVehicleIdSet()
+    local classification = M.classifyLineCarrier(lineId, roadVehicleSet)
+
+    if classification.status == "UNCLASSIFIED" then
+        log.debug(
+            "Line " .. tostring(lineId)
+                .. " (" .. lines.getName(lineId) .. ")"
+                .. " has no assigned vehicles; carrier UNCLASSIFIED, not guessed."
+        )
+    end
+
+    return classification.status == "ROAD"
+end
+
+
+-- ============================================================
+-- MANAGED LINES FOR STATION
+--
+-- Read-only. Returns all road/truck lines whose stop list
+-- includes the given stationGroup, along with their assigned
+-- vehicle counts.
+-- ============================================================
+
+function M.getManagedLinesForStation(stationGroupId)
+    local result = {}
+
+    if stationGroupId == nil or stationGroupId < 0 then
+        return result
+    end
+
+    local ok, allLineIds = pcall(
+        function()
+            return game.interface.getLines()
+        end
+    )
+
+    if not ok or allLineIds == nil then
+        return result
+    end
+
+    local roadVehicleSet = buildRoadVehicleIdSet()
+
+    for _, lineId in ipairs(allLineIds) do
+        local classification = M.classifyLineCarrier(lineId, roadVehicleSet)
+
+        if classification.status == "UNCLASSIFIED" then
+            log.debug(
+                "Line " .. tostring(lineId)
+                    .. " (" .. lines.getName(lineId) .. ")"
+                    .. " has no assigned vehicles; carrier UNCLASSIFIED, not guessed."
+            )
+        end
+
+        if classification.status == "ROAD" then
+            local line = lines.get(lineId)
+            local lineStops = line and lines.safeField(line, "stops") or nil
+            local stopCount = lines.safeLength(lineStops)
+            local includesStation = false
+
+            for stopIndex = 1, stopCount do
+                local stop = lineStops[stopIndex]
+                if stop ~= nil then
+                    local stopGroup = lines.safeField(stop, "stationGroup")
+                    if stopGroup == stationGroupId then
+                        includesStation = true
+                        break
+                    end
+                end
+            end
+
+            if includesStation then
+                local vehicleIds = M.getVehiclesForLine(lineId)
+                local destinations = {}
+                local seenDestinations = {}
+
+                -- Previously excluded stopGroup == stationGroupId
+                -- (the focused hub's own stop), on the assumption
+                -- that a line only carries demand outward from the
+                -- hub. Confirmed live that's wrong: demand.scan()
+                -- already reports real waiting cargo destined back
+                -- toward the hub (see demand.lua's buildDestinationMap
+                -- generalization), but it never got a row here, so
+                -- the hub's own return-direction demand was
+                -- invisible unless the player switched focus to the
+                -- other station. Included now.
+                --
+                -- The "(return)" text suffix that used to mark this
+                -- case was dropped: the GUI now shows direction with
+                -- a "->"/"<-" arrow prefix instead (comparing
+                -- destination.stationGroup against the focused hub
+                -- itself), so baking the same distinction into the
+                -- name here would just be redundant with what the
+                -- panel already renders.
+                for stopIndex = 1, stopCount do
+                    local stop = lineStops[stopIndex]
+                    if stop ~= nil then
+                        local stopGroup = lines.safeField(stop, "stationGroup")
+                        local stopName = stations.getEntityName(stopGroup)
+                        if stopGroup ~= nil
+                            and stopName ~= config.PARK_NAME
+                            and not seenDestinations[stopGroup]
+                        then
+                            seenDestinations[stopGroup] = true
+
+                            destinations[#destinations + 1] = {
+                                stationGroup = stopGroup,
+                                name = stopName,
+                            }
+                        end
+                    end
+                end
+
+                result[#result + 1] = {
+                    id = lineId,
+                    name = lines.getName(lineId),
+                    vehicleCount = #vehicleIds,
+                    vehicles = vehicleIds,
+                    destinations = destinations,
+                }
+            end
+        end
+    end
+
+    return result
+end
+
+
+-- ============================================================
+-- ENTITY INFO DUMP (game.interface.getEntity)
+--
+-- Read-only, one level deep. game.interface.getEntity() already
+-- returned useful plain Lua tables (not native userdata, so pairs()
+-- works cleanly, unlike api.engine.getComponent's structures) for
+-- LINE, STATION_GROUP, and STATION in the "Auto Line Namer"
+-- workshop mod's bundled reference dump -- LINE's included
+-- itemsTransported, a real per-cargo-type running total. Whether it
+-- exposes anything about a VEHICLE's current onboard load has never
+-- been checked in this codebase; TRANSPORT_VEHICLE's own component
+-- fields (see general.lua's dump and vehicles.inspect() above) do
+-- NOT include one. This exists to answer that directly instead of
+-- assuming either way, ahead of building any "skip vehicles that
+-- are currently loaded" reassignment logic.
+-- ============================================================
+
+function M.dumpEntityInfo(entityId, label)
+
+    if entityId == nil then
+        log.info(tostring(label) .. ": entityId is nil.")
+        return nil
+    end
+
+    local ok, entity =
+        pcall(game.interface.getEntity, entityId)
+
+    if not ok or entity == nil then
+
+        log.info(
+            tostring(label)
+                .. ": game.interface.getEntity("
+                .. tostring(entityId)
+                .. ") failed: "
+                .. tostring(entity)
+        )
+
+        return nil
+
+    end
+
+    log.info("----------------------------------------")
+    log.info(tostring(label) .. " (entity=" .. tostring(entityId) .. ")")
+    log.info("----------------------------------------")
+
+    local okIter, iterErr =
+        pcall(function()
+
+            for key, value in pairs(entity) do
+
+                local valueType = type(value)
+
+                if valueType == "table" then
+
+                    local nested = {}
+
+                    for nestedKey, nestedValue in pairs(value) do
+                        nested[#nested + 1] =
+                            tostring(nestedKey) .. "=" .. tostring(nestedValue)
+                    end
+
+                    log.info(
+                        "  " .. tostring(key)
+                            .. " = { " .. table.concat(nested, ", ") .. " }"
+                    )
+
+                else
+
+                    log.info(
+                        "  " .. tostring(key) .. " = " .. tostring(value)
+                    )
+
+                end
+
+            end
+
+        end)
+
+    if not okIter then
+        log.info("  <not enumerable: " .. tostring(iterErr) .. ">")
+    end
+
+    log.info("----------------------------------------")
+
+    return entity
+
+end
+
+
+-- ============================================================
+-- SIM CARGO SNAPSHOT FOR A LINE
+--
+-- api.engine.system.simCargoSystem.getSimCargosForLine(lineId) and
+-- the SIM_CARGO component's `vehicleUsed` field: SIM_CARGO =
+-- { cargoType, targetEntity, sourceEntity, speed, vehicleUsed,
+-- startTime }. Both confirmed live -- the now-removed loaded-vehicle
+-- reassignment test called this and logged real cargoType/
+-- vehicleUsed values back. vehicleUsed = true is the closest
+-- available signal for "this cargo entity is currently loaded onto
+-- a vehicle" as opposed to sitting idle/waiting; there is no
+-- per-vehicle cargo list exposed on TRANSPORT_VEHICLE itself, so
+-- this is line-scoped, not vehicle-scoped -- only unambiguous when
+-- exactly one vehicle is on the line being snapshotted (true for
+-- most managed split lines in their steady state).
+--
+-- Kept even though nothing currently calls it: this is the best
+-- available proxy for the still-pending "don't reassign a vehicle
+-- that's currently carrying a load" check (requested live, not yet
+-- built -- see the game.interface.getEntity(vehicleId) diagnostic
+-- in epod_truck_distribution.lua's startup diagnostics, checking
+-- whether TF2 exposes something more direct first).
+-- ============================================================
+
+function M.snapshotLineCargo(lineId)
+
+    local result = {
+        lineId = lineId,
+        totalCargo = 0,
+        onVehicleCargo = 0,
+        entities = {}
+    }
+
+    if lineId == nil or lineId < 0 then
+        return result
+    end
+
+    local ok, cargoIds =
+        pcall(
+            api.engine.system.simCargoSystem.getSimCargosForLine,
+            lineId
+        )
+
+    if not ok or cargoIds == nil then
+
+        log.info(
+            "SNAPSHOT LINE CARGO FAILED for line "
+                .. tostring(lineId)
+                .. ": "
+                .. tostring(cargoIds)
+        )
+
+        return result
+    end
+
+    for _, cargoId in ipairs(cargoIds) do
+
+        local okComp, cargo =
+            pcall(
+                api.engine.getComponent,
+                cargoId,
+                api.type.ComponentType.SIM_CARGO
+            )
+
+        if okComp and cargo ~= nil then
+
+            local cargoType =
+                lines.safeField(cargo, "cargoType")
+
+            local vehicleUsed =
+                lines.safeField(cargo, "vehicleUsed")
+
+            result.totalCargo =
+                result.totalCargo + 1
+
+            if vehicleUsed == true then
+                result.onVehicleCargo =
+                    result.onVehicleCargo + 1
+            end
+
+            result.entities[#result.entities + 1] = {
+                id = cargoId,
+                cargoType = cargoType,
+                vehicleUsed = vehicleUsed
+            }
+
+        end
+
+    end
+
+    return result
+
+end
+
+
+function M.logCargoSnapshot(label, snapshot)
+
+    log.info(
+        label
+            .. " | line=" .. tostring(snapshot.lineId)
+            .. " | totalCargo=" .. tostring(snapshot.totalCargo)
+            .. " | onVehicleCargo=" .. tostring(snapshot.onVehicleCargo)
+    )
+
+    for _, entry in ipairs(snapshot.entities) do
+
+        log.info(
+            "  cargo entity=" .. tostring(entry.id)
+                .. " | cargoType=" .. tostring(entry.cargoType)
+                .. " | vehicleUsed=" .. tostring(entry.vehicleUsed)
+        )
+
+    end
+
+end
+
+
+-- ============================================================
+-- ONBOARD CARGO LOAD (per-vehicle, live-confirmed)
+--
+-- game.interface.getEntity(vehicleId) exposes a real `cargoLoad`
+-- table -- e.g. { FOOD = 4 }, empty {} when carrying nothing --
+-- confirmed live via route_injector.M.runLoadedVehicleJourneyTestStep
+-- (see PROGRESS.md, DECISIONS.md). This was the missing mechanism
+-- for the "don't reassign a vehicle that's currently carrying a
+-- load" check requested live: previously there was no proven way to
+-- read a specific vehicle's onboard cargo at all, only the
+-- line-scoped SIM_CARGO/vehicleUsed proxy (snapshotLineCargo above),
+-- which is ambiguous whenever more than one vehicle shares a line.
+-- ============================================================
+
+function M.getCargoLoad(vehicleId)
+
+    if vehicleId == nil then
+        return nil
+    end
+
+    local ok, entity =
+        pcall(game.interface.getEntity, vehicleId)
+
+    if not ok or entity == nil then
+        return nil
+    end
+
+    return lines.safeField(entity, "cargoLoad")
+
+end
+
+
+-- Returns true (confirmed empty), false (confirmed carrying
+-- something), or nil (could not be determined -- entity lookup
+-- failed). Callers should treat nil the same as "loaded": if it
+-- can't be confirmed empty, don't reassign it.
+function M.isVehicleEmpty(vehicleId)
+
+    local cargoLoad = M.getCargoLoad(vehicleId)
+
+    if cargoLoad == nil then
+        return nil
+    end
+
+    local ok, isEmpty =
+        pcall(function()
+            return next(cargoLoad) == nil
+        end)
+
+    if not ok then
+        return nil
+    end
+
+    return isEmpty
+
+end
+
+
+-- ============================================================
+-- LIVE SET-LINE COMMAND
+--
+-- Proven TF2 command path from earlier EPOD-TD testing.
+-- ============================================================
+
+function M.setLine(
+    vehicleId,
+    lineId,
+    stopIndex,
+    callback
+)
+
+    local okCommand,
+        commandOrError =
+            pcall(
+                api.cmd.make.setLine,
+                vehicleId,
+                lineId,
+                stopIndex
+            )
+
+    if not okCommand then
+
+        log.info(
+            "SET LINE COMMAND ERROR: "
+                .. tostring(
+                    commandOrError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    local command =
+        commandOrError
+
+    local okSend,
+        sendError =
+            pcall(
+                function()
+
+                    api.cmd.sendCommand(
+                        command,
+
+                        function(cmd, success)
+
+                            log.info(
+                                "SET LINE RESULT: "
+                                    .. tostring(
+                                        success
+                                    )
+                            )
+
+                            if callback ~= nil then
+                                callback(success)
+                            end
+
+                        end
+                    )
+
+                end
+            )
+
+    if not okSend then
+
+        log.info(
+            "SET LINE SEND ERROR: "
+                .. tostring(
+                    sendError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    return true
+
+end
+
+
+-- ============================================================
+-- LIVE VEHICLE CONTROL HELPERS
+--
+-- Supported TF2 command wrappers for the live experiment.
+-- ============================================================
+
+function M.setManualDeparture(
+    vehicleId,
+    manual,
+    callback
+)
+
+    local okCommand,
+        commandOrError =
+            pcall(
+                api.cmd.make.setVehicleManualDeparture,
+                vehicleId,
+                manual
+            )
+
+    if not okCommand then
+
+        log.info(
+            "SET MANUAL DEPARTURE ERROR: "
+                .. tostring(
+                    commandOrError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    local command =
+        commandOrError
+
+    local okSend,
+        sendError =
+            pcall(
+                function()
+
+                    api.cmd.sendCommand(
+                        command,
+
+                        function(cmd, success)
+
+                            log.info(
+                                "SET MANUAL DEPARTURE RESULT: "
+                                    .. tostring(
+                                        success
+                                    )
+                            )
+
+                            if callback ~= nil then
+                                callback(success)
+                            end
+
+                        end
+                    )
+
+                end
+            )
+
+    if not okSend then
+
+        log.info(
+            "SET MANUAL DEPARTURE SEND ERROR: "
+                .. tostring(
+                    sendError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    return true
+
+end
+
+
+function M.reverseVehicle(
+    vehicleId,
+    callback
+)
+
+    local okCommand,
+        commandOrError =
+            pcall(
+                api.cmd.make.reverseVehicle,
+                vehicleId
+            )
+
+    if not okCommand then
+
+        log.info(
+            "REVERSE VEHICLE COMMAND ERROR: "
+                .. tostring(
+                    commandOrError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    local command =
+        commandOrError
+
+    local okSend,
+        sendError =
+            pcall(
+                function()
+
+                    api.cmd.sendCommand(
+                        command,
+
+                        function(cmd, success)
+
+                            log.info(
+                                "REVERSE VEHICLE RESULT: "
+                                    .. tostring(
+                                        success
+                                    )
+                            )
+
+                            if callback ~= nil then
+                                callback(success)
+                            end
+
+                        end
+                    )
+
+                end
+            )
+
+    if not okSend then
+
+        log.info(
+            "REVERSE VEHICLE SEND ERROR: "
+                .. tostring(
+                    sendError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    return true
+
+end
+
+
+function M.forceDeparture(
+    vehicleId,
+    callback
+)
+
+    local okCommand,
+        commandOrError =
+            pcall(
+                api.cmd.make.setVehicleShouldDepart,
+                vehicleId
+            )
+
+    if not okCommand then
+
+        log.info(
+            "FORCE DEPARTURE COMMAND ERROR: "
+                .. tostring(
+                    commandOrError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    local command =
+        commandOrError
+
+    local okSend,
+        sendError =
+            pcall(
+                function()
+
+                    api.cmd.sendCommand(
+                        command,
+
+                        function(cmd, success)
+
+                            log.info(
+                                "FORCE DEPARTURE RESULT: "
+                                    .. tostring(
+                                        success
+                                    )
+                            )
+
+                            if callback ~= nil then
+                                callback(success)
+                            end
+
+                        end
+                    )
+
+                end
+            )
+
+    if not okSend then
+
+        log.info(
+            "FORCE DEPARTURE SEND ERROR: "
+                .. tostring(
+                    sendError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    return true
+
+end
+
+
+return M

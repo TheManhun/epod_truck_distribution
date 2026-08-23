@@ -166,7 +166,11 @@ The immediate priority is to finish API research and a minimal technical proof-o
 
 ### Consequence
 
-Advanced ideas such as physical Distribution Centres, reverse-in bays, multi-centre sharing, and historical asset pipelines remain recorded as future work, but they do not expand the current implementation scope.
+Advanced ideas such as physical Distribution Centres, reverse-in bays, multi-centre sharing, and historical asset pipelines remain recorded as future work, but they do not expand the current implementation scope. `IDEAS.md` is that deferred ideas/backlog section — new ideas discovered during development land there, unverified and unbuilt, until they're checked against real behavior and graduate into a proper Decision.
+
+### Clarification — the Truck Park model is not the "physical truck parking" non-goal
+
+MASTERPLAN.md lists "physical truck parking or staging area" as an explicit V1 non-goal, meaning the *gameplay feature* of visible trucks occupying a yard. The Truck Park model referenced by `config.PARK_NAME` in `res/scripts/epod_td/config.lua` is not that feature. It is a technical mechanism: routing a vehicle through a real stop forces a genuine stop-arrival event, which is used to work around a cargo-pickup bug that occurs when a vehicle is reassigned to a new destination purely via `setLine` without an intervening real arrival. It exists to make dispatch behave correctly, not to deliver the staging-yard gameplay feature, so its presence does not expand Stage 0's implementation scope or violate the feature freeze.
 
 ## Decision 13 — Unknown API behavior is treated as a blocker, not assumed
 
@@ -224,14 +228,237 @@ The mod should support the game rather than override it. This reduces conflict w
 
 A good implementation is one that integrates with existing game systems rather than replacing them.
 
-## Outstanding Unknowns
+## Decision 17 — V1 dispatch model: mod-created persistent lines, recommend before reassign, no standby yard
+
+### Decision
+
+**Superseded in part by Decision 18** — two claims below are corrected there: persistent services are not limited to existing player-created lines (the mod creates one dedicated line per managed stop, once, during setup), and managed-stop status is not automatic/structural (the player opts a stop in explicitly through a setup step). See Decision 18 for the current setup/allocation model. The rest of this decision (no standby yard, recommend-before-reassign, Hub == Distribution Centre, `reverseVehicle` is not the dispatch mechanism) still stands.
+
+For V1, a "persistent destination service" is a line serving that destination that, once created, is not repeatedly torn down or rebuilt — whether it originates from a line the player already built, or one the mod creates during setup (see Decision 18). Trucks normally stay assigned to their current line. The Distribution brain reads waiting cargo and demand across those lines and, only when a real demand imbalance justifies it, reassigns trucks between the persistent lines. The brain ships with a recommend-only phase first (surface what it would do) before any phase that actually moves trucks live.
+
+There is no standby/holding yard in this model. Trucks with no or light demand on their current line keep running that line, potentially lightly loaded or empty, rather than parking. The Truck Park mechanism referenced by `config.PARK_NAME` (see the Decision 12 clarification) is a technical stop-arrival workaround only — it is explicitly NOT the standby pool, and any resemblance in `vehicles.lua`'s current "PARK-servicing" vehicle classification to a standby pool is incidental, not the intended V1 standby mechanism.
+
+"Hub" (`config.HUB_NAME`) and "Distribution Centre" are the same logical concept for V1: an existing TF2 cargo station the player selects, not a custom placeable construction object. The current selection-driven GUI (whichever station the player has selected in the base game's own UI) is how the Distribution Centre is inspected/configured; a persistent "stays enabled without needing to remain selected" configuration may be added later, but a custom physical building is not required for the dispatch brain to function.
+
+A destination stop becomes "managed" automatically and structurally for V1: any road-cargo line touching the selected hub station has its other stops treated as managed destinations, with no explicit per-stop player registration required. An explicit include/exclude toggle is a possible later UI/polish addition, not a V1 requirement.
+
+The `reverseVehicle` / stop-index "reverse destination test" in `dispatcher.lua` is an investigative proof about vehicle-state introspection, not the intended dispatch mechanism. The intended mechanism (once the brain moves past recommend-only) is controlled line reassignment between existing persistent lines.
+
+### Reason
+
+Constant creation/deletion of lines risks destabilising TF2's cargo routing (see Decision 7). Creating a line once per managed stop and then leaving it alone, reassigning only trucks (not lines) between persistent destinations, keeps the mod inside "dispatch existing vehicles through the player's network" rather than drifting into "the mod builds and rebuilds its own logistics network on every decision." Starting with recommend-only output before live reassignment lets the demand/ranking logic be validated against real save data before it is trusted to move trucks unsupervised.
+
+### Consequence
+
+`Truck - CD - Hendon`'s single-line, repeated Park/Hub/Destination topology is Stage 1 scaffolding used to prove demand-scanning and vehicle introspection — it is not the intended V1 line topology (see Decision 18 for the one-line-per-stop model that replaces it). Standby-pool and physical-parking design questions (Outstanding Unknowns, below) remain open and deferred, not solved by the Park stop. Any future dispatch implementation should target persistent per-stop lines and a recommend-first rollout, not the `reverseVehicle` experiment.
+
+## Decision 18 — Setup-driven managed stop selection with demand-weighted fleet allocation
+
+### Decision
+
+This is the current concrete design path for the V1 dispatch brain, replacing the "reuse existing lines only" and "automatic/structural managed-stop detection" framing in Decision 17 with a more specific model:
+
+1. **Setup is explicit and player-driven.** The GUI panel gains a setup mode: the player selects a candidate stop, and that action is what makes it "managed" — not passive structural detection. This restores MASTERPLAN's original language ("the player... selects which delivery stops each Distribution Centre manages") more precisely than the automatic detection Decision 17 described.
+2. **Selecting a stop creates one dedicated persistent line** from the hub/Distribution Centre to that stop. This line is created once, at setup time, and is not recreated or deleted afterward — it becomes one of the persistent destination services described in Decision 17.
+3. **The player's fixed fleet is initially spread evenly** across all managed lines when they are first set up.
+4. **The dispatch brain then reallocates the surplus toward higher-demand lines** — moving the majority of trucks toward whichever managed destinations show the most backlog, while guaranteeing every managed line keeps at least one truck present at all times. The floor exists because a line with zero vehicles risks never generating a demand signal to recover from — TF2's demand appears to be driven by line/connection presence rather than vehicle capacity (see the capacity note below), so the floor is about presence, not capacity.
+5. **Whether that floor truck should be one of the real fleet, or a separate non-counted "sentinel/service" vehicle (capacity 1, thematically an era-appropriate courier — horse rider in 1850, van in the modern era), is explicitly UNVERIFIED and deferred.** It is a promising refinement — if valid, it removes the floor's draw on the countable fleet entirely, which also sidesteps the edge case where floor-per-line could exceed total fleet size as the number of managed stops grows. It is not committed V1 architecture until tested. See Outstanding Unknowns.
+
+### Reason
+
+An opt-in setup step gives the player explicit, auditable control over what's managed, rather than sweeping in "whatever happens to be adjacent to the hub." Creating the line once at setup time (not on every dispatch decision) keeps this compatible with Decision 7's preference for persistent lines over churn. The even-split-then-reweight allocation model is simple, transparent, and explainable in the GUI, consistent with Decision 14. The floor-per-line rule is a direct response to a real TF2 mechanic risk (a completely unserved line may never register demand), not an arbitrary safety margin.
+
+### Consequence
+
+Decision 17's "existing lines only" and "automatic detection" framing is superseded by this decision for the parts that conflict; its recommend-before-reassign, no-standby-yard, and Hub == Distribution Centre points still stand unchanged. Two new technical unknowns are introduced by this decision and must be proven before it can be trusted in play: whether a truck can be safely reassigned across lines while still carrying loaded cargo, and whether the mod can persist the player's managed-stop selections across a save/reload (nothing in the codebase currently saves any mod state). Both are recorded in Outstanding Unknowns.
+
+## Decision 19 — "Split Into Lines" is live-proven for retrofitting an existing setup
+
+### Decision
+
+`line_splitter.lua`'s `splitLineIntoDestinations`, triggered by a "Split Into Lines" button in the panel, takes an existing multi-destination line (e.g. one combined `Hub -> A -> Hub -> B -> Hub -> C` line, exactly the kind of setup a player retrofitting this mod onto an existing save would already have) and creates one dedicated two-stop line per real destination via `api.cmd.make.createLine`. This is Stage 1 of Decision 18's "one dedicated persistent line per managed stop" model, and it is now live-proven, not just designed: run against the actual test save's real `Truck - CD - Hendon` line (5 real destinations plus the hub's own return entry, correctly excluded), it created all 5 destination lines successfully, processed sequentially with each `createLine` callback awaited before the next was sent, fully logged, zero failures.
+
+Stage 1 is deliberately additive-only: the source line and every vehicle on it are left completely untouched. This was verified in the log itself (`Source line untouched. No vehicles were moved.`) and is a hard boundary, not an incidental detail — moving the source line's real, currently-working fleet onto the new lines is Stage 2, a separate and more consequential action gated on verifying loaded-vehicle cross-line reassignment safety (still an Outstanding Unknown below), not attempted here.
+
+### Reason
+
+Bundling a freshly-proven, low-risk capability (`createLine`) with an unrelated, unverified, higher-risk one (reassigning a live, likely-loaded fleet) in the same action would have repeated exactly the mistake Decision 13 exists to prevent — trusting an assumption because an adjacent fact happened to check out. Splitting the retrofit into two stages lets the player get real, immediately-useful infrastructure (the destination lines exist, ready for Stage 2 once it's built) without staking the player's actual working fleet on an unproven action.
+
+### Consequence
+
+A player adding this mod to an existing save with a combined multi-stop line (the exact scenario this was designed for) can now retrofit it into per-destination lines safely today. Decision 18's allocation model (even split, then demand-weighted reallocation) cannot yet run for real, since Stage 2 (moving vehicles onto the new lines) does not exist yet — that remains the next concrete step once loaded-vehicle reassignment safety is checked.
+
+`line_splitter.lua` copies each new line's terminal assignment directly from the source line's own stop (unchanged behavior, never actively chosen). Across two live test sessions this produced different visible terminal groupings in the game's Terminals tab (first session: all lines on Terminal 1; second session, same code: the 5 new lines on Terminal 2) despite nothing in the terminal-copying code changing between them — most plausibly TF2's own dynamic terminal balancing, not a fixed binding from what's written. This was **deliberately not investigated further**: the new lines currently carry zero vehicles (Stage 2 doesn't exist yet), so there is no real traffic to observe real terminal behavior against. Testing terminal assignment meaningfully requires real vehicles actually running the new lines — i.e. it depends on Stage 2, not the other way around. Revisit once Stage 2 exists and real trucks are moving.
+
+## Decision 20 — Stage 2: assign one vehicle per split line, retire its stop only after that assignment is confirmed
+
+### Decision
+
+`line_splitter.M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplete)`, wired to an "Assign Trucks + Retire Stops" button (config.DEBUG only, manually-triggered), is the first real Stage 2 implementation. For each currently-empty mod-created ("● ") split line at the hub, sequentially: pull one vehicle off the real source line, hold it, `setLine` it onto the split line, release the hold, and — **only if that `setLine` reported success** — rewrite the source line via `updateLine` to remove every occurrence of that destination's stop. If a destination has no vehicle available, or `setLine` is rejected, its stop is deliberately left on the source line so the destination keeps being served the old way rather than being dropped with nothing covering it. This was the literal ordering requested: never retire a stop before its replacement is confirmed live.
+
+It is decoupled from `splitLineIntoDestinations` (Stage 1) on purpose — it re-discovers empty split lines by reading their own two real stops (entity IDs), not by name parsing or by depending on having just run Stage 1 in the same session, so it works the same way regardless of when the split lines were created.
+
+### Reason
+
+This combines two mechanisms that are each independently proven elsewhere in this codebase — `setLine` cross-line reassignment (the two-park test, and `runLoadedVehicleReassignmentTest`) and `updateLine` route rewriting (the original Truck Park stop injection, `route_injector.M.run()`, which already rewrote this exact production line's stops live) — for the first time together, on the real production line, unattended once triggered. Given Decision 13's evidence-first discipline, this is explicitly scoped to the disposable test save, not declared safe for a real save yet.
+
+### Consequence
+
+The one thing this does **not** verify is whether cargo a picked vehicle was already carrying survives the reassignment intact — `runLoadedVehicleReassignmentTest`'s first run was inconclusive (see the Outstanding Unknown below), not positive. Running `assignVehiclesAndRetireStops` is itself now also a real-world data point on that same question, across up to several vehicles at once, so its own log output (and in-game observation of whether each reassigned truck keeps working normally) should be read with that in mind before this is ever considered for a real save.
+
+**Live run result**: all 5 real destinations at Hendon East processed successfully — every `setLine` and every subsequent `updateLine` stop retirement reported `true`, logged in strict order. Post-run demand numbers looked healthy (Queens Road 159 waiting, Alexander Road 163, The Grove 71, Park Avenue 9, Highfield Road 11), confirming the new lines are attracting real cargo now that each has a vehicle. One side effect worth noting: the source line (`Truck - CD - Hendon`) was not deleted, only retired stop-by-stop — since every one of its real destinations got handed off, its own `demand.scan()` now shows nothing but `Hendon East | 0 waiting`, and its remaining ~45 vehicles (fleet total held steady at 70 throughout — nothing was lost, only moved) are left looping a destination-less shell line. This is the direct, correct consequence of the retirement rule, not a bug, but it is an orphaned-line/idle-fleet gap that Decision 21 exists to close.
+
+## Decision 21 — Stage 3: redistribute the spare fleet across split lines by demand, excluding zero-demand destinations
+
+### Decision
+
+`fleet_allocator.M.redistributeSpareVehiclesByDemand(sourceLineId, hubStationGroup, onComplete)`, wired to a "Redistribute Spare Vehicles by Demand" button (config.DEBUG only, manually-triggered), addresses the orphaned-fleet gap Decision 20 leaves behind. It reads every managed ("● ") split line's current `demand.scan()` waiting total, then apportions the source line's remaining spare vehicles across them by largest-remainder apportionment, proportional to each destination's waiting total. A destination currently showing 0 waiting demand is excluded entirely from the split and keeps only its single Stage 2 seed vehicle — not starved further, but not given capacity it has shown no need for either. This is the literal rule agreed live: "if its 0 leave it as one truck, split the remaining based on demand."
+
+### Reason
+
+Directly closes the gap Decision 20's live run exposed: a large idle fleet stranded on a line with nothing left to serve. Demand-weighted allocation was already the target model in Decision 18; this is its first real implementation, now that Stage 2 makes "spare vehicles sitting on a used-up source line" a real, observable situation rather than a hypothetical.
+
+### Consequence
+
+**Caveat, raised live by the player and not yet independently verified through the API**: a terminal's waiting-cargo storage is finite (reportedly ~100-200 depending on terminal length, extendable by lengthening the terminal or attaching warehouses), and cargo generated beyond that cap despawns rather than continuing to accumulate. That means a `waiting` total is a FLOOR on true demand, not necessarily an accurate relative measure between two destinations with different terminal capacities — one could be silently losing cargo to despawn while reading a similar or lower number than another that isn't capped yet. `fleet_allocator.lua` uses the visible waiting total as its best available proxy anyway (no API for terminal capacity itself has been found — see TECHNICAL_RESEARCH.md) and documents this limitation inline; allocation results should be read with that in mind, not treated as a precise measure of true relative need.
+
+### Terminal assignment — LIVE-CONFIRMED, both halves of the external lead checked separately
+
+A player-pasted external source (not this project's own prior verification) proposed that `Line.Stop.terminal` is directly writable and controls a line's physical terminal assignment, alongside two `api.engine.getLineStopsForTerminal` / `api.engine.getTerminal2lineStops` query functions. Per Decision 13, this was treated as a lead to test, not a fact to build on — and testing it split the claim into one part that held up and one that didn't:
+
+- **Confirmed true**: a one-line test (`route_injector.M.runTerminalAssignmentTest()`, since removed — superseded by Decision 22 below) changed `● Hendon East ↔ Queens Road`'s Hendon-stop terminal from `1` to `2` via the proven copy/modify/`updateLine` pattern, and both a re-read of the line's own data AND the player's own visual check of the game's TERMINALS tab confirmed the line actually moved to a different physical terminal bucket — not just a stop-field value silently ignored.
+- **Confirmed false**: neither `api.engine.getLineStopsForTerminal` nor `api.engine.getTerminal2lineStops` exists in this game version — both checked `false` before ever being called.
+- **New finding, from the live before/after pair itself**: the game's TERMINALS tab displays terminal numbers as `(raw Line.Stop.terminal value) + 1`. The line's raw terminal was `1` before the change (shown in-game as "Terminal 2"), and became `2` after (shown in-game as "Terminal 3"). `terminal_allocator.lua` (Decision 22) writes 0-based values directly to account for this.
+
+This is now a real capability, not just a tested one.
+
+## Decision 22 — Stage 4: spread managed lines across terminals, ranked by demand
+
+### Decision
+
+`terminal_allocator.M.spreadLinesAcrossTerminals(hubStationGroup, onComplete)`, wired to a "Spread Lines Across Terminals" button (config.DEBUG only, manually-triggered), replaces the single-line terminal test with the real feature: it reads the hub's actual terminal count (`stations.getTerminalCount`, summed across every physical station in the group), ranks every mod-created ("● ") managed line by current `demand.scan()` waiting total, and assigns the highest-demand lines their own dedicated terminal first (one each, up to the terminal count). Once terminals run out, each remaining lower-demand line is assigned to whichever terminal currently carries the least combined demand, so any forced sharing lands on the terminal that can best absorb it. This is exactly the rule proposed live in `IDEAS.md`'s "Demand-Weighted Terminal Sharing" entry, now built rather than just recorded as an idea.
+
+Only ever touches mod-created ("● ") lines — never "Grain" or another pre-existing line — matching every other stage's scoping discipline.
+
+### Reason
+
+Once Decision 21 confirmed the underlying write mechanism actually works (both in the data and visually, in-game), leaving it as a single-line proof rather than the real multi-line feature would have been leaving proven, working capability on the table. Replacing the test with the real feature (rather than keeping both) follows the same reasoning as retiring the loaded-vehicle test once Stage 2/3 existed — a superseded diagnostic left in place is just clutter.
+
+### Consequence
+
+**Live run #1 found a real bug, since fixed.** `stations.getTerminalCount` worked correctly (matched the TERMINALS tab). But the allocation itself ignored pre-existing occupancy: it assigned terminal indices 0..N-1 to managed lines purely by demand rank, with no awareness that "Grain" (a real, unmanaged, 20-vehicle line) was already sitting on terminal 0. The result — the highest-demand managed line (Queens Road) landed on the same terminal as Grain, exactly the congestion the feature exists to prevent. Caught live by the player: "terminal 1 had the grain line, so this should be left."
+
+**Fix**: added a stock-take step (`stockTakeExistingLoad` in `terminal_allocator.lua`) that reads every line at the hub *except* the ones about to be reassigned, sums each one's current demand into whichever terminal it already occupies, and seeds the allocator's starting state with that real occupancy instead of an all-zero baseline. The assignment loop was also simplified: instead of a separate "first N ranked lines get dedicated slots by index" branch, it now always places the next line (in demand order) onto whichever terminal currently has the least total load — dedicated-vs-shared now emerges naturally from that one rule instead of being a special case, and it automatically respects pre-existing occupancy from lines like Grain. Not yet re-run against a live save since the fix.
+
+**Deferred, not built**: a player-pasted external proposal suggested adding hysteresis/stability thresholds ("never reshuffle for tiny demand changes," "make the smallest useful reassignment" instead of a full recompute each time) to stop terminals "flapping" between assignments. The underlying idea (avoid needless churn) is reasonable general practice, but there is no evidence yet that this allocator actually flaps in a way that matters — it has only been run twice, both manually triggered, not on any kind of timer. Building stability logic against a problem that hasn't been observed would be exactly what Decision 13 exists to prevent. Recorded in `IDEAS.md` as a future consideration if repeated runs actually show unstable/thrashing assignments.
+
+**Also open, from Decision 22's first version**: what actually happens with 3+ lines sharing one terminal (does it visibly congest, or does TF2 handle it the way it already handles today's default unmanaged sharing), and whether writing a terminal index at or beyond the station's real terminal count errors, clamps, or is silently accepted.
+
+## Decision 23 — Delete the source line once it is provably empty
+
+### Decision
+
+`line_splitter.M.deleteEmptySourceLine(sourceLineId, hubStationGroup, onComplete)` is chained as a third automatic step onto the "Assign & Balance Fleet" button, after Decision 20's assign step and Decision 21's balance step both complete. It refuses to act unless the source line has exactly 0 vehicles AND 0 real (non-hub) destination stops remaining — only then does it call `api.cmd.make.deleteLine` (proven live since `route_injector`'s original create/delete test). If either check fails, it leaves the line alone and reports why.
+
+### Reason
+
+Proposed live once the numbers made it obvious the source line was genuinely done: a live run's vehicle counts across the 6 real managed lines summed to exactly 70, matching the fleet total with nothing left on the source line, and its own `demand.scan()` showed nothing but the hub's own empty bucket. Chained onto the existing button rather than given its own — the same "combine what we know works" reasoning as Decision 21, and the safety check (not a confirmation click) is what actually gates the destructive action, matching how `deleteLine` was already trusted to run unattended in the original create/delete test.
+
+### Consequence
+
+Not yet run. Once it has been, `Truck - CD - Hendon` should disappear from both this mod's panel and the game's own line list/TERMINALS tab, cleaning up the stray Hendon-only stop entries that were cluttering the terminal breakdown alongside the real managed lines.
+
+## Decision 24 — `data()`'s `save`/`load` hooks are not usable for real persistence in this mod; use direct file I/O (`io.open`) instead
+
+### Decision
+
+`epod_truck_distribution.lua`'s `data()` now includes `save`/`load` fields (a real, base-game-confirmed mechanism — see the "Persistence" entry below). This went through two crashes and seven fix attempts before landing on the real design:
+
+- **v1**: `loadPersistedState` incremented `persistedState.loadCount` unconditionally, every call. **Crashed the game** (hard engine assertion, see Reason).
+- **v2 ("fix" that didn't work)**: guarded the increment with a session-scoped local boolean, on the assumption the engine calls `load()` twice on one continuously-running script instance. Retested live — **identical crash, identical log pattern**. The guard never blocked the second call.
+- **v3 (stopped the crash, but the test itself was still broken)**: made `load()`/`save()` fully passive (no mutation at all) and moved the counting into `runStartupDiagnosticsOnce`, the existing `guiUpdate`-driven one-shot-per-process guard. This did stop the crash — but retested live and the counter stayed at `1` across an in-game save-and-reload instead of climbing to `2`. Reading the raw stdout log directly showed why: `runStartupDiagnosticsOnce` only fires once per **process**, and the player's second "load" was done via TF2's in-game Load Game menu without quitting — so the process-scoped guard correctly never re-armed. It was simply never the right trigger for "count every genuine load."
+- **v4 (stopped the crash, moved mutation to a button, but STILL didn't round-trip)**: `load()`/`save()` made fully passive and silent, with the one deliberate mutation (`bumpPersistenceTestCounter`) moved to a new DEBUG button, fully decoupled from `load()`/`save()`'s own call cadence. Retested live with the full protocol (click button, save, fully quit, relaunch, load, click button again) — counter still came back as `1`, not `2`.
+- **v5 ("fix" that still didn't work)**: added back a guard boolean in `loadPersistedState`, gating the plain `persistedState = state` copy rather than any computed value. Retested live with the full protocol — **still** came back as `1`, not `2`.
+- **v6 ("fix" that still didn't work)**: refined the guard to only latch inside the branch that actually adopted valid data (`state == nil`, empty table, or `reset == true` returns immediately without touching the flag) — matching `guidesystem.lua`'s own `if initialized then return end` idiom exactly. Retested live with the full protocol, three full quit/relaunch/load cycles — **still** came back as `1` every time.
+- **v7 ("fix" that still didn't work)**: dropped the "adopt only once" framing entirely. `loadPersistedState` gated on whether the *player* had made a deliberate change this session (`hasMutatedPersistedStateThisSession`, set only inside `bumpPersistenceTestCounter`) — freely adopting every valid `load()` call before that, refusing everything after. Retested live with the full protocol — **still** came back `0` on disk, checked directly against the `.sav.lua` file.
+- **v8 (current, working design)**: added per-call instance fingerprinting (a unique tag per chunk execution) to every `save()`/`load()`/button-click log line, and found the real root cause (Finding #7, see Reason) — the engine runs multiple, entirely disconnected instances of this script's top-level code within one session, and the button's mutation was landing on a different instance than the one whose `save()` was actually wired to real serialization. No guard logic inside `load()`/`save()` could ever fix this, since a Lua `local` cannot be shared across separate executions of the same chunk. Fixed by moving `persistedState` (and the mutation guard) into uniquely-namespaced Lua globals (`_G["__EPOD_TD_PERSISTED_STATE__"]`, `_G["__EPOD_TD_HAS_MUTATED_PERSISTED_STATE__"]`) instead — globals live in the one shared `_G` table for the whole Lua VM, so every instance of the chunk reads and writes the same underlying data regardless of how many separate instantiations exist.
+
+### Reason
+
+Live-confirmed root cause for the crash: **both** crash logs showed `loadPersistedState` firing twice in immediate succession at startup (`loadCount` printed as `1`, then `2`), followed immediately by:
+
+```
+urban_games/train_fever/src/Game/Game.cpp:330: void __cdecl CGame::StartGameSim(void):
+Assertion `m_data->gameStates[1]->ScriptSave() == m_data->gameStates[0]->ScriptSave()' failed.
+```
+
+TF2's own engine calls a script's `load()` more than once per session as part of its own internal consistency check in `CGame::StartGameSim` — it takes two internal game-state snapshots and asserts their `ScriptSave()` (i.e. our `save()`) output is **identical**. v1 mutated `persistedState` on every call to `load()`, so the two snapshots disagreed and the engine hard-crashed on its own assertion — not a catchable Lua error, a fatal engine-level exception that force-quit the game. v2's session-scoped local boolean didn't survive between those two internal calls either — the identical crash with the identical `1`-then-`2` pattern is only explainable if each of the engine's two internal calls runs against its own fresh instantiation of the script (fresh top-level locals, guard included), not two calls into one instance.
+
+Live-confirmed root cause for why v3's counting silently failed (diagnosed by reading the raw `stdout.txt` crash-dump log directly, since v3 also added temporary unconditional prints inside `load()`/`save()` to see exactly what the engine was doing): **`save()`/`load()` fire continuously throughout ordinary gameplay** — thousands of times over a single test session, each `load()` call handed a distinct, freshly-allocated state table. This meant no signal inside `load()`/`save()` themselves, and no `guiUpdate`-driven "once per process" guard, could distinguish "the player genuinely loaded a save" from the engine's own internal cadence of calls.
+
+v4's button-driven mutation still didn't survive a real save/quit/relaunch/load cycle: `loadPersistedState` was unconditionally doing `persistedState = state` on every one of those thousands of ongoing calls, apparently clobbering the deliberately-bumped in-memory counter with stale data before it ever reached a real save.
+
+v5, v6, and v7's guards all failed the same live retest (counter stuck at, or reverting to, a lower value than expected across a real save/quit/relaunch/load, checked directly against the `.sav.lua` file each time). Each was reasoned through carefully and each turned out to share the same unstated assumption: that there is exactly ONE `persistedState` in play per session, and the only question is *when* `load()`'s calls happen relative to it. That assumption was never actually tested until v8.
+
+**FINDING #7, LIVE-CONFIRMED (this is the one that actually explains the whole saga)**: added a unique per-instance fingerprint (a fresh table's address, fixed for one chunk execution's lifetime) to every `save()`/`load()`/button-click log line, then ran the full protocol once more. The log showed **three separate module instances** initialized within one session. The button's click (`bumpPersistenceTestCounter`) landed on one instance; that instance's own `load()` calls also fired correctly. But the `save()` calls that were actually feeding the real `.sav.lua` serialization belonged to a **completely different instance** — one whose `persistedState` the button had never touched, permanently stuck at `loadCount=0` for the rest of the session. This directly explains every prior failure: v4-v7 were all correctly reasoning about ONE instance's `load()`/`save()` behavior while the actual data loss was happening at a structural level *between* instances that no amount of guard logic inside a single instance could ever reach. The engine appears to re-execute this script's top-level code more than once per session — consistent with the early boot log's repeated "Mods changed, recreating data..." messages — and, evidently, keeps GUI bindings (`guiUpdate`, button clicks) pointed at a later instantiation than the one whose `save`/`load` registration is actually used for real serialization.
+
+**FINDING #8, LIVE-CONFIRMED: v8 ALSO failed.** Retested the shared-global design with the full protocol, checked directly against the `.sav.lua` file — still `loadCount=0`, unchanged from v4-v7. This means even `_G` is not reliably shared across whatever "multiple instances" mechanism Finding #7 uncovered — either TF2's mod sandbox gives each script instantiation a genuinely isolated Lua environment (where not even globals bridge across instances), or something else about the engine's save/load hook registration is broken in a way this project never fully diagnosed. **This was not chased further** — after eight live-tested attempts across two crashes, the decision was made to stop iterating on `save`/`load` entirely and test a structurally different, orthogonal mechanism instead: real file I/O via Lua's `io` library, writing the mod's own file directly rather than going through the engine's hooks at all. This was the user's suggestion.
+
+**FINDING #9, LIVE-CONFIRMED: file I/O works, and reliably persists across a real process restart.** `io.open` is available in this mod sandbox (undocumented — no shipped base-game script under `res/config/game_script/` was found using it) and writes land at the TF2 install directory root when given a plain relative filename (e.g. `io.open("epod_td_file_io_test.txt", "w")` → `D:\Steam\steamapps\common\Transport Fever 2\epod_td_file_io_test.txt`). A counter test (read existing value, increment, write back) was run through two full quit/relaunch cycles: session 1 wrote `1`, session 2 read `1` and wrote `2`, session 3 read `2` — each confirmed both via the log and by reading the file directly. Unlike every `save`/`load` attempt, this has never needed a guard, a global, or any workaround — plain sequential read/write just works, because it never depends on which script instance the engine happens to be running.
+
+### Consequence
+
+**`save`/`load` are not being used for real persistence in this mod.** Eight live-tested attempts (v1-v8) across two hard crashes and at least two distinct root causes (a real engine-level determinism constraint, and an unresolved multi-instantiation problem that even Lua globals couldn't bridge) is enough evidence that this mechanism is not safely usable here, even though it is real, shipped, and used successfully by base-game scripts. Whether those base-game scripts avoid the multi-instantiation problem some other way (a different registration path, a different lifecycle) was not investigated — not worth the time once a working alternative existed.
+
+**Real persistence in this mod now means: files written directly via `io.open`, not `data()`'s `save`/`load` fields.** Any future real persisted state (network fingerprints, managed-hub selections, etc. — see PROGRESS.md/Not Started) should use this mechanism. Two open design questions before building on it for real: (1) the install-directory location is not appropriate long-term — Steam can touch that folder on verify/update, and a single shared file isn't scoped to a specific savegame, so different saves would silently clobber each other's data; a per-savegame-identified path (or a path under the user's `userdata` folder) needs to be found and tested. (2) it's unconfirmed whether `io` is reliably available in all contexts this mod might run in (different TF2 versions, other players' installs, Steam Deck/Proton) since it isn't used by any shipped script — this should be treated as a soft assumption, not a guarantee, and the mod should degrade gracefully (log and skip, not crash) if `io.open` ever returns nil.
+
+The broader lesson for this whole saga: eight consecutive fix attempts against `save`/`load` were each internally consistent and each wrong in a way only caught by checking ground truth (the actual `.sav.lua` file, then a per-instance log fingerprint) rather than by re-reading the code more carefully. After several reasoned fixes in a row all fail the same live check against the same mechanism, the more efficient move is to question whether that mechanism is fixable at all, not to refine the same guard a fifth or sixth time — file I/O ended up working on the first real attempt once the underlying approach changed.
+
+Worth flagging separately: `save()`/`load()` firing thousands of times per session is itself a real cost consideration for anything that ever tries to use them again — kept as a documented reason to avoid the mechanism, not something to design around.
+
+## Decision 25 — Removed the abandoned custom 3D model / construction experiment (`_archive_epod_single_bay/`, `model_source/`, `res/models/`)
+
+### Decision
+
+Deleted three directories entirely: `_archive_epod_single_bay/` (a custom `STREET_STATION` construction definition, `epod_single_bay_terminal.con`/`.module`, plus two `.mdl` files), `model_source/` (two `.fbx` source files, `epod_truck_park.fbx`), and `res/models/` (compiled mesh/material/model output — `Cube.001`, `Cube.046`, `Cube.050`, `Ground_mesh`, `MAT_Gravel`, `MAT_Wood` — clearly raw, unedited exporter names from a 3D modeling tool, not anything hand-authored for this mod).
+
+### Reason
+
+Player hit an unexpected in-game prompt while modifying an existing station: "Costs: $18,272 / 10 modules will be removed." That doesn't come from anything this mod's actual Lua logic does (`epod_truck_distribution.lua` and `res/scripts/epod_td/*` are pure gameplay/dispatch logic — no construction, no models, no modules). Investigation found `_archive_epod_single_bay/epod_single_bay_terminal.con` sitting in the mod folder: a genuine, functional-looking `STREET_STATION` construction type with real module slots (`street_terminal_cargo`, etc.) — exactly the shape of thing that produces a "modules will be removed" prompt when an existing placement of it gets touched. None of this was ever wired into or referenced by the mod's actual distribution-management code; it was leftover from an earlier, separate experiment (evidenced by the folder's own name and by `model_source/`'s and `res/models/`'s generic, unedited exporter-default names).
+
+### Consequence
+
+All three directories are gone. Since none of this was ever committed (only staged), nothing was lost from git history. If custom 3D construction pieces are ever wanted again for this mod, they should be built and tested as a deliberate, separate effort — not left half-wired-in from an abandoned attempt, where a leftover `.con` file can silently affect real player stations without any of this mod's own code being involved at all.
+
+## Decision 26 — Managed-line identity moved to a persistent registry (entity IDs), decoupled from the `●` name prefix
+
+### Decision
+
+Built `res/scripts/epod_td/managed_registry.lua`: a small module that is now the sole authority on "is this line managed by Dynamic Distribution," replacing every runtime `name:sub(1, 4) == "● "` check across the codebase (9 sites, in `epod_truck_distribution.lua`, `terminal_allocator.lua`, `line_splitter.lua`, `fleet_allocator.lua`, and `route_injector.lua`'s test tooling) with `managed_registry.isManaged(lineId)`. `line_splitter.lua`'s Stage 1 now calls `managed_registry.register(newLineId)` immediately after a new split line is confirmed created (resolved by name via `lines.findByName`, since the `createLine` command callback only confirms success, not the new entity ID). The `●` prefix itself is untouched and still gets added to every managed line's display name (`epod_truck_distribution.lua`'s `displayLineName` logic) — it is now purely cosmetic, exactly as `IDEAS.md`'s original PRIORITY entry specified: "Names belong to the player. Identity belongs to the Brain."
+
+State is persisted via `io.open` (the mechanism proven in Decision 24 — not `data()`'s `save`/`load` hooks), written to `epod_td_managed_lines.txt` as one line-entity-ID per line. No dependency on knowing which specific save is currently active: every session's first registry query triggers a one-time `migrateAndValidate()` pass that (a) drops any stored line ID that no longer resolves to a real line in the current game (stale — a different save, or since deleted) and (b) registers any currently-existing `●`-named line not already in the record. This is exactly the migration/validation approach `IDEAS.md`'s own "Persistence Integration" and "Migration / Safety" sections specified, not an improvised substitute.
+
+### Reason
+
+The player's own `IDEAS.md` PRIORITY entry identified a real fragility: every managed-line check across the codebase was name-based (`name:sub(1, 4) == "● "`), meaning a player rename would silently break fleet allocation, terminal allocation, and split-line discovery for that line — the `●` had become part of DD's internal state instead of a purely cosmetic hint. The fix requires two things the mod didn't reliably have until recently: (1) persistent, non-Lua-`local` storage that survives a session boundary, and (2) a validation step so stale/foreign data doesn't get trusted blindly — both are now available (Decision 24's file I/O work, and the validation pattern that decision's own saga made obvious was necessary).
+
+### Consequence
+
+Renaming a managed line (removing or changing the `●`) no longer affects whether DD manages it — membership is entity-ID-based, checked against `managed_registry.lua`, not the display name. Newly split lines register themselves automatically at creation time; no separate registration step is needed elsewhere. Two things remain open, both flagged honestly rather than assumed solved: (1) **not yet live-tested** — this is a real refactor across five files and needs a full pass in-game (verify existing `●` lines get migrated correctly on first load, verify a rename doesn't break management, verify a fresh Stage 1 split registers its new lines) before being treated as proven; (2) the persisted file lives at the same TF2-install-directory location as Decision 24's proof-of-concept file — the "shouldn't live in Steam's own folder long-term" caveat from that decision applies equally here, still an open polish item, not blocking correctness today. `managed_registry.unregister(lineId)` exists and is ready for when a "Close Managed Line" feature (`IDEAS.md`) is eventually built, but nothing currently calls it — no code path deletes an actual managed line yet.
+
+## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
 
 - whether vehicle reassignment can be done safely,
+- whether a vehicle can be safely reassigned across lines while still carrying loaded cargo (new, from Decision 18) — **still not rigorously confirmed, but no longer via a dedicated test.** The single-vehicle diagnostic that used to check this (`route_injector.runLoadedVehicleReassignmentTest`) was removed once Decision 20/21's real Stage 2/3 runs became the stronger evidence: dozens of real vehicles reassigned across multiple live sessions, all reporting healthy in-game behavior afterward (real cargo flowing, real profit, no reported stranded/lost trucks). That is meaningfully better evidence than the old test's single-vehicle, line-scoped cargo count ever produced — its first run was genuinely inconclusive (587 cargo entities on a 50-vehicle line, unchanged before/after, which proves nothing about one vehicle's share) — but it is still not a clean, itemized before/after account of one vehicle's specific cargo, so this remains open rather than fully closed.
 - whether persistent managed lines are required for stable cargo flow,
+- whether refresh cost (`vehicles.getManagedLinesForStation` + `demand.scan`'s game-wide `SIM_ENTITY_AT_TERMINAL` walk, run once per managed line every ~120 `guiUpdate` ticks) stays acceptable at late-game entity counts — hundreds of trucks, many in-transit cargo entities, possibly multiple Distribution Centres. Raised live, not yet profiled against a real late-game save; see `IDEAS.md`'s "Refresh Cost at Late-Game Scale" for the full trace of what actually runs and where the likely cost is concentrated,
+- whether demand-weighted terminal sharing (assigning the lowest-demand managed lines to double up on a terminal once dedicated terminals run out) is worth building on top of the now-confirmed terminal-write capability — see `IDEAS.md`'s "Demand-Weighted Terminal Sharing",
 - whether the game exposes compatible cargo types and capacities reliably,
 - whether a standby pool can be modelled cleanly through depot or line state,
+- whether a capacity-1 "sentinel/service" vehicle can register and sustain cargo demand the same way a normal-capacity vehicle does, and specifically whether it can register demand for multiple simultaneous cargo types at one destination or only the type it happens to carry (new, from Decision 18 — general TF2 knowledge suggests capacity does not gate demand registration, but this has not been confirmed in this save),
+- whether the mod can persist player state (e.g. managed-stop selections) across a save/reload — **resolved as of Decision 24**: the mechanism (`io.open`-based file I/O) is confirmed working, but no real state has been built on it yet, and a proper per-savegame file path is still needed,
 - whether multiple Distribution Centres can safely share trucks,
 - whether inter-DC cargo transfer can work with the base game's cargo routing,
 - whether waiting-cost discounts occur for genuine terminal waits,

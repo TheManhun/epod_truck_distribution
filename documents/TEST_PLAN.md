@@ -37,6 +37,18 @@ Measure actual charged running costs.
 
 Goal: determine whether the base game already provides an economic discount for genuinely waiting vehicles. If confirmed, prefer using Transport Fever 2's native waiting-cost mechanics rather than implementing a custom maintenance rebate.
 
+### SENTINEL CAPACITY TEST (see DECISIONS.md Decision 18)
+
+Compare an identical destination stop under three conditions over the same controlled period:
+
+A. no assigned vehicle at all,
+B. served only by a capacity-1, single-cargo-type vehicle,
+C. served by a normal-capacity truck.
+
+Then, with B in place, add a second simultaneously-demanded cargo type at the same destination and check whether the capacity-1 vehicle registers demand for the type it isn't carrying.
+
+Goal: confirm whether a capacity-1 vehicle sustains a cargo connection like a normal truck does, and whether one sentinel vehicle per line is enough or one per cargo type would be needed. Only proceed with the era-progression service-vehicle concept in FEATURES.md/MASTERPLAN.md if both hold up.
+
 ### Feature Freeze
 
 A temporary FEATURE FREEZE is in effect during Stage 0.
@@ -105,12 +117,26 @@ Then expand the test to:
 - compare it with repeated create/delete behavior,
 - and confirm whether the game requires continuity for reliable cargo routing.
 
+#### Loaded cross-line reassignment (new — see DECISIONS.md Decision 18)
+
+- load a truck with real cargo destined for its current line's stop,
+- reassign it via `setLine` to a different persistent line mid-journey,
+- and confirm whether the cargo is delivered, dropped, or lost, rather than assuming empty-vehicle behavior generalizes.
+
+#### Managed-stop persistence (new — see DECISIONS.md Decision 18)
+
+- select a stop as managed through the setup flow,
+- save and reload the game,
+- and confirm whether the managed-stop selection and its dedicated line survive, using TF2's game_script save/load hooks (not yet implemented anywhere in the codebase).
+
 ### Pass criteria
 
 - the central dispatch concept works in a minimal controlled scenario,
 - the standby model remains coherent,
 - dynamic reassignment is possible or specifically blocked by API constraints,
 - the town-based controller model remains compatible with a future multi-centre town design,
+- loaded-cargo cross-line reassignment behavior is confirmed rather than assumed,
+- managed-stop selection is confirmed to survive a save/reload or explicitly documented as not yet supported,
 - and the persistent-line question is answered by evidence instead of assumption.
 
 ## Stage 2 — Truck Distribution V1 Validation

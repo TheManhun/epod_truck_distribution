@@ -1,0 +1,1136 @@
+EPOD Log Extract
+Generated: Sun 23/08/2026 22:43:01.57
+Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
+============================================================
+
+  ?epod_truck_distribution/1 (1) (TF2 Truck Distribution)
+[TD-UI] ----------------------------------------
+[TD-UI] COMMAND SURFACE DIAGNOSTIC: api.cmd.make.*
+[TD-UI] ----------------------------------------
+[TD-UI]   removeField
+[TD-UI]   setCalendarSpeed
+[TD-UI]   replaceVehicle
+[TD-UI]   bookJournalEntry
+[TD-UI]   createLine
+[TD-UI]   setAnimalState
+[TD-UI]   sellVehicle
+[TD-UI]   setVehicleManualDeparture
+[TD-UI]   buildProposal
+[TD-UI]   setSimBuildingManualDevelopment
+[TD-UI]   setDate
+[TD-UI]   setColor
+[TD-UI]   setUserStopped
+[TD-UI]   sendToDepot
+[TD-UI]   replaceTerrain
+[TD-UI]   sendScriptEvent
+[TD-UI]   reverseVehicle
+[TD-UI]   removeTown
+[TD-UI]   deleteLine
+[TD-UI]   setName
+[TD-UI]   developTown
+[TD-UI]   setTownInfo
+[TD-UI]   createTowns
+[TD-UI]   setGameSpeed
+[TD-UI]   updateLine
+[TD-UI]   setVehicleTargetMaintenanceState
+[TD-UI]   connectTownsAndIndustries
+[TD-UI]   setSimBuildingClosureTimeStamp
+[TD-UI]   buyVehicle
+[TD-UI]   setVehicleShouldDepart
+[TD-UI]   spawnAnimal
+[TD-UI]   setLine
+[TD-UI]   instantlyUpdateTownCargoNeeds
+[TD-UI] Total commands: 33
+[TD-UI] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] CREATE LINE PROOF OF CONCEPT
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Player entity: 80304
+[EPOD-TD] Test line name: EPOD-TD TEST - Create Line
+[EPOD-TD] createLine command created. Sending...
+[EPOD-TD] Command sent. Waiting for TF2 callback...
+[EPOD-TD] ========================================
+[EPOD-TD] STATION GROUP TERMINAL DUMP
+[EPOD-TD] ========================================
+[EPOD-TD] stationGroup: 126300
+[EPOD-TD] stationGroup name: Hendon East
+[EPOD-TD] station group component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] Station group field used: stations
+[EPOD-TD] Physical stations in group: 1
+[EPOD-TD] STATION ENTITY 126299 (index 0)
+[EPOD-TD] station name: Hendon East
+[EPOD-TD] station component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] stationGroup: nil
+[EPOD-TD] station index: nil
+[EPOD-TD] terminal: nil
+[EPOD-TD] terminalCount: nil
+[EPOD-TD] platform: nil
+[EPOD-TD] roadTerminal: nil
+[EPOD-TD] cargo: true
+[EPOD-TD] passenger: nil
+[EPOD-TD] station terminals container: userdata
+[EPOD-TD] station terminal count: 6
+[EPOD-TD] station terminal[0] = userdata: 000001AB9CFB4448
+[EPOD-TD] station terminal component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] station terminal[1] = userdata: 000001AB9CFB4808
+[EPOD-TD] station terminal component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] station terminal[2] = userdata: 000001AB9CFB4048
+[EPOD-TD] station terminal component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] station terminal[3] = userdata: 000001AB9CFB4A08
+[EPOD-TD] station terminal component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] station terminal[4] = userdata: 000001AB9CFB4B08
+[EPOD-TD] station terminal component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] station terminal[5] = userdata: 000001AB9CFB4E48
+[EPOD-TD] station terminal component type: userdata
+[EPOD-TD]   <structure not enumerable>
+[EPOD-TD] ========================================
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] SAMPLE MANAGED-LINE VEHICLE (game.interface.getEntity) (entity=141339)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   allCapacities = { COAL=5, PLASTIC=5, TOOLS=5, OIL=5, LOGS=5, CONSTRUCTION_MATERIALS=5, IRON_ORE=5, PLANKS=5, MACHINES=5, GOODS=5, CRUDE=5, FOOD=5, STONE=5, GRAIN=5, STEEL=5, FUEL=5 }
+[EPOD-TD]   cargoLoad = { FOOD=5 }
+[EPOD-TD]   type = VEHICLE
+[EPOD-TD]   stopIndex = 1
+[EPOD-TD]   speed = 5.5555553436279
+[EPOD-TD]   state = EN_ROUTE
+[EPOD-TD]   depot = -1
+[EPOD-TD]   position = { 1=-1317.3559570313, 2=2247.7111816406, 3=4.8900504112244 }
+[EPOD-TD]   name = Road vehicle 74
+[EPOD-TD]   id = 141339
+[EPOD-TD]   carrier = ROAD
+[EPOD-TD]   capacities = { FOOD=5 }
+[EPOD-TD]   vehicles = { 1=table: 000001ABF1A73BF0 }
+[EPOD-TD]   line = 149872
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION STATION_GROUP (Queens Road) (entity=134295)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   stations = { 1=135673 }
+[EPOD-TD]   position = { 1=-1862.3469238281, 2=2472.5703125, 3=4.8545026779175 }
+[EPOD-TD]   name = Queens Road
+[EPOD-TD]   id = 134295
+[EPOD-TD]   type = STATION_GROUP
+[EPOD-TD]   itemsLoaded = { _lastMonth=table: 000001ABF1A769E0, _lastYear=table: 000001ABF1A772A0, _sum=0 }
+[EPOD-TD]   itemsUnloaded = { CONSTRUCTION_MATERIALS=626, _sum=6194, FOOD=2482, _lastMonth=table: 000001ABF1A77430, _lastYear=table: 000001ABF1A76B70, MACHINES=233, FUEL=2853 }
+[EPOD-TD]   cargoWaiting = {  }
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION STATION_GROUP (Park Avenue) (entity=136044)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   stations = { 1=135512 }
+[EPOD-TD]   position = { 1=-2052.8823242188, 2=2443.6943359375, 3=6.5470714569092 }
+[EPOD-TD]   name = Park Avenue
+[EPOD-TD]   id = 136044
+[EPOD-TD]   type = STATION_GROUP
+[EPOD-TD]   itemsLoaded = { _lastMonth=table: 000001ABF1A77B60, _lastYear=table: 000001ABF1A78560, _sum=0 }
+[EPOD-TD]   itemsUnloaded = { CONSTRUCTION_MATERIALS=107, FOOD=57, _lastMonth=table: 000001ABF1A775C0, _lastYear=table: 000001ABF1A786F0, _sum=694, FUEL=530 }
+[EPOD-TD]   cargoWaiting = {  }
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION STATION_GROUP (The Grove) (entity=133444)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   stations = { 1=132130 }
+[EPOD-TD]   position = { 1=-2082.4770507813, 2=2660.861328125, 3=5.2283916473389 }
+[EPOD-TD]   name = The Grove
+[EPOD-TD]   id = 133444
+[EPOD-TD]   type = STATION_GROUP
+[EPOD-TD]   itemsLoaded = { _lastMonth=table: 000001ABF1A77BB0, _lastYear=table: 000001ABF1A77E30, _sum=0 }
+[EPOD-TD]   itemsUnloaded = { CONSTRUCTION_MATERIALS=115, _sum=5688, FOOD=8, _lastMonth=table: 000001ABF1A78290, _lastYear=table: 000001ABF1A78330, MACHINES=83, FUEL=5482 }
+[EPOD-TD]   cargoWaiting = {  }
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION STATION_GROUP (Barrow-in-Furness Transfer) (entity=134517)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   stations = { 1=133378 }
+[EPOD-TD]   position = { 1=733.64416503906, 2=2586.8212890625, 3=4.0500888824463 }
+[EPOD-TD]   name = Barrow-in-Furness Transfer
+[EPOD-TD]   id = 134517
+[EPOD-TD]   type = STATION_GROUP
+[EPOD-TD]   itemsLoaded = { _sum=15943, _lastMonth=table: 000001ABF1A795A0, _lastYear=table: 000001ABF1A78A60, GRAIN=15588, FUEL=355 }
+[EPOD-TD]   itemsUnloaded = { _lastMonth=table: 000001ABF1A79370, _lastYear=table: 000001ABF1A79320, _sum=487, FUEL=487 }
+[EPOD-TD]   cargoWaiting = { GRAIN=261, FUEL=88 }
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION STATION_GROUP (Alexander Road) (entity=79125)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   stations = { 1=124526 }
+[EPOD-TD]   position = { 1=-1953.4714355469, 2=2570.1284179688, 3=6.461877822876 }
+[EPOD-TD]   name = Alexander Road
+[EPOD-TD]   id = 79125
+[EPOD-TD]   type = STATION_GROUP
+[EPOD-TD]   itemsLoaded = { _lastMonth=table: 000001ABF1A78B50, _lastYear=table: 000001ABF1A795F0, _sum=0 }
+[EPOD-TD]   itemsUnloaded = { CONSTRUCTION_MATERIALS=362, FOOD=151, _lastMonth=table: 000001ABF1A79000, _lastYear=table: 000001ABF1A79410, _sum=8859, FUEL=8346 }
+[EPOD-TD]   cargoWaiting = {  }
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION STATION_GROUP (Highfield Road) (entity=136454)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   stations = { 1=136143 }
+[EPOD-TD]   position = { 1=-1863.1577148438, 2=2331.2958984375, 3=5.0977067947388 }
+[EPOD-TD]   name = Highfield Road
+[EPOD-TD]   id = 136454
+[EPOD-TD]   type = STATION_GROUP
+[EPOD-TD]   itemsLoaded = { _lastMonth=table: 000001ABF1A79960, _lastYear=table: 000001ABF1A78DD0, _sum=0 }
+[EPOD-TD]   itemsUnloaded = { FOOD=659, _lastMonth=table: 000001ABF1A788D0, _lastYear=table: 000001ABF1A78EC0, _sum=699, FUEL=40 }
+[EPOD-TD]   cargoWaiting = {  }
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] CREATE LINE CALLBACK
+[EPOD-TD] Success: true
+[EPOD-TD] Line found by name after creation: 151743
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] CREATED TEST LINE
+[EPOD-TD] Stops found: 2
+[EPOD-TD] 00 | Hendon East                    | group=126300 | station=0 | terminal=2
+[EPOD-TD] 01 | Queens Road                    | group=134295 | station=0 | terminal=0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Expected stop count: 2
+[EPOD-TD] Actual stop count: 2
+[EPOD-TD] CREATE LINE VERIFIED: true
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] CLEANING UP: deleting test line 151743
+[EPOD-TD] DELETE LINE RESULT: true
+[EPOD-TD] Test line still findable by name after delete: nil
+[EPOD-TD] CLEANUP VERIFIED: true
+[EPOD-TD] ----------------------------------------
+[TD-UI] Truck Distribution window created.
+[TD-UI] Positioning window at x=3260 y=20 (screen width=3840, WINDOW_WIDTH=560)
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 12 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 9
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 12
+[EPOD-TD] Matched cargo entities: 12
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 9 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 7
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 9
+[EPOD-TD] Matched cargo entities: 9
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 207 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 129
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 207
+[EPOD-TD] Matched cargo entities: 207
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 7 waiting
+[EPOD-TD]   CargoType 13: 7
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 271 waiting
+[EPOD-TD]   CargoType 5: 271
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 278
+[EPOD-TD] Matched cargo entities: 278
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 4 waiting
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 24 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 23
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 24
+[EPOD-TD] Matched cargo entities: 24
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] PERSISTENCE TEST: counter bumped to 1. Save the game, fully quit and relaunch TF2, then load that save and check this counter's value in the log -- if it's still 1 (not reset to 0), save/load is genuinely round-tripping.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 202 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 124
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 202
+[EPOD-TD] Matched cargo entities: 202
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 7 waiting
+[EPOD-TD]   CargoType 13: 7
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 267 waiting
+[EPOD-TD]   CargoType 5: 267
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 274
+[EPOD-TD] Matched cargo entities: 274
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70
+[EPOD-TD] ROAD VEHICLE LOOKUP: 95 road-carrier vehicles found game-wide.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Queens Road | entity=149872
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Queens Road | 7 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 4
+[EPOD-TD]   stationGroup: 134295
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 7
+[EPOD-TD] Matched cargo entities: 7
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Park Avenue | entity=142769
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Park Avenue | 4 waiting
+[EPOD-TD]   CargoType 11: 2
+[EPOD-TD]   CargoType 13: 2
+[EPOD-TD]   stationGroup: 136044
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 4
+[EPOD-TD] Matched cargo entities: 4
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ The Grove | entity=137085
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] The Grove | 201 waiting
+[EPOD-TD]   CargoType 11: 76
+[EPOD-TD]   CargoType 13: 123
+[EPOD-TD]   CargoType 15: 2
+[EPOD-TD]   stationGroup: 133444
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 201
+[EPOD-TD] Matched cargo entities: 201
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: Grain | entity=136284
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Barrow-in-Furness Transfer | 0 waiting
+[EPOD-TD]   stationGroup: 134517
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 269 waiting
+[EPOD-TD]   CargoType 5: 269
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 269
+[EPOD-TD] Matched cargo entities: 269
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Alexander Road | entity=135278
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Alexander Road | 0 waiting
+[EPOD-TD]   stationGroup: 79125
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 0
+[EPOD-TD] Matched cargo entities: 0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DESTINATION DEMAND REPORT
+[EPOD-TD] Managed line: ● Hendon East ↔ Highfield Road | entity=130826
+[EPOD-TD] Hub: Hendon East | stationGroup=126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Hendon East | 0 waiting
+[EPOD-TD]   stationGroup: 126300
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] Highfield Road | 19 waiting
+[EPOD-TD]   CargoType 13: 1
+[EPOD-TD]   CargoType 15: 18
+[EPOD-TD]   stationGroup: 136454
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] TOTAL WAITING: 19
+[EPOD-TD] Matched cargo entities: 19
+[EPOD-TD] ----------------------------------------
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=70

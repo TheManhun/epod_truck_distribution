@@ -111,6 +111,10 @@ Exact years, costs and capacities are not decided and must be balanced later.
 
 These future physical structures should not be treated as a V1 requirement.
 
+### Candidate idea — era-progressing sentinel/service vehicle (unverified, not committed)
+
+A parallel, smaller-scale piece of era progression under research: a dedicated, non-counted "sentinel/service" vehicle (capacity 1) permanently assigned to every managed line to keep its cargo connection active even when demand is too low to justify a real truck — thematically a courier collecting orders (1850s rider on horseback → cart/messenger → company car/van → modern logistics van → future autonomous vehicle), mechanically always the same hidden capacity-1 class regardless of era skin. This is explicitly unverified (see `DECISIONS.md` Outstanding Unknowns and the SENTINEL CAPACITY TEST in `ROADMAP.md` Stage 0) and must not be treated as committed V1 scope until tested.
+
 ## Historical Availability and Player Upgrades
 
 New Distribution Centre generations should become available according to game year.
@@ -269,6 +273,8 @@ The system should investigate:
 - and future same-town fleet assistance between multiple Distribution Centres if player-enabled and API-verified.
 
 This avoids repeatedly creating and deleting lines in situations where stable lines may be required by Transport Fever 2 for cargo routing and simulation consistency.
+
+**Current design path**: see `DECISIONS.md` Decisions 17 and 18, and `ROADMAP.md` Stage 2, for the concrete mechanism being built toward this model — an explicit setup step where the player selects a stop to manage, one dedicated persistent line created per selected stop, a fleet that starts evenly spread and is then weighted toward demand rather than a separate idle standby pool, and a recommend-before-reassign rollout.
 
 ## Design Principles
 

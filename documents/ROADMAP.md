@@ -1,5 +1,7 @@
 # TF2 Distribution Manager — Roadmap
 
+**For current build status, see `PROGRESS.md`.** This file describes the long-term staged plan and V1 constraints, largely still valid — but actual development has proceeded evidence-first (per `DECISIONS.md` Decision 13) rather than strictly stage-by-stage, and the "standby pool" model described below has been superseded by Decisions 17/18's persistent-line-per-destination model. Treat the stage structure here as the intended shape, not a literal log of what's been built or in what order.
+
 ## Overview
 
 This roadmap is structured around technical proof-of-concepts. Progression between stages depends on proving that Transport Fever 2's Lua API can provide the required information and support the required runtime behavior before full design commitment.
@@ -54,6 +56,18 @@ Measure actual charged running costs.
 
 Goal: determine whether the base game already provides an economic discount for genuinely waiting vehicles. If confirmed, prefer using Transport Fever 2's native waiting-cost mechanics rather than implementing a custom maintenance rebate.
 
+### SENTINEL CAPACITY TEST (added — see DECISIONS.md Decision 18)
+
+Compare an identical destination stop under three conditions over the same controlled period:
+
+A. destination with no assigned vehicle at all — baseline for whether demand appears/grows with zero service,
+B. destination served only by a capacity-1, single-cargo-type vehicle — the sentinel/service-vehicle candidate,
+C. destination served by a normal-capacity truck — current known-good baseline.
+
+Then, holding B in place, add a second simultaneously-demanded cargo type at the same destination and observe whether the capacity-1 vehicle (carrying only one of the two types) registers demand for the type it isn't carrying.
+
+Goal: confirm whether a capacity-1 vehicle sustains a cargo connection the same way a normal truck does (general TF2 knowledge says capacity does not gate demand registration — presence and correct cargo-type/catchment coverage do — but this is unconfirmed in this save), and specifically whether one sentinel per line is enough or whether multi-cargo-type destinations would need one sentinel per cargo type. Only commit the era-progression service-vehicle concept to V1 if both hold up.
+
 ### Feature Freeze
 
 A temporary FEATURE FREEZE is in effect during Stage 0.
@@ -102,6 +116,8 @@ Then expand the test to:
 - the mod can detect relevant vehicle and cargo state,
 - the mod can observe active route/service state,
 - the mod can reassign existing trucks to a new managed service,
+- whether a truck can be safely reassigned across lines while still carrying loaded cargo, not just when empty (see DECISIONS.md Decision 18 — currently unverified),
+- whether the mod can persist player-selected state (e.g. which stops are managed) across a save/reload, since nothing in the codebase implements TF2 mod save/load hooks yet (see DECISIONS.md Decision 18),
 - the town-associated Distribution Centre model can be represented without architectural redesign,
 - and any required line persistence model can be tested in the base game environment.
 
@@ -141,6 +157,19 @@ Distribution Centre
     +-- standby pool
 
 The player assigns a fixed fleet to the Distribution Centre. The dispatcher dynamically changes allocation within that player-defined fleet, while the total fleet remains fixed unless the player changes it.
+
+### Current design path — see DECISIONS.md Decisions 17 and 18
+
+The diagram above is the long-term shape; this is the concrete path being built toward it right now:
+
+1. The GUI gains a setup mode. The player selects a candidate stop, and that selection is what makes it "managed" — an explicit action, not passive detection.
+2. Selecting a stop makes the mod create one dedicated line from the hub to that stop, once. That line then persists — it is not recreated or deleted afterward, consistent with Decision 7's preference for stable lines over churn.
+3. The player's fixed fleet starts evenly spread across all managed lines.
+4. The brain reallocates the surplus toward the highest-demand lines, while guaranteeing at least one vehicle stays present on every managed line at all times (a completely unserved line risks never generating a demand signal to recover from).
+5. That floor-per-line vehicle may eventually be a dedicated, non-counted "sentinel/service" vehicle (era-appropriate courier, capacity 1) rather than one of the real fleet — see the SENTINEL CAPACITY TEST in Stage 0. Until that's confirmed, the floor is provisionally one real truck.
+6. The dispatcher itself rolls out in two phases: a recommend-only phase (surfaces what it would reassign, moves nothing) before any phase that actually reassigns trucks live between the managed lines.
+
+There is no separate standby pool of idle, unassigned trucks in this model — every truck stays assigned to some managed line at all times, just possibly a low-priority one running light or empty. A real standby/holding yard (trucks parked, not assigned to any line) remains deferred, not solved.
 
 ### V1 constraints
 

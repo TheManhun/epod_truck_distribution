@@ -1,5 +1,7 @@
 # TF2 Distribution Manager — Feature Breakdown
 
+**For current build status, see `PROGRESS.md`.** This file is the original wishlist/scope breakdown from before development started; the constraints and future-feature descriptions below are largely still valid, but it does not reflect what's actually been built (see `PROGRESS.md`) or the Decision 17/18 model that superseded the "standby pool" framing described here.
+
 ## Must Have
 
 These are the features required for the V1 road freight/truck distribution system.
@@ -20,6 +22,8 @@ Note: in V1, the Distribution Centre is a logical dispatch controller. A custom 
 - stop list is manually controlled by the player,
 - and the centre can track destination status over time.
 
+Current design path (see `DECISIONS.md` Decision 18): this selection happens through an explicit setup mode in the GUI — the player picks a candidate stop, and that action is what makes it managed. Selecting a stop makes the mod create one dedicated persistent line to it, once, at setup time.
+
 ### Fleet Ownership and Assignment
 
 - player purchases and assigns a truck fleet,
@@ -34,6 +38,8 @@ Note: in V1, the Distribution Centre is a logical dispatch controller. A custom 
 - trucks can be reassigned from standby to managed delivery services,
 - trucks can return to standby when they are no longer required,
 - and dispatch is based on actual transport requirements rather than automated optimization.
+
+Current design path (see `DECISIONS.md` Decisions 17 and 18): there is no separate idle standby pool in the plan being built right now. Every truck stays assigned to some managed line at all times; the fleet starts evenly spread across managed lines and is then weighted toward whichever lines show the most demand, with a floor guaranteeing at least one vehicle stays on every managed line. Dispatch itself ships recommend-only first, before any phase that reassigns trucks live. The standby-pool-of-idle-trucks model above remains a longer-term idea, not discarded, just not what's currently being implemented.
 
 ### Operational Visibility
 
@@ -93,6 +99,7 @@ These features may be explored after a stable V1 proof-of-concept, but they are 
 
 - persistent system-managed line model between the centre and managed stops,
 - standby line behavior as a formal dispatch state,
+- a dedicated, non-fleet-counted "sentinel/service" vehicle (capacity 1, era-appropriate skin) to keep a managed line's cargo connection active without drawing from the countable truck fleet — unverified, see the SENTINEL CAPACITY TEST in `ROADMAP.md` Stage 0,
 - dynamic reassignment under time-varying demand,
 - advanced service balancing rules without automatic optimisation,
 - inter-Distribution-Centre cargo transfer,
