@@ -1434,16 +1434,36 @@ end
 -- at all (the Planner always runs, gating happens one layer up).
 -- Turning this off means "ask me first," not "stop thinking."
 --
--- NOW REAL: attemptAutoDispatch (below handleDeliveryEvent) reads
--- this setting every time the delivery-event material-change
--- threshold is reached. Still DEBUG-gated since the underlying
--- Dispatcher itself is.
+-- REAL, AND FIXED FOR THE MULTI-INSTANCE PROBLEM (Decision 35):
+-- attemptAutoDispatch runs from handleEvent, which live testing
+-- proved runs on a DIFFERENT script instance than guiUpdate -- the
+-- same class of bug that broke data()'s save/load (Decision 24).
+-- That instance's own distributionState.selectedStationGroupId never
+-- saw what the panel had selected, so auto-dispatch silently never
+-- fired even with the toggle on. Fix: persist WHICH hub is being
+-- auto-managed (settings.lua's autoDispatchHubStationGroupId) at the
+-- moment the toggle is turned ON, rather than depending on whatever
+-- happens to be selected right now -- file I/O is the one thing
+-- already confirmed to cross the instance boundary reliably. This is
+-- also better behavior, not just a workaround: auto-dispatch now
+-- keeps running for that hub even while the player is looking at
+-- something else on the map, instead of requiring the panel to stay
+-- focused on it.
 -- ============================================================
 
 local function autoRedistributeLabelText()
 
     if settings.get("autoRedistribute") then
-        return "[ Auto Redistribute: ON ]"
+
+        local hubId =
+            settings.get("autoDispatchHubStationGroupId")
+
+        if hubId == nil then
+            return "[ Auto Redistribute: ON (no hub captured yet) ]"
+        end
+
+        return "[ Auto Redistribute: ON (hub " .. tostring(hubId) .. ") ]"
+
     end
 
     return "[ Auto Redistribute: OFF ]"
@@ -1456,6 +1476,32 @@ local function handleAutoRedistributeToggleButtonClick()
         not settings.get("autoRedistribute")
 
     settings.set("autoRedistribute", newValue)
+
+    if newValue then
+
+        if distributionState.selectedStationGroupId ~= nil then
+
+            settings.set(
+                "autoDispatchHubStationGroupId",
+                distributionState.selectedStationGroupId
+            )
+
+            logUi(
+                "AUTO REDISTRIBUTE: now managing hub "
+                    .. tostring(distributionState.selectedStationGroupId)
+            )
+
+        else
+
+            logUi(
+                "AUTO REDISTRIBUTE: turned ON, but no hub is currently "
+                    .. "selected -- select one and toggle again to "
+                    .. "capture it."
+            )
+
+        end
+
+    end
 
     if distributionState.textViews ~= nil
         and distributionState.textViews.autoRedistributeButtonLabel ~= nil
@@ -2045,30 +2091,7 @@ end
 -- UPDATE WINDOW CONTENT
 -- ============================================================
 
--- ONE-OFF, DISPOSABLE: paired with attemptAutoDispatch's own
--- instance-identity log below (near handleDeliveryEvent) -- see that
--- comment for why. Declared here, before updateDistributionWindow,
--- so the local is in scope at the point it's used (the same
--- source-order rule already caught once this session for
--- hasRunItemHistoryDump). Remove once answered.
-local hasLoggedGuiUpdateInstanceCheck = false
-
 local function updateDistributionWindow()
-
-    if not hasLoggedGuiUpdateInstanceCheck
-        and distributionState.selectedEntityId ~= nil
-    then
-
-        hasLoggedGuiUpdateInstanceCheck = true
-
-        logUi(
-            "INSTANCE CHECK (updateDistributionWindow): distributionState="
-                .. tostring(distributionState)
-                .. " selectedStationGroupId="
-                .. tostring(distributionState.selectedStationGroupId)
-        )
-
-    end
 
     if distributionState.selectedEntityId == nil
         or distributionState.selectedEntity == nil
@@ -2999,66 +3022,50 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- shouldn't wait on that research. Using the already-proven raw fire
 -- count as a rough "enough time/activity has passed" clock is an
 -- honest, if crude, stand-in: every AUTO_DISPATCH_DELIVERY_THRESHOLD
--- deliveries anywhere, reassess the currently selected hub. A
--- material-change threshold scoped to just this hub's own deliveries
--- is a real future refinement once targetEntity scoping is proven,
--- not a blocker for a first working version.
+-- deliveries anywhere, reassess the auto-managed hub. A material-
+-- change threshold scoped to just this hub's own deliveries is a
+-- real future refinement once targetEntity scoping is proven, not a
+-- blocker for a first working version.
 --
 -- AUTO_DISPATCH_DELIVERY_THRESHOLD is a first guess, not tuned --
 -- needs live observation of how often it actually fires relative to
 -- real demand changes before trusting the number.
+--
+-- Reads settings.get("autoDispatchHubStationGroupId") rather than
+-- distributionState.selectedStationGroupId -- live testing proved
+-- handleEvent runs on a different script instance than guiUpdate
+-- (Decision 35), so this function's own copy of distributionState
+-- never sees what the panel has selected. File I/O is the one thing
+-- already confirmed to cross that boundary reliably.
 -- ============================================================
 
 local AUTO_DISPATCH_DELIVERY_THRESHOLD = 50
 
--- ONE-OFF, DISPOSABLE: zero AUTO DISPATCH triggers fired across a
--- 12,700+ delivery, 250+ threshold-crossing session with the toggle
--- confirmed ON and a hub confirmed selected in the panel for large
--- stretches of it. Suspect the same multi-instance problem that
--- broke data()'s save/load (Decision 24) -- if handleEvent runs on a
--- different script instance than guiUpdate, this instance's own
--- private distributionState.selectedStationGroupId would never see
--- what the visible panel has selected. Logs distributionState's own
--- identity (its table address via tostring) from both this function
--- and updateDistributionWindow, once each, to test that directly.
--- Remove once answered.
-local hasLoggedAutoDispatchInstanceCheck = false
-
 local function attemptAutoDispatch()
-
-    if not hasLoggedAutoDispatchInstanceCheck then
-
-        hasLoggedAutoDispatchInstanceCheck = true
-
-        logUi(
-            "INSTANCE CHECK (attemptAutoDispatch): distributionState="
-                .. tostring(distributionState)
-                .. " selectedStationGroupId="
-                .. tostring(distributionState.selectedStationGroupId)
-                .. " autoRedistribute="
-                .. tostring(settings.get("autoRedistribute"))
-        )
-
-    end
 
     if not settings.get("autoRedistribute") then
         return
     end
 
-    if distributionState.selectedStationGroupId == nil then
+    local hubStationGroupId =
+        settings.get("autoDispatchHubStationGroupId")
+
+    if hubStationGroupId == nil then
         return
     end
 
     logUi(
         "AUTO DISPATCH: material-change threshold reached ("
             .. tostring(AUTO_DISPATCH_DELIVERY_THRESHOLD)
-            .. " deliveries) -- running Dispatcher."
+            .. " deliveries) -- running Dispatcher on hub "
+            .. tostring(hubStationGroupId)
+            .. "."
     )
 
     local ok, err =
         pcall(
             dispatcher.applyPlan,
-            distributionState.selectedStationGroupId,
+            hubStationGroupId,
 
             function(movesMade)
 

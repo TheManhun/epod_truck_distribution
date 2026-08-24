@@ -601,6 +601,20 @@ This is the last piece of PROGRESS.md's Not Started #4. The threshold is deliber
 
 **Not yet live-tested.** This is the first time anything in the mod moves a vehicle without a direct player click — everything before this (Split, Assign & Balance, the manual "Apply Fleet Plan") required a button press. It inherits every safety property already live-confirmed in the Dispatcher (empty-only, cargo-compatible, per-vehicle cooldown, per-line direction cooldown — Decisions 31/32/33), so this is the payoff of that testing work, not a leap past it. Still bounded the same way manual runs are (`MAX_MOVES_PER_RUN = 5` per trigger). Needs: a reload, turning the toggle ON, selecting a hub, and watching real gameplay to confirm it actually fires around the expected delivery count and behaves the same as the manual runs already proven safe.
 
+## Decision 35 — Auto-dispatch never fired: `handleEvent` runs on a different script instance than `guiUpdate` (same class of bug as Decision 24); fixed via persisted hub designation
+
+### Decision
+
+`attemptAutoDispatch` no longer reads `distributionState.selectedStationGroupId`. Instead, `handleAutoRedistributeToggleButtonClick` persists which hub is being auto-managed (`settings.get/set("autoDispatchHubStationGroupId")`, a new numeric setting) at the exact moment the toggle is switched ON, and `attemptAutoDispatch` reads that persisted value instead. `settings.lua`'s file format was generalized to store numbers as well as booleans (`tonumber` fallback in `loadStateFromDisk`) to support this.
+
+### Reason
+
+Live testing (Decision 34's follow-up) found zero `AUTO DISPATCH` triggers across a 12,700+ delivery session — 250+ crossings of the 50-delivery threshold — despite the toggle confirmed ON (via its own logged click) and Hendon East confirmed selected in the panel for large stretches of that time. A targeted diagnostic (logging `tostring(distributionState)`, the table's own memory identity, from both `attemptAutoDispatch` and `updateDistributionWindow`) proved the hypothesis directly: two different addresses (`000001A5DC593CF0` vs `000001A5DC6B1EF0`) — two separate script instances, confirmed the same class of bug that forced `data()`'s `save`/`load` hooks to be abandoned entirely (Decision 24). `attemptAutoDispatch` runs from `handleEvent`, on an instance whose own private `distributionState` was never touched by the GUI instance's selection handling — its `selectedStationGroupId` stayed `nil` forever regardless of what the panel showed. Notably, `settings.get("autoRedistribute")` read correctly (`true`) in *both* instances during that same diagnostic — direct confirmation that file I/O, not Lua memory, is the only thing proven to cross this boundary.
+
+### Consequence
+
+This is a genuine improvement, not just a bug fix: auto-dispatch now keeps running for its designated hub even while the player is elsewhere on the map, rather than requiring the panel to stay focused on that one hub — closer to what "automatic" should mean. Trade-off: the target hub is now fixed at the moment the toggle is switched ON, not continuously re-synced to whatever's currently selected — changing which hub is auto-managed requires toggling OFF then ON again with the new hub selected. Fine for today's single-hub-at-a-time scope (PROGRESS.md Not Started #6); would need real reconsideration once multi-hub support exists. **Not yet live-tested** — needs a reload, confirming the toggle captures a hub correctly on click, and watching for a real `AUTO DISPATCH` line this time.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

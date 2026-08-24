@@ -17,6 +17,16 @@ local M = {}
 -- needs one (stale entity IDs from a different save) -- a plain
 -- boolean preference has no entity to go stale. Read once per
 -- session, lazily, on first access.
+--
+-- Values can be boolean or numeric (added for autoDispatchHub-
+-- StationGroupId, Decision 35 -- a persisted entity ID, not a
+-- boolean). A numeric value CAN go stale across a different save the
+-- same way managed_registry.lua's entity IDs can; unlike that
+-- module, this one does not validate it against live game state --
+-- callers (dispatcher.applyPlan via attemptAutoDispatch) already
+-- degrade harmlessly to "nothing to do" against an invalid/stale
+-- entity rather than erroring, so a dedicated validation pass here
+-- would be solving a problem that doesn't actually bite.
 -- ============================================================
 
 local STATE_FILE_PATH = "epod_td_settings.txt"
@@ -44,12 +54,20 @@ local function loadStateFromDisk()
 
             local loaded = {}
 
-            for key, value in content:gmatch("(%a+)=(%a+)") do
+            for key, value in content:gmatch("(%a+)=([^\r\n]+)") do
 
                 if value == "true" then
                     loaded[key] = true
                 elseif value == "false" then
                     loaded[key] = false
+                else
+
+                    local number = tonumber(value)
+
+                    if number ~= nil then
+                        loaded[key] = number
+                    end
+
                 end
 
             end
