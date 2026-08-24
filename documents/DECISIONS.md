@@ -490,6 +490,24 @@ Both were genuine open questions blocking the Planner + Opportunistic Dispatcher
 
 Both findings are prerequisites now closed, not the Planner itself — nothing yet consumes either. The `stations.dumpItemHistory` one-shot dump served its purpose and was removed (matching this session's own log-volume discipline) but stays available to call manually. The event handler stays wired permanently (it's cheap — increments a counter, only logs detail for the first 5 fires and a periodic count after that) since the Planner will eventually need it live. Next real design step: decide the actual "material change" threshold/batching rule now that real fire-frequency data exists to inform it, rather than picking a number blind.
 
+## Decision 29 — Planner core (`planner.lua`) live-confirmed correct; real evidence that instantaneous-only demand is unsafe to act on
+
+### Decision
+
+Built `planner.lua`'s `M.calculateTargetAllocation` (a per-line target vehicle count, largest-remainder apportionment by current `demand.scan()` waiting cargo, floor of 1 vehicle per managed line) and a DEBUG "Show Fleet Plan" button (`handleShowFleetPlanButtonClick`) to log it against a real hub. Purely read-only — does not move a vehicle, does not depend on the Auto Redistribute toggle.
+
+### Reason
+
+**Math independently verified against the live log, not just eyeballed.** Hendon East, 54 managed vehicles, 214 total waiting across 5 managed lines (Grain correctly excluded — not `managed_registry`-managed): hand-computing the same floor-then-largest-remainder apportionment by hand reproduces the logged output exactly (Grove: waiting=194 → target=45, delta=+32; Highfield: waiting=18 → target=5, delta=+3; Park Avenue: waiting=2 → target=2, delta=0; Queens Road: waiting=0 → target=1, delta=-13; Alexander Road: waiting=0 → target=1, delta=-22). The algorithm is doing exactly what it was designed to do.
+
+**That exact result is also the clearest evidence yet for why `IDEAS.md`'s cargo-profile refinement is load-bearing, not optional polish.** Queens Road and Alexander Road both happened to show 0 waiting cargo at the instant this ran, despite carrying 14 and 23 vehicles respectively (both real, active managed lines, not quiet by nature) — a naive Dispatcher acting on this literal output would strip 13 and 22 trucks off two working lines because of a momentary snapshot, exactly the "Fuel shows 120 right now but Food/Construction will be back in 30 seconds" failure mode raised the night before this was built. This is real, observed proof of the risk, not a hypothetical caution anymore.
+
+**Bonus finding, not the main goal**: fixing the earlier one-level-deep entity dump limitation (see Decision 28) also revealed a real cargo-delivery entity's actual structure for the first time: `{ speed, vehicleUsed, id, type=SIM_CARGO, targetEntity, startTime, sourceEntity, cargoType }`. `cargoType` is handed over free on every delivery event — no separate read needed to know what arrived. `targetEntity` looks like the delivery's destination entity id, which — not yet confirmed — could let a future threshold filter `OnToArriveAtDestination` down to only deliveries at our own managed hubs instead of the whole game, a much better foundation than blind game-wide counting. `src` remains consistently empty across every fire observed so far; not yet understood, not needed for anything built so far.
+
+### Consequence
+
+The Planner's core arithmetic is now trusted — the open work is entirely the profile/weighting layer on top, not the apportionment mechanism underneath it. **This output must not be wired to any Dispatcher/execution path until the cargo-profile refinement (current + recent + historical weighting, `IDEAS.md`) is built** — today's version would make real, harmful reassignment decisions on momentary zero-readings, live-demonstrated above, not just theorized. Next real steps: (1) confirm whether `targetEntity` reliably identifies a managed hub's own destinations, since that would make the event trigger genuinely scoped instead of global; (2) fold the now-confirmed `_lastMonth`/`_lastYear` per-cargo-type history (Decision 28) into the Planner's weighting before this is trusted for anything beyond a read-only report.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

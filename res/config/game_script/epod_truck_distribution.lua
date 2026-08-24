@@ -36,6 +36,7 @@ local terminal_allocator = require("epod_td.terminal_allocator")
 local managed_registry = require("epod_td.managed_registry")
 local settings = require("epod_td.settings")
 local fleet_naming = require("epod_td.fleet_naming")
+local planner = require("epod_td.planner")
 local gui = require("gui")
 
 
@@ -1280,6 +1281,58 @@ end
 
 
 -- ============================================================
+-- SHOW FLEET PLAN (config.DEBUG only)
+--
+-- First real piece of the Planner (planner.lua, PROGRESS.md Not
+-- Started #4 / IDEAS.md "Runtime Fleet Rebalancing"). Read-only --
+-- logs the target vehicle count per managed line at the selected
+-- hub, weighted by current demand.scan() waiting cargo, against a
+-- per-line floor. Does not move a single vehicle; exists so the
+-- Planner's numbers can be sanity-checked against what's actually
+-- happening at the hub before anything is ever allowed to act on
+-- them. Same staged approach every other stage in this mod has used
+-- (build additive/read-only first, prove it live, only then
+-- consider automation).
+-- ============================================================
+
+local function handleShowFleetPlanButtonClick()
+
+    if distributionState.selectedStationGroupId == nil then
+
+        logUi(
+            "SHOW FLEET PLAN: no station selected."
+        )
+
+        return
+
+    end
+
+    local hubStationGroupId =
+        distributionState.selectedStationGroupId
+
+    local hubName =
+        stations.getEntityName(hubStationGroupId)
+
+    local ok, err =
+        pcall(
+            planner.logTargetAllocation,
+            hubStationGroupId,
+            hubName
+        )
+
+    if not ok then
+
+        logUi(
+            "SHOW FLEET PLAN FAILED: "
+                .. tostring(err)
+        )
+
+    end
+
+end
+
+
+-- ============================================================
 -- AUTO REDISTRIBUTE TOGGLE (config.DEBUG only, wired to nothing yet)
 --
 -- Deliberately built and persisted (settings.lua, same io.open
@@ -1632,6 +1685,31 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             renameFleetButton
+
+
+        distributionState.textViews.showFleetPlanButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".showFleetPlanButtonLabel",
+                "[ Show Fleet Plan (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local showFleetPlanButton =
+            gui.button_create(
+                WINDOW_ID .. ".showFleetPlanButton",
+                distributionState.textViews.showFleetPlanButtonLabel
+            )
+
+        showFleetPlanButton:onClick(
+            handleShowFleetPlanButtonClick
+        )
+
+        distributionState.showFleetPlanButton =
+            showFleetPlanButton
+
+        fixedViews[#fixedViews + 1] =
+            showFleetPlanButton
 
     end
 
