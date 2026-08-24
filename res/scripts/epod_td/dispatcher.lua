@@ -43,6 +43,22 @@
 --     same staged approach as every earlier stage (prove it live via
 --     a manual button first). Wiring this to run automatically is a
 --     deliberate later step, not this one.
+--   * PER-VEHICLE COOLDOWN (Decision 32): a vehicle just moved by
+--     this Dispatcher cannot be moved again for COOLDOWN_RUNS more
+--     M.applyPlan calls. Added after live testing caught real
+--     flapping -- 6 of the first ~20 moves across 5 runs were a
+--     vehicle getting reassigned again shortly after its last
+--     reassignment, 3 of them a full round trip back to their
+--     original line for zero net benefit. Demand is volatile enough
+--     (already observed: a destination's waiting cargo swinging from
+--     0 to 10+ between two reads minutes apart) that recomputing the
+--     plan "from scratch" every run can genuinely reverse its own
+--     recent decision. This is a simple, self-contained fix: no new
+--     time source needed (deliberately NOT os.time()/os.clock(),
+--     neither ever tested in this sandbox) -- "runs" are just calls
+--     to M.applyPlan, counted in-memory, resetting on reload (an
+--     acceptable cost for a short-term hysteresis guard, not durable
+--     state).
 -- ============================================================
 
 local log = require("epod_td.log")
@@ -53,6 +69,15 @@ local planner = require("epod_td.planner")
 local M = {}
 
 local MAX_MOVES_PER_RUN = 5
+
+-- First-guess number, not yet tuned against live data -- needs to be
+-- large enough that a vehicle actually reaches and settles at its
+-- new line before being reconsidered, small enough that a genuinely
+-- persistent, real demand shift doesn't stay artificially blocked.
+local COOLDOWN_RUNS = 3
+
+local runCounter = 0
+local lastMovedRun = {}
 
 
 local function vehicleCompatibleWithAny(vehicleId, cargoTypes)
@@ -82,9 +107,22 @@ local function vehicleCompatibleWithAny(vehicleId, cargoTypes)
 end
 
 
--- Finds an empty, compatible vehicle currently on `surplusLineId` to
--- give to a destination needing `neededCargoTypes`. Returns a
--- vehicleId, or nil if none qualify.
+local function isInCooldown(vehicleId)
+
+    local movedOnRun = lastMovedRun[vehicleId]
+
+    if movedOnRun == nil then
+        return false
+    end
+
+    return (runCounter - movedOnRun) < COOLDOWN_RUNS
+
+end
+
+
+-- Finds an empty, compatible, not-in-cooldown vehicle currently on
+-- `surplusLineId` to give to a destination needing
+-- `neededCargoTypes`. Returns a vehicleId, or nil if none qualify.
 local function findMovableVehicle(surplusLineId, neededCargoTypes)
 
     local candidateIds = vehicles.getVehiclesForLine(surplusLineId)
@@ -92,6 +130,7 @@ local function findMovableVehicle(surplusLineId, neededCargoTypes)
     for _, vehicleId in ipairs(candidateIds) do
 
         if vehicles.isVehicleEmpty(vehicleId) == true
+            and not isInCooldown(vehicleId)
             and vehicleCompatibleWithAny(vehicleId, neededCargoTypes)
         then
             return vehicleId
@@ -254,7 +293,8 @@ local function processMoveNext(context)
     if vehicleId == nil then
 
         log.info(
-            "DISPATCH: no empty/compatible vehicle on "
+            "DISPATCH: no eligible vehicle (empty + compatible + not "
+                .. "in cooldown) on "
                 .. tostring(surplus.name)
                 .. " for "
                 .. tostring(deficit.name)
@@ -283,6 +323,7 @@ local function processMoveNext(context)
             deficit.remaining = deficit.remaining - 1
             surplus.remaining = surplus.remaining - 1
             context.movesMade = context.movesMade + 1
+            lastMovedRun[vehicleId] = runCounter
 
         end
 
@@ -300,8 +341,10 @@ end
 -- possible or the cap is reached.
 function M.applyPlan(hubStationGroup, onComplete)
 
+    runCounter = runCounter + 1
+
     log.info("----------------------------------------")
-    log.info("APPLY FLEET PLAN")
+    log.info("APPLY FLEET PLAN (run " .. tostring(runCounter) .. ")")
     log.info("----------------------------------------")
 
     local plan = planner.calculateTargetAllocation(hubStationGroup)

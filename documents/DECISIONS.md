@@ -545,6 +545,22 @@ This is the first code in the mod that moves a vehicle based on the Planner's dy
 
 **Live-tested, first run clean.** One click of "Apply Fleet Plan" against Hendon East moved exactly 5 vehicles, all `● Hendon East ↔ Alexander Road` → `● Hendon East ↔ The Grove` — every move logged `SET MANUAL DEPARTURE RESULT: true` → `SET LINE RESULT: true` → release `true`, zero failures, zero "no empty/compatible vehicle" skips. The largest-surplus-to-largest-deficit pairing picked exactly what the last Planner reading implied it should (Alexander Road was the biggest surplus, The Grove the biggest deficit), then stopped cleanly at `MAX_MOVES_PER_RUN` rather than continuing to drain Alexander Road in one click — the cap and the sort both behaved as designed. Only one pairing has been observed so far (one surplus, one deficit); the fallback path (surplus line has no empty/compatible candidate, move on to the next surplus) has not yet been exercised live. Still deliberately NOT wired to the Auto Redistribute toggle, a timer, or the delivery event — manual button only, matching every earlier stage's rollout discipline. `MAX_MOVES_PER_RUN = 5` remains a deliberately conservative cap, not yet tuned up now that one run is proven safe.
 
+## Decision 32 — Real flapping caught live; added a per-vehicle cooldown to the Dispatcher
+
+### Decision
+
+Added `COOLDOWN_RUNS` (3) to `dispatcher.lua`: a vehicle just moved by `M.applyPlan` cannot be selected as a move candidate again for the next 3 calls, tracked with a simple in-memory `runCounter`/`lastMovedRun[vehicleId]` — not a new time source (`os.time`/`os.clock` are untested in this sandbox and deliberately not reached for), just a count of `M.applyPlan` invocations. Resets on save reload, an accepted cost for a short-term hysteresis guard rather than durable state.
+
+### Reason
+
+Requested three manual "Apply Fleet Plan" runs to gather more live data before wiring automation (the agreed next step). Cross-referencing the vehicle IDs moved across all 5 runs so far found real flapping: **6 of ~20 total moves were a vehicle being reassigned again shortly after its previous reassignment**, and **3 of those (116791, 135325, 117443) were a full round trip** — Alexander Road → The Grove in run 2, then The Grove → Alexander Road in run 5, right back where they started, two real journeys for zero net benefit. Root cause: the Planner recomputes entirely from current instantaneous demand every run, and demand is genuinely volatile — already observed swinging a destination's waiting cargo from 0 to 10+ between two reads minutes apart (Decision 30) — so a fresh computation can legitimately reverse its own recent decision.
+
+This directly confirms `IDEAS.md`'s "Terminal Assignment Stability" entry, previously honest that it had "no evidence this is a real problem rather than a hypothetical one." It now has evidence, one layer up (fleet count between lines, not terminal choice within one).
+
+### Consequence
+
+**Not yet live-tested** — the fix was written in response to this finding, not tested itself yet; needs a save reload (new Lua code) and a few more "Apply Fleet Plan" clicks to confirm it actually stops the observed round-tripping. `COOLDOWN_RUNS = 3` is a first guess, not tuned — needs to be long enough that a vehicle actually settles at its new line before being reconsidered, short enough that a genuinely persistent demand shift doesn't stay artificially blocked. This was the right thing to catch and fix *before* Not Started #4's remaining step (wiring the Dispatcher to run automatically) — an automatic trigger firing more often than manual clicks would have made this worse, not better, shuffling vehicles continuously instead of letting them settle.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
