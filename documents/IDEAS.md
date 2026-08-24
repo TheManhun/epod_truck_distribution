@@ -18,6 +18,34 @@ When an idea reaches a definite outcome, it must be removed from `IDEAS.md`.
 `PROGRESS.md` = what currently exists and works.
 _______________________________________________________________________________________________________________________________
 
+## Distance/Cycle-Time-Aware Truck Allocation
+
+### Origin
+
+Raised live: the Planner currently sizes a line's target truck count purely off waiting cargo, with no idea how long a truck actually takes to do the round trip. Two lines showing equal waiting cargo could have very different real needs if one route is much longer — a long round trip clears less waiting cargo per truck per hour than a short one.
+
+### The idea
+
+Measure a line's real round-trip cycle time (departure from the hub to next departure, including load/unload — the natural loop every vehicle already does) and factor it into the target allocation: a longer cycle time means each truck contributes less throughput, so the line needs more trucks to clear the same waiting cargo. Two measurement paths worth checking, cheaper one first:
+1. Check whether a `LINE` entity already exposes a round-trip/frequency statistic directly (TF2's own LINE STATISTICS panel shows frequency-like numbers, so plausible) — a one-off research dump is already queued for this.
+2. If not, measure it empirically: timestamp a vehicle's natural "departed the hub stop" moment, then the next time it departs again — the gap is a real, observed cycle time, no distance data needed at all.
+
+### The trap already caught — a real design constraint, not just a caveat
+
+**Live-caught before any code was written**: naively reacting to *current* round-trip time creates a feedback loop. A traffic jam slows the round trip → the Planner reads that as "needs more trucks" → adding trucks to an already-congested route makes the jam worse → the round trip gets even slower → the Planner adds still more trucks. This is a real, self-reinforcing failure mode, not a hypothetical — the same class of problem (an automated system reacting to a signal it can itself worsen) as `IDEAS.md`'s own "Terminal Assignment Stability" flapping concern, one level more dangerous since it compounds rather than just oscillates.
+
+**The safe path, if this gets built**: measure a line's cycle time *once*, early — right after it's set up with only a couple of trucks, before any congestion from our own allocation could be a contributing factor — and treat that single measurement as a fixed "this route is long" constant forever after. Never re-measure live cycle time and react to it, since a live number cannot be trusted to mean "the route is far" rather than "we caused a jam." The cost of this safety is real: it won't adapt if a route's natural traffic changes later for unrelated reasons (a new road, a town growing) — a real limitation, but a far safer failure mode than a runaway feedback loop.
+
+### What's actually confirmed vs. still a story
+
+**Confirmed**: nothing yet — this is pre-research. The one-off `LINE` entity dump (path 1 above) has been queued but not yet run.
+
+**Not yet confirmed**: whether TF2 exposes a usable cycle-time/frequency field on `LINE` at all; if not, whether the empirical departure-timestamp approach (path 2) is practical to build without adding meaningful per-tick tracking overhead.
+
+### If it does pan out
+
+A genuine refinement to `planner.lua`'s target-allocation math, on top of the already-proven demand-weighted apportionment (Decisions 29/30) — not a replacement for it. Must be built with the one-time-baseline-measurement constraint above from the start, not bolted on as an afterthought once a live-reactive version has already been tried and found to misbehave.
+
 ## Fleet Utilization Display (%)
 
 ### Origin
