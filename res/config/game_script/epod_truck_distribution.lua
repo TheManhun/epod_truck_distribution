@@ -3054,6 +3054,20 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- 500 is a safer starting point, still a first guess -- needs live
 -- observation of real firing frequency before trusting it further.
 --
+-- RAISED AGAIN, 500 -> 5000 (Decision 40): once Decision 39 made
+-- automatic dispatch actually succeed instead of fast-failing, the
+-- player reported a small, regular pause roughly every second with
+-- Auto Redistribute on. This save's delivery rate turned out to be
+-- extreme (17,800+ logged in one session) -- at 500, the threshold
+-- was being crossed every few seconds, so real dispatch cycles (real
+-- vehicle-move commands, not the near-free failure path from before)
+-- were firing far more often than intended. Still an untuned first
+-- guess at the new value, not a measured "correct" number -- the
+-- underlying fix (Decision 29's cargo-profile floor already exists;
+-- a REAL per-hub delivery count, not a global one, is the eventual
+-- right answer once Decision 29's targetEntity scoping is resolved)
+-- is still the right long-term direction, this is a stopgap.
+--
 -- Reads settings.get("autoDispatchHubStationGroupId") rather than
 -- distributionState.selectedStationGroupId -- live testing proved
 -- handleEvent runs on a different script instance than guiUpdate
@@ -3083,7 +3097,7 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- manual and automatic triggers alike.
 -- ============================================================
 
-local AUTO_DISPATCH_DELIVERY_THRESHOLD = 500
+local AUTO_DISPATCH_DELIVERY_THRESHOLD = 5000
 
 local function attemptAutoDispatch()
 

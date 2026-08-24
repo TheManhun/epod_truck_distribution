@@ -709,6 +709,24 @@ Deferring all real `dispatcher.applyPlan` calls to run from `guiUpdate` fixes bo
 
 **Live-confirmed, completely clean.** 14 automatic dispatch runs observed after reload — zero failures across all of them, real successful moves throughout (`DISPATCH: vehicle X -> ...: true`, runs of 5, 3, 2, and 1 vehicle moved), several runs correctly completing with 0 moves via `DISPATCH COMPLETE` (no deficit needing filling, not a failure). Not one `could not hold vehicle` line anywhere. The pauses the player had been feeling on every automatic trigger were gone in the same session. This closes the automatic-dispatch incident saga (Decisions 36-39) — the actual triggering cause was avoided, not just bounded.
 
+## Decision 40 — Threshold raised again (500→5000): real dispatch cycles were firing too often once they started succeeding
+
+### What happened
+
+After Decision 39's fix confirmed clean (14 successful automatic runs, zero failures), the player reported a small, regular pause roughly every second, with trucks not running smoothly. Checking the log's delivery-event milestones showed this save's delivery rate is extreme — 17,800+ real deliveries logged within one session — meaning the 500-delivery threshold was being crossed every few seconds, not every minute as originally intended.
+
+### Reason
+
+Decisions 37/38's failure-path was cheap (a handful of failed hold attempts, quickly excluded and bailed out). Decision 39 made dispatch actually *succeed* — which means real work: up to 5 vehicles per run, each a 3-step async command chain (hold → setLine → release). Doing that real work every few seconds, indefinitely, is a genuine small recurring cost — likely the actual source of the "every second" pause, distinct from every previous incident in this saga (which were all about failures, not the cost of success).
+
+### Decision
+
+`AUTO_DISPATCH_DELIVERY_THRESHOLD` raised from 500 to 5000 — an order of magnitude, still an untuned first guess given no reliable way yet to measure this save's exact deliveries-per-second rate. The right long-term fix remains what Decision 34 already flagged: a real per-hub delivery count (only counting deliveries that actually land at the managed hub, via the delivery event's `targetEntity`) rather than a global, game-wide count — that's gated on confirming `targetEntity` reliably identifies a hub's own destinations (still open, Decision 29). This is a stopgap, not the final answer.
+
+### Consequence
+
+**Not yet live-tested.** Worth deciding empirically rather than guessing further: if 5000 still feels too frequent, the number should keep climbing rather than assuming a fix is needed elsewhere. This is a tuning question, not a bug — unlike every other decision in the 36-39 range, nothing here was broken, the toggle is just working exactly as often as told to.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
