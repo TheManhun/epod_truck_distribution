@@ -9,7 +9,14 @@
 --   * Split Into Lines & Organize Terminals -- always visible,
 --     purely additive, never touches the source line.
 --   * Assign & Balance Fleet -- DEBUG-gated, moves real vehicles.
---   * Test Bug B / Park-Stop -- DEBUG-gated diagnostic.
+--   * Auto Redistribute (toggle) / Rename Fleet to Hub Identity /
+--     Show Fleet Plan / Apply Fleet Plan -- DEBUG-gated, real
+--     Planner + Opportunistic Dispatcher features (Decisions 29-40).
+--     Disposable one-off tests (loaded-vehicle journey, Bug B,
+--     vehicle rename/colour, file I/O, persistence counter, cargo
+--     compatibility) have all been removed once their questions were
+--     answered -- their underlying functions remain callable
+--     manually in route_injector.lua/vehicles.lua if ever needed.
 --
 -- Every managed line's identity is tracked in a persistent registry
 -- (managed_registry.lua, Decision 26), not by parsing the line's
@@ -19,14 +26,14 @@
 -- Behaviour is driven by entity IDs.
 --
 -- data() also wires a real handleEvent (SimCargoSystem /
--- OnToArriveAtDestination, Decision 28) -- now the Planner +
--- Opportunistic Dispatcher's real trigger: every
--- AUTO_DISPATCH_DELIVERY_THRESHOLD deliveries, if the Auto
--- Redistribute toggle is ON, dispatcher.applyPlan runs automatically
--- against the currently selected hub (attemptAutoDispatch). The
--- manual "Apply Fleet Plan" button still exists alongside this for
--- testing -- the toggle only gates automatic execution, never the
--- Planner's own calculation.
+-- OnToArriveAtDestination, Decision 28) -- the Planner + Opportunistic
+-- Dispatcher's real trigger: every AUTO_DISPATCH_DELIVERY_THRESHOLD
+-- deliveries, if the Auto Redistribute toggle is ON, a "dispatch due"
+-- flag is set and the actual dispatcher.applyPlan call happens from
+-- guiUpdate instead (Decision 39 -- never from inside handleEvent
+-- itself, which deterministically fails). The manual "Apply Fleet
+-- Plan" button still exists alongside this for testing -- the toggle
+-- only gates automatic execution, never the Planner's own calculation.
 -- ============================================================
 
 local config = require("epod_td.config")
@@ -1115,114 +1122,6 @@ end
 
 
 -- ============================================================
--- BUG B TEST BUTTON (config.DEBUG only)
---
--- Two clicks, same pattern as the journey test above but for a
--- different question: does a CONFIRMED-EMPTY vehicle, reassigned via
--- the exact bare setLine Stage 2 actually uses, pick up cargo at its
--- new destination's first stop (Decision 12's Park-stop problem,
--- PROGRESS.md Not Started #1)? See
--- route_injector.M.runBugBTestStep for the full protocol.
--- ============================================================
-
-local function handleBugBTestButtonClick()
-
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.bugBTestButtonLabel ~= nil
-    then
-
-        distributionState.textViews.bugBTestButtonLabel:setText(
-            "[ Working... (see log) ]",
-            WINDOW_WIDTH
-        )
-
-    end
-
-
-    local ok, err =
-        pcall(
-            route_injector.runBugBTestStep,
-
-            function(success, reason)
-
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.bugBTestButtonLabel ~= nil
-                then
-
-                    local label =
-                        "[ Test Bug B / Park-Stop ("
-                            .. tostring(reason)
-                            .. " -- see log) ]"
-
-                    if reason == "watching" then
-
-                        label =
-                            "[ Test Bug B / Park-Stop "
-                                .. "(watching -- click again later) ]"
-
-                    end
-
-                    distributionState.textViews.bugBTestButtonLabel:setText(
-                        label,
-                        WINDOW_WIDTH
-                    )
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        logUi(
-            "BUG B TEST FAILED: "
-                .. tostring(err)
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.bugBTestButtonLabel ~= nil
-        then
-
-            distributionState.textViews.bugBTestButtonLabel:setText(
-                "[ Test Bug B / Park-Stop (crashed -- see log) ]",
-                WINDOW_WIDTH
-            )
-
-        end
-
-    end
-
-end
-
-
--- ============================================================
--- VEHICLE RENAME / COLOUR TEST BUTTON (config.DEBUG only)
---
--- Single click, immediate. See
--- route_injector.M.testVehicleRenameAndColor for the full protocol
--- -- settles whether setName/setColor actually work on a vehicle
--- entity (IDEAS.md's vehicle-naming idea currently has zero live
--- evidence either way for this).
--- ============================================================
-
-local function handleVehicleRenameTestButtonClick()
-
-    local ok, err =
-        pcall(route_injector.testVehicleRenameAndColor)
-
-    if not ok then
-
-        logUi(
-            "VEHICLE RENAME/COLOUR TEST FAILED: "
-                .. tostring(err)
-        )
-
-    end
-
-end
-
-
--- ============================================================
 -- RENAME FLEET TO HUB IDENTITY (config.DEBUG only)
 --
 -- Real feature, not a disposable test -- see fleet_naming.lua for
@@ -1742,30 +1641,13 @@ local function ensureDistributionWindow()
             assignBalanceButton
 
 
-        distributionState.textViews.bugBTestButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".bugBTestButtonLabel",
-                "[ Test Bug B / Park-Stop (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local bugBTestButton =
-            gui.button_create(
-                WINDOW_ID .. ".bugBTestButton",
-                distributionState.textViews.bugBTestButtonLabel
-            )
-
-        bugBTestButton:onClick(
-            handleBugBTestButtonClick
-        )
-
-        distributionState.bugBTestButton =
-            bugBTestButton
-
-        fixedViews[#fixedViews + 1] =
-            bugBTestButton
-
+        -- Test Bug B / Park-Stop button removed here -- its question
+        -- (does a bare setLine reassignment fail to pick up cargo at
+        -- the new destination) is answered by now via hundreds of
+        -- real, organic Dispatcher reassignments across live sessions
+        -- with zero sign of the bug, far stronger evidence than the
+        -- original dedicated single-run test. route_injector.
+        -- runBugBTestStep remains callable manually if ever needed.
 
         -- Initial label reflects whatever was actually persisted
         -- (settings.lua), not a hardcoded "OFF" -- the toggle should
@@ -1796,30 +1678,12 @@ local function ensureDistributionWindow()
             autoRedistributeButton
 
 
-        distributionState.textViews.vehicleRenameTestButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".vehicleRenameTestButtonLabel",
-                "[ Test Vehicle Rename/Colour (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local vehicleRenameTestButton =
-            gui.button_create(
-                WINDOW_ID .. ".vehicleRenameTestButton",
-                distributionState.textViews.vehicleRenameTestButtonLabel
-            )
-
-        vehicleRenameTestButton:onClick(
-            handleVehicleRenameTestButtonClick
-        )
-
-        distributionState.vehicleRenameTestButton =
-            vehicleRenameTestButton
-
-        fixedViews[#fixedViews + 1] =
-            vehicleRenameTestButton
-
+        -- Test Vehicle Rename/Colour button removed here -- its
+        -- question (does setName/setColor work on a vehicle entity)
+        -- is long since answered and superseded by the real "Rename
+        -- Fleet to Hub Identity" feature below. route_injector.
+        -- testVehicleRenameAndColor remains callable manually if
+        -- ever needed.
 
         distributionState.textViews.renameFleetButtonLabel =
             gui.textView_create(
