@@ -2045,7 +2045,30 @@ end
 -- UPDATE WINDOW CONTENT
 -- ============================================================
 
+-- ONE-OFF, DISPOSABLE: paired with attemptAutoDispatch's own
+-- instance-identity log below (near handleDeliveryEvent) -- see that
+-- comment for why. Declared here, before updateDistributionWindow,
+-- so the local is in scope at the point it's used (the same
+-- source-order rule already caught once this session for
+-- hasRunItemHistoryDump). Remove once answered.
+local hasLoggedGuiUpdateInstanceCheck = false
+
 local function updateDistributionWindow()
+
+    if not hasLoggedGuiUpdateInstanceCheck
+        and distributionState.selectedEntityId ~= nil
+    then
+
+        hasLoggedGuiUpdateInstanceCheck = true
+
+        logUi(
+            "INSTANCE CHECK (updateDistributionWindow): distributionState="
+                .. tostring(distributionState)
+                .. " selectedStationGroupId="
+                .. tostring(distributionState.selectedStationGroupId)
+        )
+
+    end
 
     if distributionState.selectedEntityId == nil
         or distributionState.selectedEntity == nil
@@ -2988,7 +3011,35 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 
 local AUTO_DISPATCH_DELIVERY_THRESHOLD = 50
 
+-- ONE-OFF, DISPOSABLE: zero AUTO DISPATCH triggers fired across a
+-- 12,700+ delivery, 250+ threshold-crossing session with the toggle
+-- confirmed ON and a hub confirmed selected in the panel for large
+-- stretches of it. Suspect the same multi-instance problem that
+-- broke data()'s save/load (Decision 24) -- if handleEvent runs on a
+-- different script instance than guiUpdate, this instance's own
+-- private distributionState.selectedStationGroupId would never see
+-- what the visible panel has selected. Logs distributionState's own
+-- identity (its table address via tostring) from both this function
+-- and updateDistributionWindow, once each, to test that directly.
+-- Remove once answered.
+local hasLoggedAutoDispatchInstanceCheck = false
+
 local function attemptAutoDispatch()
+
+    if not hasLoggedAutoDispatchInstanceCheck then
+
+        hasLoggedAutoDispatchInstanceCheck = true
+
+        logUi(
+            "INSTANCE CHECK (attemptAutoDispatch): distributionState="
+                .. tostring(distributionState)
+                .. " selectedStationGroupId="
+                .. tostring(distributionState.selectedStationGroupId)
+                .. " autoRedistribute="
+                .. tostring(settings.get("autoRedistribute"))
+        )
+
+    end
 
     if not settings.get("autoRedistribute") then
         return
