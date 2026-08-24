@@ -15,8 +15,7 @@ local M = {}
 --
 -- No validation step is needed here the way managed_registry.lua
 -- needs one (stale entity IDs from a different save) -- a plain
--- boolean preference has no entity to go stale. Read once per
--- session, lazily, on first access.
+-- boolean preference has no entity to go stale.
 --
 -- Values can be boolean or numeric (added for autoDispatchHub-
 -- StationGroupId, Decision 35 -- a persisted entity ID, not a
@@ -27,6 +26,20 @@ local M = {}
 -- degrade harmlessly to "nothing to do" against an invalid/stale
 -- entity rather than erroring, so a dedicated validation pass here
 -- would be solving a problem that doesn't actually bite.
+--
+-- NO MODULE-LEVEL CACHE (Decision 35, fixed after a real live bug):
+-- this used to load once, lazily, and cache in a local `state` table
+-- for the rest of the session -- exactly the assumption that broke
+-- data()'s save/load (Decision 24). Live testing proved handleEvent
+-- runs on a different script instance than guiUpdate; the toggle
+-- click (GUI instance) writing a new key to disk was invisible to
+-- the handleEvent instance's already-cached, never-refreshed
+-- snapshot, so attemptAutoDispatch silently saw "no hub" forever
+-- even after the file genuinely had one. Every M.get/M.set now reads
+-- fresh from disk -- the only way to actually cross the instance
+-- boundary, proven repeatedly in this project. Low call frequency
+-- (button clicks, once per 50 delivery events) makes the extra
+-- io.open cost a non-issue.
 -- ============================================================
 
 local STATE_FILE_PATH = "epod_td_settings.txt"
@@ -34,8 +47,6 @@ local STATE_FILE_PATH = "epod_td_settings.txt"
 local DEFAULTS = {
     autoRedistribute = false
 }
-
-local state = nil
 
 
 local function loadStateFromDisk()
@@ -85,7 +96,7 @@ local function loadStateFromDisk()
 end
 
 
-local function saveStateToDisk()
+local function saveStateToDisk(state)
 
     pcall(function()
 
@@ -113,18 +124,9 @@ local function saveStateToDisk()
 end
 
 
-local function ensureLoaded()
-
-    if state == nil then
-        state = loadStateFromDisk()
-    end
-
-end
-
-
 function M.get(key)
 
-    ensureLoaded()
+    local state = loadStateFromDisk()
 
     if state[key] ~= nil then
         return state[key]
@@ -137,11 +139,11 @@ end
 
 function M.set(key, value)
 
-    ensureLoaded()
+    local state = loadStateFromDisk()
 
     if state[key] ~= value then
         state[key] = value
-        saveStateToDisk()
+        saveStateToDisk(state)
     end
 
 end

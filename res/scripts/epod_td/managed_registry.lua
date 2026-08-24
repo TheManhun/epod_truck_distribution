@@ -16,10 +16,23 @@ local M = {}
 -- Uses direct file I/O (io.open), not data()'s save/load hooks --
 -- see DECISIONS.md Decision 24 for why save/load turned out to be
 -- unusable here after eight live-tested attempts across two hard
--- crashes. File I/O has no equivalent problem: it doesn't depend on
--- which script instance the engine happens to be running, so a
--- plain module-level `state` table is safe here in a way it wasn't
--- for the save/load proof-of-concept.
+-- crashes.
+--
+-- NO MODULE-LEVEL STATE CACHE (Decision 35, corrected after a real
+-- live bug elsewhere): this file used to claim a plain module-level
+-- `state` table was safe here "in a way it wasn't for the save/load
+-- proof-of-concept" -- that claim was wrong, just never yet exposed.
+-- settings.lua had the identical pattern (load once, cache forever)
+-- and live testing proved it broken: a value written by one script
+-- instance was invisible to another instance's already-cached,
+-- never-refreshed snapshot. The same risk applies here -- a line
+-- registered by the GUI instance (a fresh Stage 1 split) could be
+-- invisible to isManaged() calls from a different instance (e.g.
+-- inside dispatcher.applyPlan, called from handleEvent) if that
+-- instance had already cached its own copy of state earlier. Every
+-- read now goes through loadStateFromDisk() fresh -- file I/O is the
+-- one thing proven to actually cross the instance boundary, not a
+-- module-level Lua table regardless of what backs it.
 --
 -- Per-savegame scoping: no reliable API was found for reading the
 -- current save's name/identity from Lua (searched the shipped
@@ -36,7 +49,11 @@ local M = {}
 
 local STATE_FILE_PATH = "epod_td_managed_lines.txt"
 
-local state = nil
+-- Per-instance throttle on the expensive game.interface.getLines()
+-- walk only -- NOT a cache of the registry's contents (see the big
+-- comment above). Each script instance still does its own one-time
+-- validate/migrate pass; every actual read/write of the registry
+-- itself goes through loadStateFromDisk()/saveStateToDisk() fresh.
 local hasMigratedThisSession = false
 
 
@@ -73,7 +90,7 @@ local function loadStateFromDisk()
 end
 
 
-local function saveStateToDisk()
+local function saveStateToDisk(state)
 
     pcall(function()
 
@@ -94,30 +111,24 @@ local function saveStateToDisk()
 end
 
 
-local function ensureLoaded()
-
-    if state == nil then
-        state = loadStateFromDisk()
-    end
-
-end
-
-
 -- Drops any registered line ID that no longer resolves to a real
 -- line (stale from a different save, or since deleted -- see the
 -- big comment above), then migrates any currently-existing "● "
--- line not already registered. Runs at most once per session,
--- lazily, on the first real registry query -- avoids a game-wide
--- getLines() walk on every single isManaged() check.
+-- line not already registered. The expensive getLines() walk runs at
+-- most once per script instance (hasMigratedThisSession); the state
+-- itself is always loaded fresh from disk on every call, so a call
+-- after this instance's own migration still picks up whatever
+-- another instance has written since. Returns the resulting state
+-- table.
 local function migrateAndValidate()
 
+    local state = loadStateFromDisk()
+
     if hasMigratedThisSession then
-        return
+        return state
     end
 
     hasMigratedThisSession = true
-
-    ensureLoaded()
 
     local ok, allLineIds =
         pcall(function()
@@ -125,7 +136,7 @@ local function migrateAndValidate()
         end)
 
     if not ok or allLineIds == nil then
-        return
+        return state
     end
 
     local realLineIds = {}
@@ -181,8 +192,10 @@ local function migrateAndValidate()
     end
 
     if changed then
-        saveStateToDisk()
+        saveStateToDisk(state)
     end
+
+    return state
 
 end
 
@@ -193,8 +206,7 @@ function M.isManaged(lineId)
         return false
     end
 
-    migrateAndValidate()
-    ensureLoaded()
+    local state = migrateAndValidate()
 
     return state[lineId] == true
 
@@ -210,11 +222,11 @@ function M.register(lineId)
         return
     end
 
-    ensureLoaded()
+    local state = loadStateFromDisk()
 
     if state[lineId] ~= true then
         state[lineId] = true
-        saveStateToDisk()
+        saveStateToDisk(state)
     end
 
 end
@@ -228,11 +240,11 @@ function M.unregister(lineId)
         return
     end
 
-    ensureLoaded()
+    local state = loadStateFromDisk()
 
     if state[lineId] == true then
         state[lineId] = nil
-        saveStateToDisk()
+        saveStateToDisk(state)
     end
 
 end
