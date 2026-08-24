@@ -87,6 +87,19 @@ local M = {}
 
 local MAX_MOVES_PER_RUN = 5
 
+-- HARD SAFETY CAP (Decision 37, added after a real, severe live
+-- incident): caps TOTAL attempts (success or failure) per run,
+-- independent of MAX_MOVES_PER_RUN, which only ever counted
+-- successes. A vehicle whose hold/setLine command kept failing was
+-- retried with no exclusion and no bound -- synchronous recursion
+-- with nothing to stop it, which pinned the CPU and, per the
+-- player's report, apparently crashed the game repeatedly badly
+-- enough to fill crash_dump with hundreds of .dmp files in under a
+-- minute. This cap is the backstop; excludedVehicleIds (see
+-- findMovableVehicle) is the actual fix that stops a failed vehicle
+-- from being retried at all.
+local MAX_ATTEMPTS_PER_RUN = 20
+
 -- First-guess number, not yet tuned against live data -- needs to be
 -- large enough that a vehicle actually reaches and settles at its
 -- new line before being reconsidered, small enough that a genuinely
@@ -143,16 +156,22 @@ local function isInCooldown(vehicleId)
 end
 
 
--- Finds an empty, compatible, not-in-cooldown vehicle currently on
--- `surplusLineId` to give to a destination needing
--- `neededCargoTypes`. Returns a vehicleId, or nil if none qualify.
-local function findMovableVehicle(surplusLineId, neededCargoTypes)
+-- Finds an empty, compatible, not-in-cooldown, not-already-failed-
+-- this-run vehicle currently on `surplusLineId` to give to a
+-- destination needing `neededCargoTypes`. Returns a vehicleId, or
+-- nil if none qualify. `excludedVehicleIds` (see Decision 37) is
+-- required, not optional -- a vehicle whose hold/setLine command
+-- failed this run must never be handed back out as a candidate
+-- again, or the exact infinite-retry bug that caused Decision 37
+-- returns.
+local function findMovableVehicle(surplusLineId, neededCargoTypes, excludedVehicleIds)
 
     local candidateIds = vehicles.getVehiclesForLine(surplusLineId)
 
     for _, vehicleId in ipairs(candidateIds) do
 
-        if vehicles.isVehicleEmpty(vehicleId) == true
+        if not excludedVehicleIds[vehicleId]
+            and vehicles.isVehicleEmpty(vehicleId) == true
             and not isInCooldown(vehicleId)
             and vehicleCompatibleWithAny(vehicleId, neededCargoTypes)
         then
@@ -306,6 +325,21 @@ end
 
 local function processMoveNext(context)
 
+    context.attempts = context.attempts + 1
+
+    if context.attempts > MAX_ATTEMPTS_PER_RUN then
+
+        log.info(
+            "DISPATCH: reached MAX_ATTEMPTS_PER_RUN ("
+                .. tostring(MAX_ATTEMPTS_PER_RUN)
+                .. ") -- stopping for this run (repeated failures)."
+        )
+
+        context.onComplete(context.movesMade)
+        return
+
+    end
+
     if context.movesMade >= MAX_MOVES_PER_RUN then
 
         log.info(
@@ -372,7 +406,7 @@ local function processMoveNext(context)
         stations.getUnloadedCargoTypes(deficit.destinationStationGroup)
 
     local vehicleId =
-        findMovableVehicle(surplus.id, neededCargoTypes)
+        findMovableVehicle(surplus.id, neededCargoTypes, context.excludedVehicleIds)
 
     if vehicleId == nil then
 
@@ -408,6 +442,14 @@ local function processMoveNext(context)
             surplus.remaining = surplus.remaining - 1
             context.movesMade = context.movesMade + 1
             lastMovedRun[vehicleId] = runCounter
+
+        else
+
+            -- Never retry a vehicle that just failed -- this is the
+            -- actual fix for Decision 37's incident. Without this,
+            -- findMovableVehicle would hand the exact same vehicle
+            -- straight back out again next call.
+            context.excludedVehicleIds[vehicleId] = true
 
         end
 
@@ -502,6 +544,8 @@ function M.applyPlan(hubStationGroup, onComplete)
         deficitIndex = 1,
         surplusIndex = 1,
         movesMade = 0,
+        attempts = 0,
+        excludedVehicleIds = {},
         onComplete = finish
     })
 

@@ -644,6 +644,27 @@ Neither factor alone was catastrophic; together, under real stress-test conditio
 
 This is the clearest evidence yet in this project that a value moving real vehicles automatically needs a hard structural safety net, not just a "seems reasonable" tuning constant — the same lesson `IDEAS.md`'s own "Material Change Threshold" and "Terminal Assignment Stability" entries already gestured at in the abstract, now backed by a real incident report rather than a hypothetical. **Not yet live-tested** — needs a reload and real play (ideally including another deliberate stress-test burst, now that the reentrancy guard should make that survivable) to confirm the fix holds. Given the severity, worth watching closely on the first few automatic triggers rather than walking away from the game.
 
+## Decision 37 — Second, more severe live incident: unbounded synchronous retry loop, apparently crashing the game repeatedly
+
+### What happened
+
+After Decision 36's fixes (threshold raised, reentrancy guard added), the player reported the game "acting paused yet running full speed" with audio stutter again — this time starting almost instantly on load, independent of the Auto Redistribute toggle and independent of whether the Truck Distribution panel was open or selected at all. Pulling the live log while it was happening showed the real cause immediately: `dispatcher.lua` repeatedly logging `DISPATCH: could not hold vehicle 139417 -- skipped.` followed immediately by `DISPATCH: moving vehicle 139417 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove` — the exact same vehicle, over and over, with no gap. Separately, the player found their `crash_dump` folder filling with hundreds of ~316KB `.dmp` files, all timestamped within the same minute — evidence the game was not merely stalling but apparently crashing and being regenerated repeatedly at high frequency. The player force-closed the game as a precaution; no save corruption was reported.
+
+### Root cause
+
+`dispatcher.lua`'s failure-handling path had a real bug: when a vehicle's `setManualDeparture(true, ...)` command failed, `moveOneVehicle`'s callback fired with `success = false`, and `processMoveNext` simply called itself again with **no change to which vehicle would be picked next**. `findMovableVehicle` re-scans `vehicles.getVehiclesForLine(surplusLineId)` in the same order every time and returns the first eligible candidate — since nothing marked the just-failed vehicle as ineligible, it was handed back out immediately, failed again, and so on. `MAX_MOVES_PER_RUN` never caught this because it only counts *successful* moves (`context.movesMade`), which never incremented. This was synchronous Lua recursion (the failure path fires its callback immediately, not via a delayed engine callback), so nothing ever yielded back to the renderer/audio between iterations — a genuine unbounded tight loop, not just "running a bit too often" like Decision 36's issue.
+
+Separately and still unconfirmed: *why* vehicle 139417's `api.cmd.sendCommand` call kept failing at all. `vehicles.setManualDeparture`'s own error log printed `SET MANUAL DEPARTURE SEND ERROR: function: 0x...` — the caught error value was a raw Lua function reference, not a string, meaning `api.cmd.sendCommand` itself raised something unusual internally for this specific vehicle. Not investigated further; the fix below doesn't depend on understanding why a failure happens, only on guaranteeing a failure is never retried blindly.
+
+### Decision (the fix)
+
+1. **`findMovableVehicle` now takes and respects `excludedVehicleIds`.** Any vehicle whose `moveOneVehicle` call fails (hold or `setLine`) is added to this set and will never be selected again for the rest of that `M.applyPlan` call. This is the actual fix — a failure now permanently removes that vehicle from consideration this run, rather than being retried.
+2. **`MAX_ATTEMPTS_PER_RUN` (20) added as a hard backstop**, counting every attempt (success or failure), independent of `MAX_MOVES_PER_RUN`'s success-only count. Even in some future failure mode this fix doesn't anticipate, total attempts per run are now bounded.
+
+### Consequence
+
+This is the most serious incident logged in this project to date — worse than Decision 36's, because it appears to have caused actual repeated crashes, not just unresponsiveness. Two real defensive layers now exist in `dispatcher.lua` (exclusion-on-failure, hard attempt cap) on top of Decision 36's reentrancy guard and Decisions 32/33's cooldowns — the Dispatcher has accumulated meaningful real-world hardening through this testing, each layer added in direct response to an actual observed failure, not speculative "just in case" code. **Not yet live-tested.** Given the severity, testing this again warrants real caution: watch the log closely on the very first automatic or manual trigger after reload rather than leaving it running unattended.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
