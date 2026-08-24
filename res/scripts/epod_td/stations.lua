@@ -530,6 +530,38 @@ end
 
 
 -- ============================================================
+-- RECENT UNLOADED ACTIVITY (LAST MONTH)
+--
+-- getItemTotals above only ever reads the all-time _sum. This reads
+-- itemsUnloaded._lastMonth._sum instead -- confirmed to exist and
+-- be a real per-window total (Decision 28's deep dump). Used by
+-- planner.lua to tell "this destination has never really received
+-- anything" apart from "this destination is real and active but
+-- just happens to show 0 waiting cargo at this exact instant" --
+-- the second case should not be planned down to the bare floor just
+-- because of a momentary reading (Decision 29).
+-- ============================================================
+
+function M.getRecentUnloadedTotal(stationGroupId)
+    if stationGroupId == nil or stationGroupId < 0 then
+        return 0
+    end
+
+    local ok, entity = pcall(game.interface.getEntity, stationGroupId)
+
+    if not ok or entity == nil then
+        return 0
+    end
+
+    local unloadedTable = safeField(entity, "itemsUnloaded")
+    local lastMonthTable = unloadedTable ~= nil and safeField(unloadedTable, "_lastMonth") or nil
+    local lastMonthSum = lastMonthTable ~= nil and safeField(lastMonthTable, "_sum") or nil
+
+    return lastMonthSum or 0
+end
+
+
+-- ============================================================
 -- ITEM HISTORY DEEP DUMP -- one-off research
 --
 -- getItemTotals above only ever reads _sum. The raw entity dump

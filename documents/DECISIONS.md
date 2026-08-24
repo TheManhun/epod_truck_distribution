@@ -508,6 +508,22 @@ Built `planner.lua`'s `M.calculateTargetAllocation` (a per-line target vehicle c
 
 The Planner's core arithmetic is now trusted — the open work is entirely the profile/weighting layer on top, not the apportionment mechanism underneath it. **This output must not be wired to any Dispatcher/execution path until the cargo-profile refinement (current + recent + historical weighting, `IDEAS.md`) is built** — today's version would make real, harmful reassignment decisions on momentary zero-readings, live-demonstrated above, not just theorized. Next real steps: (1) confirm whether `targetEntity` reliably identifies a managed hub's own destinations, since that would make the event trigger genuinely scoped instead of global; (2) fold the now-confirmed `_lastMonth`/`_lastYear` per-cargo-type history (Decision 28) into the Planner's weighting before this is trusted for anything beyond a read-only report.
 
+## Decision 30 — Cargo-profile floor (RECENT/HISTORICAL tiers) live-confirmed fixing Decision 29's exact problem
+
+### Decision
+
+Added activity-tier classification to `planner.lua`: a candidate line is `ACTIVE` (real waiting > 0), `RECENT` (0 waiting, but real `itemsUnloaded._lastMonth` activity at its destination — `stations.getRecentUnloadedTotal`, new), `HISTORICAL` (0 waiting, no recent activity, but real all-time `itemsUnloaded` — already-existing `stations.getItemTotals`), or `IRRELEVANT` (none of the above). RECENT gets a +2 floor bonus, HISTORICAL +1, on top of the base 1-vehicle floor — deliberately a floor-only protection, not a share of the demand-weighted pool, to avoid mixing raw historical totals (which can run into the thousands) into a weighting scheme with no evidence-based scaling factor yet.
+
+### Reason
+
+Live-tested twice in one session (via the newly-self-service `EPOD_Get_Log.bat`, run directly rather than waiting on a manual paste). Both runs conserved exactly (targets summed to the real fleet size, 54, both times) and correctly classified: Alexander Road at 0 waiting was tagged `HISTORICAL` and protected at floor 2 (target 2, delta -21) instead of collapsing to the bare 1 Decision 29 observed (delta -22) — the exact problem this was built to fix, now demonstrated fixed. Park Avenue at 0 waiting similarly landed at `HISTORICAL`, floor 2, exactly matching its real current count (delta 0). Separately, Queens Road's `ACTIVE`-tier weighted share responded correctly to real change between the two runs (waiting 1→10, delta improved -13→-11), confirming the pool-sharing side still works correctly alongside the new floor logic.
+
+**Known rough edge, not fixed yet**: a line showing `waiting=1` (technically real, but negligible next to a hub total in the hundreds) is classified `ACTIVE` and gets only the plain floor, no RECENT/HISTORICAL boost — slightly *less* protected than a same-history destination sitting at a clean 0. Not the bug this was built to fix (that was specifically the zero-waiting snapshot case, now fixed and demonstrated), but a real boundary quirk worth a note rather than silently ignoring.
+
+### Consequence
+
+The floor mechanism works as designed and is live-demonstrated fixing the exact failure mode Decision 29 found — but the protection is deliberately modest (1-2 extra vehicles), not a full restoration of a quiet line's prior fleet. That's intentional: this project has no evidence yet for a larger, more confident number, and Decision 29's own caution against fabricating weights applies here too. `EPOD_Get_Log.bat` can now be run directly rather than relying on the player to paste log output manually, speeding up this kind of live-test loop going forward.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
