@@ -1,278 +1,617 @@
 EPOD Log Extract
-Generated: Mon 24/08/2026 17:31:43.27
+Generated: Mon 24/08/2026 18:08:11.98
 Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 ============================================================
 
   ?epod_truck_distribution/1 (1) (TF2 Truck Distribution)
+[TD-UI] DELIVERY EVENT #1: src= param=102149 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, targetEntity=38568, cargoType=STONE, id=102149, startTime=141665800, sourceEntity=12020 }
+[TD-UI] DELIVERY EVENT #2: src= param=155947 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, targetEntity=22716, cargoType=GRAIN, id=155947, startTime=140068000, sourceEntity=9985 }
+[TD-UI] DELIVERY EVENT #3: src= param=155940 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, targetEntity=22716, cargoType=GRAIN, id=155940, startTime=140601000, sourceEntity=9985 }
+[TD-UI] DELIVERY EVENT #4: src= param=155600 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, targetEntity=22716, cargoType=GRAIN, id=155600, startTime=139896400, sourceEntity=9985 }
+[TD-UI] DELIVERY EVENT #5: src= param=158390 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, targetEntity=90194, cargoType=FUEL, id=158390, startTime=140987600, sourceEntity=10196 }
 [TD-UI] ----------------------------------------
 [TD-UI] COMMAND SURFACE DIAGNOSTIC: api.cmd.make.*
 [TD-UI] ----------------------------------------
-[TD-UI]   setVehicleTargetMaintenanceState
-[TD-UI]   setSimBuildingClosureTimeStamp
-[TD-UI]   setColor
-[TD-UI]   buildProposal
-[TD-UI]   sendScriptEvent
-[TD-UI]   setVehicleManualDeparture
-[TD-UI]   setDate
-[TD-UI]   spawnAnimal
-[TD-UI]   replaceTerrain
-[TD-UI]   bookJournalEntry
-[TD-UI]   connectTownsAndIndustries
-[TD-UI]   replaceVehicle
-[TD-UI]   setSimBuildingManualDevelopment
-[TD-UI]   sendToDepot
-[TD-UI]   deleteLine
-[TD-UI]   setGameSpeed
+[TD-UI]   removeTown
 [TD-UI]   reverseVehicle
-[TD-UI]   removeField
-[TD-UI]   instantlyUpdateTownCargoNeeds
-[TD-UI]   createTowns
-[TD-UI]   setLine
-[TD-UI]   updateLine
-[TD-UI]   developTown
-[TD-UI]   setUserStopped
+[TD-UI]   setName
 [TD-UI]   setVehicleShouldDepart
+[TD-UI]   buyVehicle
+[TD-UI]   setDate
+[TD-UI]   sendToDepot
+[TD-UI]   buildProposal
+[TD-UI]   setGameSpeed
+[TD-UI]   setSimBuildingManualDevelopment
+[TD-UI]   setVehicleManualDeparture
+[TD-UI]   setUserStopped
+[TD-UI]   developTown
+[TD-UI]   spawnAnimal
+[TD-UI]   updateLine
+[TD-UI]   setLine
+[TD-UI]   createTowns
+[TD-UI]   setColor
+[TD-UI]   sendScriptEvent
+[TD-UI]   removeField
+[TD-UI]   sellVehicle
 [TD-UI]   setAnimalState
 [TD-UI]   setTownInfo
-[TD-UI]   createLine
-[TD-UI]   sellVehicle
-[TD-UI]   setName
-[TD-UI]   removeTown
+[TD-UI]   replaceVehicle
+[TD-UI]   deleteLine
+[TD-UI]   instantlyUpdateTownCargoNeeds
+[TD-UI]   bookJournalEntry
 [TD-UI]   setCalendarSpeed
-[TD-UI]   buyVehicle
+[TD-UI]   setSimBuildingClosureTimeStamp
+[TD-UI]   createLine
+[TD-UI]   replaceTerrain
+[TD-UI]   setVehicleTargetMaintenanceState
+[TD-UI]   connectTownsAndIndustries
 [TD-UI] Total commands: 33
 [TD-UI] ----------------------------------------
-[TD-UI] DELIVERY EVENT #1: src= param=159682 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, sourceEntity=4633, startTime=136439000, id=159682, targetEntity=33248, cargoType=LOGS }
-[TD-UI] DELIVERY EVENT #2: src= param=149422 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, sourceEntity=42354, startTime=137155400, id=149422, targetEntity=42245, cargoType=CRUDE }
-[TD-UI] DELIVERY EVENT #3: src= param=148859 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, sourceEntity=42354, startTime=137235800, id=148859, targetEntity=42245, cargoType=CRUDE }
-[TD-UI] DELIVERY EVENT #4: src= param=148547 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, sourceEntity=42354, startTime=137160000, id=148547, targetEntity=42245, cargoType=CRUDE }
-[TD-UI] DELIVERY EVENT #5: src= param=147908 entity={ speed=0, vehicleUsed=true, type=SIM_CARGO, sourceEntity=42354, startTime=137252200, id=147908, targetEntity=42245, cargoType=CRUDE }
 [TD-UI] DELIVERY EVENT: 100 total fires so far this session.
 [TD-UI] Truck Distribution window created.
 [TD-UI] Positioning window at x=3260 y=20 (screen width=3840, WINDOW_WIDTH=560)
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[TD-UI] AUTO REDISTRIBUTE: now managing hub 126300
-[TD-UI] AUTO REDISTRIBUTE setting: true
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
 [TD-UI] DELIVERY EVENT: 200 total fires so far this session.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 1)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 139417 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
 [TD-UI] DELIVERY EVENT: 300 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 139417 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 139398 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 139398 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 139237 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 139237 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 137795 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 137795 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 135350 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 135350 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
 [TD-UI] DELIVERY EVENT: 400 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
 [TD-UI] DELIVERY EVENT: 500 total fires so far this session.
 [TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
 [EPOD-TD] ----------------------------------------
 [EPOD-TD] APPLY FLEET PLAN (run 1)
 [EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 139417 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD58085AF0
-[EPOD-TD] DISPATCH: could not hold vehicle 139417 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 116583 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BCF5639060
-[EPOD-TD] DISPATCH: could not hold vehicle 116583 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 139212 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BCF563A8E0
-[EPOD-TD] DISPATCH: could not hold vehicle 139212 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 135557 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BCF563CB20
-[EPOD-TD] DISPATCH: could not hold vehicle 135557 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 130737 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC67851D90
-[EPOD-TD] DISPATCH: could not hold vehicle 130737 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 132389 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F5FE6F0
-[EPOD-TD] DISPATCH: could not hold vehicle 132389 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 120658 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131B54C1260
+[EPOD-TD] DISPATCH: could not hold vehicle 120658 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 137571 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC67687C60
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131B54AA4E0
 [EPOD-TD] DISPATCH: could not hold vehicle 137571 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 116723 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC676898A0
-[EPOD-TD] DISPATCH: could not hold vehicle 116723 -- skipped.
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Alexander Road for ● Hendon East ↔ The Grove -- trying next surplus line.
-[EPOD-TD] DISPATCH: moving vehicle 151649 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC676859A0
-[EPOD-TD] DISPATCH: could not hold vehicle 151649 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 129725 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC67687EE0
-[EPOD-TD] DISPATCH: could not hold vehicle 129725 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 117443 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC67689160
-[EPOD-TD] DISPATCH: could not hold vehicle 117443 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 89120 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD46EA8680
-[EPOD-TD] DISPATCH: could not hold vehicle 89120 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 114637 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD3CD3BEE0
-[EPOD-TD] DISPATCH: could not hold vehicle 114637 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 132438 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD1BAD6BD0
-[EPOD-TD] DISPATCH: could not hold vehicle 132438 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 136150 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD53391D70
-[EPOD-TD] DISPATCH: could not hold vehicle 136150 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 114859 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC67852150
-[EPOD-TD] DISPATCH: could not hold vehicle 114859 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 93918 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BCCD5F0370
-[EPOD-TD] DISPATCH: could not hold vehicle 93918 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 124486 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BCF3AFA070
-[EPOD-TD] DISPATCH: could not hold vehicle 124486 -- skipped.
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Queens Road for ● Hendon East ↔ The Grove -- trying next surplus line.
-[EPOD-TD] DISPATCH: reached MAX_ATTEMPTS_PER_RUN (20) -- stopping for this run (repeated failures).
+[EPOD-TD] DISPATCH: moving vehicle 116583 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001315F14DE20
+[EPOD-TD] DISPATCH: could not hold vehicle 116583 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
 [TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
 [TD-UI] DELIVERY EVENT: 600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 700 total fires so far this session.
 [TD-UI] DELIVERY EVENT: 800 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
 [TD-UI] DELIVERY EVENT: 900 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
 [TD-UI] DELIVERY EVENT: 1000 total fires so far this session.
 [TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
 [EPOD-TD] ----------------------------------------
 [EPOD-TD] APPLY FLEET PLAN (run 2)
 [EPOD-TD] ----------------------------------------
 [EPOD-TD] DISPATCH: moving vehicle 135557 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD549EC0F0
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001315AEA0FB0
 [EPOD-TD] DISPATCH: could not hold vehicle 135557 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 130737 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F7B0930
-[EPOD-TD] DISPATCH: could not hold vehicle 130737 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 132389 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F924BE0
-[EPOD-TD] DISPATCH: could not hold vehicle 132389 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 116723 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD53396FF0
-[EPOD-TD] DISPATCH: could not hold vehicle 116723 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 135325 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD3CD4FFE0
-[EPOD-TD] DISPATCH: could not hold vehicle 135325 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 116791 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD53397FF0
-[EPOD-TD] DISPATCH: could not hold vehicle 116791 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 130700 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BD533996B0
-[EPOD-TD] DISPATCH: could not hold vehicle 130700 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 131664 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4827EE20
-[EPOD-TD] DISPATCH: could not hold vehicle 131664 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 139212 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BCF2758420
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001315AEA1C70
 [EPOD-TD] DISPATCH: could not hold vehicle 139212 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 136727 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F8DECA0
-[EPOD-TD] DISPATCH: could not hold vehicle 136727 -- skipped.
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Alexander Road for ● Hendon East ↔ The Grove -- trying next surplus line.
+[EPOD-TD] DISPATCH: moving vehicle 130737 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131D311F0A0
+[EPOD-TD] DISPATCH: could not hold vehicle 130737 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 1100 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 1200 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1300 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1400 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 1500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 3)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 93918 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131619F98F0
+[EPOD-TD] DISPATCH: could not hold vehicle 93918 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 129725 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EB5E0E60
+[EPOD-TD] DISPATCH: could not hold vehicle 129725 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 117443 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001316073B860
+[EPOD-TD] DISPATCH: could not hold vehicle 117443 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 1600 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 1700 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 1800 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1900 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 4)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 114637 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131DBEE3C10
+[EPOD-TD] DISPATCH: could not hold vehicle 114637 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 132438 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F7B20B0
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131F35FEC80
 [EPOD-TD] DISPATCH: could not hold vehicle 132438 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 136150 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC47D1B060
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 0000013166EF6C70
 [EPOD-TD] DISPATCH: could not hold vehicle 136150 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 114859 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC47D1BCA0
-[EPOD-TD] DISPATCH: could not hold vehicle 114859 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 124486 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F8DFC60
-[EPOD-TD] DISPATCH: could not hold vehicle 124486 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 2100 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2200 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2300 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2400 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 5)
+[EPOD-TD] ----------------------------------------
 [EPOD-TD] DISPATCH: moving vehicle 136157 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F8DF5E0
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EF132020
 [EPOD-TD] DISPATCH: could not hold vehicle 136157 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 105366 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F8DFE20
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EF131FA0
 [EPOD-TD] DISPATCH: could not hold vehicle 105366 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 151649 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F8E1120
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131A2561AA0
+[EPOD-TD] DISPATCH: could not hold vehicle 151649 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 2600 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2700 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 2800 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 2900 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 3000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 6)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 93918 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131E57A2CE0
+[EPOD-TD] DISPATCH: could not hold vehicle 93918 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 129725 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131CC938DE0
+[EPOD-TD] DISPATCH: could not hold vehicle 129725 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 117443 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131CD237F30
+[EPOD-TD] DISPATCH: could not hold vehicle 117443 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 3100 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 3200 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 3300 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3400 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 3500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 7)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 89120 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001309945E520
+[EPOD-TD] DISPATCH: could not hold vehicle 89120 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 114637 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131AF89D660
+[EPOD-TD] DISPATCH: could not hold vehicle 114637 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 132438 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001314E7D6B40
+[EPOD-TD] DISPATCH: could not hold vehicle 132438 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 3600 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 3700 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3800 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 3900 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 4000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 8)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 136150 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001316E4949B0
+[EPOD-TD] DISPATCH: could not hold vehicle 136150 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 114859 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001316E494CF0
+[EPOD-TD] DISPATCH: could not hold vehicle 114859 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 124486 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 0000013152750920
+[EPOD-TD] DISPATCH: could not hold vehicle 124486 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 4100 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 4200 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 4300 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 4400 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 4500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 9)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 98441 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131E7805E30
+[EPOD-TD] DISPATCH: could not hold vehicle 98441 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 130729 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131B7270070
+[EPOD-TD] DISPATCH: could not hold vehicle 130729 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 93918 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131B7273DB0
+[EPOD-TD] DISPATCH: could not hold vehicle 93918 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 4600 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 4700 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=125715 stationGroup=125715 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 4800 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 4900 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 5000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 10)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 129725 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131D12E9D90
+[EPOD-TD] DISPATCH: could not hold vehicle 129725 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 117443 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131D12EA650
+[EPOD-TD] DISPATCH: could not hold vehicle 117443 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 89120 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131AF8AFAA0
+[EPOD-TD] DISPATCH: could not hold vehicle 89120 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 5100 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 5200 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 5300 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 5400 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 5500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 11)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 114637 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131BB476B50
+[EPOD-TD] DISPATCH: could not hold vehicle 114637 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 132438 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EF01DC10
+[EPOD-TD] DISPATCH: could not hold vehicle 132438 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 136150 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131A255E820
+[EPOD-TD] DISPATCH: could not hold vehicle 136150 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 5600 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 5700 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 5800 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 5900 total fires so far this session.
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] entity=161921 stationGroup=nil managedLines=0 managedTrucks=0
+[TD-UI] entity=161138 stationGroup=nil managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 12)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 124486 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000132303A9260
+[EPOD-TD] DISPATCH: could not hold vehicle 124486 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 136157 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131E8D28230
+[EPOD-TD] DISPATCH: could not hold vehicle 136157 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 105366 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131E8D29930
+[EPOD-TD] DISPATCH: could not hold vehicle 105366 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6100 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6200 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6300 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 6400 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 6500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 13)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 151649 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131C61B71C0
 [EPOD-TD] DISPATCH: could not hold vehicle 151649 -- skipped.
 [EPOD-TD] DISPATCH: moving vehicle 98441 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F8E0720
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131C61B7440
 [EPOD-TD] DISPATCH: could not hold vehicle 98441 -- skipped.
-[EPOD-TD] DISPATCH: moving vehicle 114637 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 000001BC4F917FE0
-[EPOD-TD] DISPATCH: could not hold vehicle 114637 -- skipped.
-[EPOD-TD] DISPATCH: reached MAX_ATTEMPTS_PER_RUN (20) -- stopping for this run (repeated failures).
+[EPOD-TD] DISPATCH: moving vehicle 130729 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131C61B72C0
+[EPOD-TD] DISPATCH: could not hold vehicle 130729 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
 [TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6600 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6700 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 6800 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 6900 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 7000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 14)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 117443 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131C9E03D00
+[EPOD-TD] DISPATCH: could not hold vehicle 117443 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 89120 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EF4CD670
+[EPOD-TD] DISPATCH: could not hold vehicle 89120 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 114637 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 0000013160471830
+[EPOD-TD] DISPATCH: could not hold vehicle 114637 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 7100 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 7200 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 7300 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] entity=161374 stationGroup=161374 managedLines=0 managedTrucks=0
+[TD-UI] DELIVERY EVENT: 7400 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[TD-UI] DELIVERY EVENT: 1100 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 7500 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 15)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 136150 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EA1A69A0
+[EPOD-TD] DISPATCH: could not hold vehicle 136150 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 114859 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 2)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EA1A7820
+[EPOD-TD] DISPATCH: could not hold vehicle 114859 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 124486 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] DISPATCH: moving vehicle 136150 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000132303B3020
+[EPOD-TD] DISPATCH: could not hold vehicle 124486 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 136150 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 114859 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[TD-UI] DELIVERY EVENT: 7600 total fires so far this session.
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 114859 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 124486 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 124486 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 105366 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 105366 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 136157 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 136157 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
-[EPOD-TD] ROAD VEHICLE LOOKUP: 159 road-carrier vehicles found game-wide.
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 7700 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=94
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 7800 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 7900 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 8000 total fires so far this session.
+[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- running Dispatcher on hub 126300.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 16)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 136727 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EE0CEAF0
+[EPOD-TD] DISPATCH: could not hold vehicle 136727 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 130884 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EE0CEF30
+[EPOD-TD] DISPATCH: could not hold vehicle 130884 -- skipped.
+[EPOD-TD] DISPATCH: moving vehicle 120658 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE SEND ERROR: function: 00000131EE0CF6F0
+[EPOD-TD] DISPATCH: could not hold vehicle 120658 -- skipped.
+[EPOD-TD] DISPATCH: 3 consecutive failures -- stopping this run early (likely systemic, not one bad vehicle).
+[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 8100 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104

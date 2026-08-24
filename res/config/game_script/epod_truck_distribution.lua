@@ -150,6 +150,19 @@ local BLANK_CARGO_ICON =
 local AUTO_REFRESH_GUI_UPDATES =
     120
 
+-- Separate throttle for checking the auto-dispatch "pending" flag
+-- (Decision 39) -- deliberately NOT tied to AUTO_REFRESH_GUI_UPDATES
+-- above, since that counter only increments while a station is
+-- selected (guiUpdate returns early otherwise), but auto-dispatch
+-- must keep working even while the player is elsewhere on the map.
+-- settings.get() now does real disk I/O per call (Decision 35), so
+-- this must stay throttled, not checked every single frame.
+local AUTO_DISPATCH_POLL_INTERVAL =
+    120
+
+local autoDispatchPollCounter =
+    0
+
 
 -- ============================================================
 -- STATE
@@ -3047,6 +3060,27 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- (Decision 35), so this function's own copy of distributionState
 -- never sees what the panel has selected. File I/O is the one thing
 -- already confirmed to cross that boundary reliably.
+--
+-- DOES NOT CALL dispatcher.applyPlan DIRECTLY (Decision 39, after a
+-- conclusively-diagnosed live incident): a controlled comparison
+-- showed 10/10 manual "Apply Fleet Plan" clicks succeeding and
+-- ~45/45 automatic triggers failing, every single time -- not bad
+-- luck, deterministic. handleEvent fires from INSIDE the engine's
+-- own delivery-processing callback; issuing a real
+-- api.cmd.make.*/sendCommand command synchronously from there hits
+-- TF2's engine while it's still "between changes" from the delivery
+-- that triggered the callback (the exact ecs::Engine::BeginModification
+-- assertion from Decisions 37/38). A manual button click happens from
+-- ordinary player input, never from inside that callback, so it
+-- never hits this. This function now only sets a persisted "a
+-- dispatch is due" flag; the real dispatcher.applyPlan call happens
+-- from guiUpdate instead (see below) -- an ordinary per-frame poll,
+-- the same call context the manual button already uses successfully.
+-- Bonus: every real applyPlan call now runs in the SAME script
+-- instance (the GUI one), so dispatcher.lua's cooldowns and
+-- reentrancy guard -- previously silently split across separate
+-- per-instance copies -- now actually apply consistently across
+-- manual and automatic triggers alike.
 -- ============================================================
 
 local AUTO_DISPATCH_DELIVERY_THRESHOLD = 500
@@ -3057,45 +3091,18 @@ local function attemptAutoDispatch()
         return
     end
 
-    local hubStationGroupId =
-        settings.get("autoDispatchHubStationGroupId")
-
-    if hubStationGroupId == nil then
+    if settings.get("autoDispatchHubStationGroupId") == nil then
         return
     end
 
     logUi(
         "AUTO DISPATCH: material-change threshold reached ("
             .. tostring(AUTO_DISPATCH_DELIVERY_THRESHOLD)
-            .. " deliveries) -- running Dispatcher on hub "
-            .. tostring(hubStationGroupId)
-            .. "."
+            .. " deliveries) -- flagging a dispatch as due "
+            .. "(actual run deferred to the next frame update)."
     )
 
-    local ok, err =
-        pcall(
-            dispatcher.applyPlan,
-            hubStationGroupId,
-
-            function(movesMade)
-
-                logUi(
-                    "AUTO DISPATCH: "
-                        .. tostring(movesMade)
-                        .. " vehicle(s) moved."
-                )
-
-            end
-        )
-
-    if not ok then
-
-        logUi(
-            "AUTO DISPATCH FAILED: "
-                .. tostring(err)
-        )
-
-    end
+    settings.set("autoDispatchPending", true)
 
 end
 
@@ -3164,9 +3171,72 @@ local function handleDeliveryEvent(src, id, name, param)
 end
 
 
+-- Runs the actually-deferred Dispatcher call (Decision 39) from an
+-- ordinary per-frame poll -- never from inside handleEvent, which is
+-- what caused every automatic attempt to fail (see attemptAutoDispatch's
+-- comment above). Throttled independently of station selection.
+local function pollAutoDispatchPending()
+
+    autoDispatchPollCounter = autoDispatchPollCounter + 1
+
+    if autoDispatchPollCounter < AUTO_DISPATCH_POLL_INTERVAL then
+        return
+    end
+
+    autoDispatchPollCounter = 0
+
+    if not settings.get("autoDispatchPending") then
+        return
+    end
+
+    settings.set("autoDispatchPending", false)
+
+    local hubStationGroupId =
+        settings.get("autoDispatchHubStationGroupId")
+
+    if hubStationGroupId == nil then
+        return
+    end
+
+    logUi(
+        "AUTO DISPATCH: running deferred Dispatcher on hub "
+            .. tostring(hubStationGroupId)
+            .. "."
+    )
+
+    local ok, err =
+        pcall(
+            dispatcher.applyPlan,
+            hubStationGroupId,
+
+            function(movesMade)
+
+                logUi(
+                    "AUTO DISPATCH: "
+                        .. tostring(movesMade)
+                        .. " vehicle(s) moved."
+                )
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "AUTO DISPATCH FAILED: "
+                .. tostring(err)
+        )
+
+    end
+
+end
+
+
 local function guiUpdate()
 
     runStartupDiagnosticsOnce()
+
+    pollAutoDispatchPending()
 
 
     if distributionState.selectedEntityId == nil then

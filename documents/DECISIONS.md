@@ -689,6 +689,24 @@ But the pattern underneath was new and worth taking seriously: **every single ve
 
 **Not yet live-tested.** The underlying question — why is *every* vehicle at this hub currently failing to hold, not just an occasional one — remains open and is a bigger, more interesting question than this fix answers. Leading theory, not yet confirmed: this save has been deliberately stress-tested with very high vehicle counts and delivery volume (100+ vehicles, thousands of deliveries per session), and the underlying `ecs::Engine::BeginModification` "between changes" state (Decision 37) may simply be common, not rare, when the simulation is under this much concurrent load — meaning the collision rate scales with how hard the save is being pushed, not a fixed per-vehicle defect. If that's right, this may partly resolve itself under more normal (less deliberately extreme) play, and is worth re-testing under lighter load before concluding anything further needs fixing here.
 
+## Decision 39 — Root cause of the systemic failures found: never call the Dispatcher from inside `handleEvent`. Deferred execution to `guiUpdate`
+
+### Decision
+
+`attemptAutoDispatch` (called from `handleDeliveryEvent`) no longer calls `dispatcher.applyPlan` at all — it only sets a persisted flag, `settings.set("autoDispatchPending", true)`. A new function, `pollAutoDispatchPending`, runs from `guiUpdate` (throttled independently of station selection, `AUTO_DISPATCH_POLL_INTERVAL = 120`) and performs the actual `dispatcher.applyPlan` call when the flag is set.
+
+### Reason
+
+Decision 38's tighter failure handling worked as designed, but the underlying question — why does *every* automatic attempt fail — needed answering. A direct, controlled comparison in the live log gave a conclusive answer: a manual "Apply Fleet Plan" click at one point in the session succeeded 5/5, another manual click later succeeded 5/5 again (10/10 total) — while roughly 15 consecutive automatic triggers in between failed 100% of the time (~45/45 failed attempts). This is not a rare, random collision (Decision 37's original framing) — it's deterministic based on *where the command is issued from*.
+
+`handleEvent` fires from inside the game engine's own delivery-processing callback — the engine is actively mid-modification when `OnToArriveAtDestination` fires. Issuing a real `api.cmd.make.*` + `sendCommand` call synchronously from inside that same callback hits the engine while it's still "between changes" from the delivery that triggered the callback in the first place — exactly the `ecs::Engine::BeginModification` assertion confirmed in Decision 37. A manual button click happens from ordinary player input, never from inside that callback, so it was never affected — which is exactly why hours of earlier manual testing (Decisions 31-33) never once hit this.
+
+**A second, previously-unnoticed problem surfaced from the same log evidence**: the manual click's own `APPLY FLEET PLAN` run counter read "(run 1)" then "(run 2)" — completely disconnected from the automatic triggers' counter, which was independently up to "(run 15)" at the same point in real time. `dispatcher.lua`'s module-level state (`runCounter`, `lastMovedRun`, `lastLineDirection`, `isApplyPlanRunning`) is subject to the exact same multi-instance problem as `settings.lua`/`managed_registry.lua` (Decision 35) — the GUI instance and the `handleEvent` instance each have their own separate copy of `dispatcher.lua`'s module state. This means Decisions 32/33's cooldowns and Decision 36's reentrancy guard were never actually being shared between manual and automatic triggers — each instance was independently tracking its own view of "what was recently moved."
+
+### Consequence
+
+Deferring all real `dispatcher.applyPlan` calls to run from `guiUpdate` fixes both problems in one change, not two separate fixes: (1) the engine-modification call context is now the same one manual clicks already proved safe, and (2) since manual clicks *also* run from `guiUpdate`'s script instance, every real dispatch call now shares the same `runCounter`/cooldown/reentrancy state regardless of trigger source — the cooldowns finally mean what they were always supposed to mean. **Not yet live-tested.** This is the most structurally significant fix in the automatic-dispatch saga so far — if confirmed, it should eliminate the systemic failures entirely rather than just bounding their cost (Decisions 37/38), since the actual triggering cause is now avoided rather than survived.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
