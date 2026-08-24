@@ -3027,9 +3027,19 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- real future refinement once targetEntity scoping is proven, not a
 -- blocker for a first working version.
 --
--- AUTO_DISPATCH_DELIVERY_THRESHOLD is a first guess, not tuned --
--- needs live observation of how often it actually fires relative to
--- real demand changes before trusting the number.
+-- AUTO_DISPATCH_DELIVERY_THRESHOLD -- RAISED FROM 50 AFTER A REAL
+-- LIVE INCIDENT (Decision 36): 50 was far too low relative to real
+-- observed delivery rates -- during a delivery burst (the player had
+-- deliberately stacked up extra deliveries to stress-test), this
+-- could trigger a full Planner+Dispatcher cycle multiple times per
+-- second, and the resulting pile of real, synchronous vehicle-move
+-- commands made the game unresponsive with audio stutter badly
+-- enough to require a force-close. dispatcher.lua now also has a
+-- hard reentrancy guard (Decision 36) so overlapping runs can never
+-- pile up regardless of this number -- but the number itself still
+-- matters for not feeling frantic even when it's technically safe.
+-- 500 is a safer starting point, still a first guess -- needs live
+-- observation of real firing frequency before trusting it further.
 --
 -- Reads settings.get("autoDispatchHubStationGroupId") rather than
 -- distributionState.selectedStationGroupId -- live testing proved
@@ -3039,7 +3049,7 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- already confirmed to cross that boundary reliably.
 -- ============================================================
 
-local AUTO_DISPATCH_DELIVERY_THRESHOLD = 50
+local AUTO_DISPATCH_DELIVERY_THRESHOLD = 500
 
 local function attemptAutoDispatch()
 

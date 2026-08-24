@@ -418,12 +418,57 @@ local function processMoveNext(context)
 end
 
 
+-- REENTRANCY GUARD (added after a real live incident, Decision 36):
+-- each move is 3 async API calls (hold -> setLine -> release); if
+-- something calls M.applyPlan again before a previous call's async
+-- chain has finished, the two runs' commands could interleave and
+-- pile up rather than the second one waiting its turn. Combined with
+-- AUTO_DISPATCH_DELIVERY_THRESHOLD being set far too low relative to
+-- real observed delivery rates (attemptAutoDispatch could trigger
+-- multiple times per second during a delivery burst), this produced
+-- a genuine, serious hang -- the game became unresponsive with audio
+-- stutter and had to be force-closed. This guard is the structural
+-- fix: no matter how often something tries to call M.applyPlan, only
+-- one run is ever actually in flight at a time; a call arriving
+-- while one is already running is refused outright rather than
+-- queued or interleaved.
+local isApplyPlanRunning = false
+
+
 -- Applies planner.lua's current target allocation for `hubStationGroup`
 -- by moving real, empty, compatible vehicles between managed lines,
--- up to MAX_MOVES_PER_RUN. Manually triggered only -- see file
--- header. onComplete(movesMade) fires once no more moves are
--- possible or the cap is reached.
+-- up to MAX_MOVES_PER_RUN. Manually triggered or called from
+-- attemptAutoDispatch -- see file header. onComplete(movesMade)
+-- fires once no more moves are possible, the cap is reached, or this
+-- call was refused because another run is already in flight.
 function M.applyPlan(hubStationGroup, onComplete)
+
+    if isApplyPlanRunning then
+
+        log.info(
+            "APPLY FLEET PLAN: a previous run is still in flight -- "
+                .. "refusing this call rather than overlapping it."
+        )
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
+        return
+
+    end
+
+    isApplyPlanRunning = true
+
+    local function finish(movesMade)
+
+        isApplyPlanRunning = false
+
+        if onComplete ~= nil then
+            onComplete(movesMade)
+        end
+
+    end
 
     runCounter = runCounter + 1
 
@@ -436,11 +481,7 @@ function M.applyPlan(hubStationGroup, onComplete)
     if #plan.lines == 0 then
 
         log.info("Nothing to do: no managed lines at this hub.")
-
-        if onComplete ~= nil then
-            onComplete(0)
-        end
-
+        finish(0)
         return
 
     end
@@ -450,11 +491,7 @@ function M.applyPlan(hubStationGroup, onComplete)
     if #deficits == 0 then
 
         log.info("Nothing to do: no line currently needs more vehicles.")
-
-        if onComplete ~= nil then
-            onComplete(0)
-        end
-
+        finish(0)
         return
 
     end
@@ -465,7 +502,7 @@ function M.applyPlan(hubStationGroup, onComplete)
         deficitIndex = 1,
         surplusIndex = 1,
         movesMade = 0,
-        onComplete = onComplete or function() end
+        onComplete = finish
     })
 
 end

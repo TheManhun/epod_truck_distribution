@@ -621,6 +621,29 @@ Both fixes are genuine improvements, not just patches. Layer 1: auto-dispatch no
 
 **Broader lesson, worth restating plainly**: no module-level Lua state should ever be assumed to persist meaningfully across a call boundary in this codebase unless it's read fresh from disk every time. "We already proved file I/O works" (Decision 24) is not the same claim as "we cached it correctly" — this session had to relearn that distinction the hard way, twice, in two different modules, before it stuck.
 
+## Decision 36 — Real live incident: the game hung and had to be force-closed. Root cause was two compounding automation bugs, both fixed
+
+### What happened
+
+Shortly after Decision 35's fixes went live, the player reported the game "acting paused yet running full speed," with audio cutting in and out. They closed the game as a precaution; on shutdown it went unresponsive and had to be force-closed. No save corruption was reported, but this was a genuine, serious incident — not a cosmetic bug — and is recorded honestly rather than glossed over, consistent with this project's evidence-first discipline applying to failures as much as successes.
+
+### Root cause (two compounding factors, not one)
+
+1. **`AUTO_DISPATCH_DELIVERY_THRESHOLD = 50` was far too low.** The player had deliberately stacked up extra deliveries at the hub to stress-test the automatic Dispatcher (Decision 34). Real observed delivery rates during that kind of burst can exceed 50 within a fraction of a second — meaning `attemptAutoDispatch` (and the full `planner.calculateTargetAllocation` + `dispatcher.applyPlan` cycle inside it) could trigger many times per second instead of the intended "occasional automatic check-in."
+
+2. **`dispatcher.lua` had no reentrancy guard.** Each vehicle move is 3 sequential async API calls (`setManualDeparture` → `setLine` → `setManualDeparture`). Nothing stopped a new `M.applyPlan` call from starting while a previous call's async chain was still resolving. Combined with factor 1, this meant multiple overlapping `applyPlan` runs could pile up real, synchronous, in-flight command sequences faster than the engine could resolve them — a genuine, unbounded (in the observed session) backlog of pending work, not just "running a bit more than intended."
+
+Neither factor alone was catastrophic; together, under real stress-test conditions, they were.
+
+### Decision (the fix)
+
+1. **`AUTO_DISPATCH_DELIVERY_THRESHOLD` raised from 50 to 500** — still a first guess, not precisely tuned, but a far safer starting point given real observed burst rates.
+2. **`dispatcher.lua` gained a hard reentrancy guard** (`isApplyPlanRunning`, module-level): if `M.applyPlan` is called while a previous call's async chain hasn't finished, the new call is refused outright (logged, `onComplete(0)`) rather than allowed to overlap. This is the structural fix — it makes the system safe *regardless* of how the threshold is tuned, or of any other future trigger (a timer, a different event) that might call `applyPlan` more often than expected. The threshold change alone would have reduced the *frequency* of the problem; the reentrancy guard is what actually makes overlap impossible.
+
+### Consequence
+
+This is the clearest evidence yet in this project that a value moving real vehicles automatically needs a hard structural safety net, not just a "seems reasonable" tuning constant — the same lesson `IDEAS.md`'s own "Material Change Threshold" and "Terminal Assignment Stability" entries already gestured at in the abstract, now backed by a real incident report rather than a hypothetical. **Not yet live-tested** — needs a reload and real play (ideally including another deliberate stress-test burst, now that the reentrancy guard should make that survivable) to confirm the fix holds. Given the severity, worth watching closely on the first few automatic triggers rather than walking away from the game.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
