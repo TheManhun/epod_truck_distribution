@@ -559,7 +559,31 @@ This directly confirms `IDEAS.md`'s "Terminal Assignment Stability" entry, previ
 
 ### Consequence
 
-**Not yet live-tested** — the fix was written in response to this finding, not tested itself yet; needs a save reload (new Lua code) and a few more "Apply Fleet Plan" clicks to confirm it actually stops the observed round-tripping. `COOLDOWN_RUNS = 3` is a first guess, not tuned — needs to be long enough that a vehicle actually settles at its new line before being reconsidered, short enough that a genuinely persistent demand shift doesn't stay artificially blocked. This was the right thing to catch and fix *before* Not Started #4's remaining step (wiring the Dispatcher to run automatically) — an automatic trigger firing more often than manual clicks would have made this worse, not better, shuffling vehicles continuously instead of letting them settle.
+**Partially live-tested.** A reload plus 3 more "Apply Fleet Plan" runs showed zero repeated vehicle IDs across all 15 moves — consistent with the fix, but not fully conclusive: `COOLDOWN_RUNS = 3` means a vehicle moved in run 1 wouldn't be eligible again until run 4, which the 3-run sample never reached, so the cooldown's *expiry* behavior specifically hasn't been observed yet. `COOLDOWN_RUNS = 3` remains a first guess, not tuned — needs to be long enough that a vehicle actually settles at its new line before being reconsidered, short enough that a genuinely persistent demand shift doesn't stay artificially blocked. This was the right thing to catch and fix *before* Not Started #4's remaining step (wiring the Dispatcher to run automatically) — an automatic trigger firing more often than manual clicks would have made this worse, not better, shuffling vehicles continuously instead of letting them settle.
+
+That same 3-run sample surfaced a second, related problem — see Decision 33.
+
+## Decision 33 — Whole-line direction flapping caught live (different trucks, same waste); added a per-line direction cooldown
+
+### Decision
+
+Added a second, independent hysteresis guard to `dispatcher.lua`: a managed line that was classified `surplus` (gave vehicles away) cannot be classified `deficit` (receive vehicles) again — or vice versa — for `LINE_DIRECTION_COOLDOWN_RUNS` (3) more `M.applyPlan` calls. Recorded every run a line has a nonzero delta, whether or not `MAX_MOVES_PER_RUN` actually let a move happen for it. A blocked line is excluded entirely from that run's deficit/surplus queue, not forced into either direction. Same in-memory, `runCounter`-based mechanism as Decision 32's per-vehicle cooldown — no new time source.
+
+### Reason
+
+The 3-run sample gathered to test Decision 32's per-vehicle cooldown (which showed zero repeated vehicle IDs, consistent with working) revealed a second, related problem the vehicle cooldown does not and cannot catch:
+
+```
+Run 1: Queens Road    -> Alexander Road  (5 vehicles)
+Run 2: Alexander Road -> Queens Road     (5 different vehicles)
+Run 3: Alexander Road -> Queens Road     (5 more different vehicles)
+```
+
+No single vehicle repeated — each run drew from a large enough pool of untouched vehicles that the per-vehicle cooldown never triggered — but the hub-level correction reversed itself one run later anyway, using different trucks each time. Same underlying waste as Decision 32's finding (real travel spent undoing a correction just made), just invisible to a vehicle-ID-based check. Root cause is the same as Decision 32's: demand read fresh every run is volatile enough to legitimately disagree with itself a few minutes later.
+
+### Consequence
+
+**Not yet live-tested** — written in direct response to this run's data, not itself confirmed yet. Needs a reload and enough runs to see: (1) the reversal actually blocked when it would otherwise have happened, and (2) a genuinely persistent demand shift eventually gets through once `LINE_DIRECTION_COOLDOWN_RUNS` expires, not permanently stuck. Two independent, complementary guards now exist (Decision 32: no vehicle bounces; Decision 33: no line's correction reverses too soon) — together they should be enough to trust automatic triggering, but that trust itself still needs live confirmation before Not Started #4's remaining step (wiring to the Auto Redistribute toggle + delivery event) is attempted.
 
 ## Appendix — open runtime-verification items
 

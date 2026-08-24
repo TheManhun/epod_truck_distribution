@@ -59,6 +59,23 @@
 --     to M.applyPlan, counted in-memory, resetting on reload (an
 --     acceptable cost for a short-term hysteresis guard, not durable
 --     state).
+--   * PER-LINE DIRECTION COOLDOWN (Decision 33): the per-vehicle
+--     cooldown above stops the SAME truck bouncing back and forth,
+--     but live testing with it already active found a related,
+--     un-caught problem: a whole LINE's correction reversing itself
+--     one run later using DIFFERENT trucks (run 1 sent Queens Road
+--     -> Alexander Road; runs 2-3 immediately sent Alexander Road ->
+--     Queens Road, undoing it). No individual vehicle repeated, so
+--     the vehicle cooldown never saw it, but it's the same underlying
+--     waste -- real travel spent undoing a correction just made. A
+--     line that was SURPLUS (gave vehicles away) cannot be treated as
+--     DEFICIT (receive vehicles) again -- or vice versa -- for
+--     LINE_DIRECTION_COOLDOWN_RUNS more runs. Recorded from the
+--     Planner's classification every run a line has a nonzero delta,
+--     regardless of whether MAX_MOVES_PER_RUN actually let a move
+--     happen for it, so a blocked-by-cap line still "counts" as
+--     having been read that way. A blocked line is simply excluded
+--     from this run's queue, not forced into either direction.
 -- ============================================================
 
 local log = require("epod_td.log")
@@ -76,8 +93,14 @@ local MAX_MOVES_PER_RUN = 5
 -- persistent, real demand shift doesn't stay artificially blocked.
 local COOLDOWN_RUNS = 3
 
+-- Same first-guess reasoning as COOLDOWN_RUNS above, applied to a
+-- whole line's surplus/deficit direction instead of one vehicle.
+local LINE_DIRECTION_COOLDOWN_RUNS = 3
+
 local runCounter = 0
 local lastMovedRun = {}
+local lastLineDirection = {}
+local lastLineDirectionRun = {}
 
 
 local function vehicleCompatibleWithAny(vehicleId, cargoTypes)
@@ -187,10 +210,41 @@ local function moveOneVehicle(vehicleId, destinationLineId, destinationLabel, on
 end
 
 
+-- Returns true if `line` just flipped direction (surplus<->deficit)
+-- from its last recorded direction within LINE_DIRECTION_COOLDOWN_RUNS,
+-- and should therefore be excluded from this run's queue rather than
+-- allowed to reverse itself.
+local function isDirectionBlocked(line, newDirection)
+
+    local previousDirection = lastLineDirection[line.id]
+
+    if previousDirection == nil or previousDirection == newDirection then
+        return false
+    end
+
+    local previousRun = lastLineDirectionRun[line.id]
+
+    return previousRun ~= nil
+        and (runCounter - previousRun) < LINE_DIRECTION_COOLDOWN_RUNS
+
+end
+
+
+local function recordLineDirection(line, direction)
+
+    lastLineDirection[line.id] = direction
+    lastLineDirectionRun[line.id] = runCounter
+
+end
+
+
 -- Splits a planner.lua plan into deficits (delta > 0, need vehicles)
 -- and surpluses (delta < 0, have spare vehicles), each tagged with
 -- `.remaining` (how many more vehicles it still needs/can still
 -- give), sorted largest-first so the biggest gaps get first claim.
+-- A line whose direction would reverse too soon after its last
+-- recorded direction (see isDirectionBlocked) is excluded entirely
+-- rather than allowed to flip-flop.
 local function buildMoveQueue(plan)
 
     local deficits = {}
@@ -200,13 +254,43 @@ local function buildMoveQueue(plan)
 
         if line.delta > 0 then
 
-            line.remaining = line.delta
-            deficits[#deficits + 1] = line
+            if isDirectionBlocked(line, "deficit") then
+
+                log.info(
+                    "DISPATCH: "
+                        .. tostring(line.name)
+                        .. " reads as needing vehicles, but was surplus "
+                        .. "too recently -- skipping this run to avoid "
+                        .. "reversing itself."
+                )
+
+            else
+
+                line.remaining = line.delta
+                deficits[#deficits + 1] = line
+                recordLineDirection(line, "deficit")
+
+            end
 
         elseif line.delta < 0 then
 
-            line.remaining = -line.delta
-            surpluses[#surpluses + 1] = line
+            if isDirectionBlocked(line, "surplus") then
+
+                log.info(
+                    "DISPATCH: "
+                        .. tostring(line.name)
+                        .. " reads as having surplus, but was in deficit "
+                        .. "too recently -- skipping this run to avoid "
+                        .. "reversing itself."
+                )
+
+            else
+
+                line.remaining = -line.delta
+                surpluses[#surpluses + 1] = line
+                recordLineDirection(line, "surplus")
+
+            end
 
         end
 
