@@ -17,8 +17,6 @@ M.PARK_NAME = "EPOD-TD Truck Park"
 
 M.START_DELAY_UPDATES = 120
 
-M.LIVE_DISPATCH_ENABLED = true
-
 M.DEBUG = true
 
 return M

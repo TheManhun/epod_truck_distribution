@@ -1,1240 +1,345 @@
-local config = require("epod_td.config")
-local demand = require("epod_td.demand")
-local vehicles = require("epod_td.vehicles")
-local lines = require("epod_td.lines")
-local stations = require("epod_td.stations")
+-- ============================================================
+-- TF2 Truck Distribution
+-- dispatcher.lua
+--
+-- OPPORTUNISTIC DISPATCHER
+--
+-- Applies planner.lua's target fleet allocation for a hub by moving
+-- real vehicles between managed lines -- the "Act" half of "Think
+-- periodically, Act opportunistically" (IDEAS.md's "Runtime Fleet
+-- Rebalancing -- Planner + Opportunistic Dispatcher").
+--
+-- RETIRED (Decision 31): this file previously held a single-line
+-- "REVERSE DESTINATION TEST" (M.rank/getNextDestination/
+-- buildDispatchPlan/executeDispatchPlan), built before Stage 1
+-- (Decisions 19-23) split every multi-destination line into one
+-- managed line per real destination. Ranking destinations WITHIN
+-- one line no longer applies to the current architecture, and the
+-- old code was never required anywhere in the mod (confirmed via a
+-- full-repo search before removal) -- genuinely dead, not merely
+-- unused. Replaced outright rather than layered underneath.
+--
+-- SAFETY RULES (all reused from elsewhere, nothing invented fresh
+-- for this file):
+--   * Only ever moves a vehicle confirmed EMPTY
+--     (vehicles.isVehicleEmpty(id) == true) -- same Bug A avoidance
+--     Stage 2/3 (line_splitter.lua/fleet_allocator.lua) already use.
+--   * Only ever moves a vehicle compatible with at least one cargo
+--     type the destination has real unloaded history for
+--     (stations.getUnloadedCargoTypes + vehicles.isCompatibleWith-
+--     CargoType, Decision 27) -- a hard prerequisite PROGRESS.md
+--     already flagged before any Dispatcher could be built. See
+--     stations.lua's getUnloadedCargoTypes for why this checks
+--     against itemsUnloaded history rather than demand.scan()'s
+--     cargoTypes -- a confirmed key-format match, not an assumed one.
+--   * Uses the exact hold (setManualDeparture) -> setLine -> release
+--     pattern already proven safe throughout fleet_allocator.lua,
+--     line_splitter.lua, route_injector.lua -- nothing new here.
+--   * Capped per run (MAX_MOVES_PER_RUN) -- a first live test should
+--     move a handful of vehicles, not rebalance an entire fleet in
+--     one blind click.
+--   * MANUALLY TRIGGERED ONLY. Does not read the Auto Redistribute
+--     toggle, does not run on a timer or on the delivery event --
+--     same staged approach as every earlier stage (prove it live via
+--     a manual button first). Wiring this to run automatically is a
+--     deliberate later step, not this one.
+-- ============================================================
+
 local log = require("epod_td.log")
+local vehicles = require("epod_td.vehicles")
+local stations = require("epod_td.stations")
+local planner = require("epod_td.planner")
 
 local M = {}
-local liveDispatchAttempted = false
+
+local MAX_MOVES_PER_RUN = 5
 
 
-local function restoreVehicleToOriginalState(
-    vehicleId,
-    managedLineId,
-    originalStopIndex,
-    parkResetLineId
-)
+local function vehicleCompatibleWithAny(vehicleId, cargoTypes)
 
-    if vehicleId == nil
-        or managedLineId == nil
-    then
+    if #cargoTypes == 0 then
 
-        log.info(
-            "LIVE DISPATCH TEST ENDED"
-        )
+        -- No known unloaded-cargo history at all for this
+        -- destination (a brand-new or truly never-served stop) --
+        -- fall back to today's documented baseline assumption (any
+        -- managed vehicle can serve any managed line, PROGRESS.md)
+        -- rather than refusing to move anything just because history
+        -- doesn't exist yet.
+        return true
 
-        log.info(
-            "No vehicle or managed line available for restore."
-        )
-
-        return
     end
 
-    local currentVehicle =
-        vehicles.get(
-            vehicleId
-        )
+    for _, cargoType in ipairs(cargoTypes) do
 
-    local currentLine =
-        lines.safeField(
-            currentVehicle,
-            "line"
-        )
-
-    local currentStopIndex =
-        lines.safeField(
-            currentVehicle,
-            "stopIndex"
-        )
-
-    log.info(
-        "RESTORE TO ORIGINAL STATE"
-    )
-
-    log.info(
-        "RESTORE CURRENT LINE: "
-            .. tostring(
-                currentLine
-            )
-    )
-
-    log.info(
-        "RESTORE EXPECTED STOP INDEX: "
-            .. tostring(
-                originalStopIndex
-            )
-    )
-
-    log.info(
-        "RESTORE ACTUAL STOP INDEX: "
-            .. tostring(
-                currentStopIndex
-            )
-    )
-
-    local function releaseManualDeparture()
-        vehicles.setManualDeparture(
-            vehicleId,
-            false,
-            function(releaseSuccess)
-
-                log.info(
-                    "LIVE DISPATCH TEST ENDED"
-                )
-
-                log.info(
-                    "Manual departure released: "
-                        .. tostring(
-                            releaseSuccess
-                        )
-                )
-
-                log.info(
-                    "Vehicle restore completed."
-                )
-
-            end
-        )
-    end
-
-    local function restoreManagedLine(finalStopIndex)
-        vehicles.setLine(
-            vehicleId,
-            managedLineId,
-            finalStopIndex,
-            function(restoreSuccess)
-
-                local restoredVehicle =
-                    vehicles.get(
-                        vehicleId
-                    )
-
-                local restoredLine =
-                    lines.safeField(
-                        restoredVehicle,
-                        "line"
-                    )
-
-                local restoredStopIndex =
-                    lines.safeField(
-                        restoredVehicle,
-                        "stopIndex"
-                    )
-
-                log.info(
-                    "RESTORE MANAGED LINE RESULT: "
-                        .. tostring(
-                            restoreSuccess
-                        )
-                )
-
-                log.info(
-                    "RESTORE EXPECTED STOP INDEX: "
-                        .. tostring(
-                            finalStopIndex
-                        )
-                )
-
-                log.info(
-                    "RESTORE ACTUAL STOP INDEX: "
-                        .. tostring(
-                            restoredStopIndex
-                        )
-                )
-
-                if restoreSuccess then
-                    releaseManualDeparture()
-                    return
-                end
-
-                releaseManualDeparture()
-
-            end
-        )
-    end
-
-    if currentLine ~= managedLineId then
-
-        log.info(
-            "Vehicle currently off managed line; restoring directly."
-        )
-
-        restoreManagedLine(
-            originalStopIndex
-        )
-
-        return
-    end
-
-    if parkResetLineId == nil then
-
-        log.info(
-            "RESTORE TEMP RESET RESULT: "
-                .. tostring(false)
-        )
-
-        log.info(
-            "No temporary reset line supplied for safe restore."
-        )
-
-        releaseManualDeparture()
-
-        return
-    end
-
-    vehicles.setLine(
-        vehicleId,
-        parkResetLineId,
-        0,
-        function(resetSuccess)
-
-            log.info(
-                "RESTORE TEMP RESET RESULT: "
-                    .. tostring(
-                        resetSuccess
-                    )
-            )
-
-            if not resetSuccess then
-
-                releaseManualDeparture()
-
-                return
-            end
-
-            restoreManagedLine(
-                originalStopIndex
-            )
-
+        if vehicles.isCompatibleWithCargoType(vehicleId, cargoType) == true then
+            return true
         end
-    )
+
+    end
+
+    return false
 
 end
 
 
--- ============================================================
--- RANK DESTINATIONS
--- ============================================================
+-- Finds an empty, compatible vehicle currently on `surplusLineId` to
+-- give to a destination needing `neededCargoTypes`. Returns a
+-- vehicleId, or nil if none qualify.
+local function findMovableVehicle(surplusLineId, neededCargoTypes)
 
-function M.rank(currentDemand)
+    local candidateIds = vehicles.getVehiclesForLine(surplusLineId)
 
-    local ranked = {}
+    for _, vehicleId in ipairs(candidateIds) do
 
-    if currentDemand == nil
-        or currentDemand.destinations == nil
-    then
-        return ranked
-    end
-
-
-    for _, destination
-        in pairs(currentDemand.destinations)
-    do
-
-        ranked[#ranked + 1] = {
-
-            name =
-                destination.name,
-
-            demand =
-                destination.total or 0,
-
-            stopIndex =
-                destination.stopIndex,
-
-            stationGroup =
-                destination.stationGroup,
-
-            cargoTypes =
-                destination.cargoTypes or {}
-
-        }
-
-    end
-
-
-    table.sort(
-        ranked,
-
-        function(a, b)
-
-            if a.demand == b.demand then
-
-                return
-                    (a.stopIndex or 999999)
-                    <
-                    (b.stopIndex or 999999)
-
-            end
-
-            return a.demand > b.demand
-
-        end
-    )
-
-
-    return ranked
-
-end
-
-
--- ============================================================
--- NEXT DESTINATION
--- ============================================================
-
-function M.getNextDestination(currentDemand)
-
-    local ranked =
-        M.rank(
-            currentDemand
-        )
-
-
-    for _, destination
-        in ipairs(ranked)
-    do
-
-        if destination.demand > 0 then
-            return destination
+        if vehicles.isVehicleEmpty(vehicleId) == true
+            and vehicleCompatibleWithAny(vehicleId, neededCargoTypes)
+        then
+            return vehicleId
         end
 
     end
-
 
     return nil
 
 end
 
 
--- ============================================================
--- BUILD DRY-RUN DISPATCH PLAN
--- ============================================================
+local function moveOneVehicle(vehicleId, destinationLineId, destinationLabel, onComplete)
 
-function M.buildDispatchPlan(
-    currentDemand
-)
+    vehicles.setManualDeparture(vehicleId, true, function(holdSuccess)
 
-    if currentDemand == nil then
+        if not holdSuccess then
 
-        return {
-            ready = false,
-            reason = "no-demand-data"
-        }
+            log.info(
+                "DISPATCH: could not hold vehicle "
+                    .. tostring(vehicleId)
+                    .. " -- skipped."
+            )
 
-    end
+            onComplete(false)
+            return
 
+        end
 
-    local lineId =
-        currentDemand.lineId
+        vehicles.setLine(vehicleId, destinationLineId, 0, function(setLineSuccess)
 
+            vehicles.setManualDeparture(vehicleId, false, function(releaseSuccess)
 
-    if lineId == nil then
+                log.info(
+                    "DISPATCH: vehicle "
+                        .. tostring(vehicleId)
+                        .. " -> "
+                        .. tostring(destinationLabel)
+                        .. ": "
+                        .. tostring(setLineSuccess)
+                        .. " (release: "
+                        .. tostring(releaseSuccess)
+                        .. ")"
+                )
 
-        return {
-            ready = false,
-            reason = "no-line-id"
-        }
+                onComplete(setLineSuccess)
 
-    end
+            end)
 
+        end)
 
-    local destination =
-        M.getNextDestination(
-            currentDemand
-        )
-
-
-    if destination == nil then
-
-        return {
-            ready = false,
-            reason = "no-destination-demand",
-            lineId = lineId
-        }
-
-    end
-
-
-    local availableVehicles =
-        vehicles.findAvailableAtPark(
-            lineId
-        )
-
-
-    if #availableVehicles == 0 then
-
-        return {
-            ready = false,
-            reason = "no-truck-available",
-            lineId = lineId,
-            destination = destination
-        }
-
-    end
-
-
-    -- First available Park-servicing truck.
-    --
-    -- We can improve truck selection later when we inspect
-    -- capacity/cargo and possibly waiting duration.
-
-    local selectedVehicle =
-        availableVehicles[1]
-
-
-    return {
-
-        ready =
-            true,
-
-        dryRun =
-            true,
-
-        lineId =
-            lineId,
-
-        destination =
-            destination,
-
-        vehicle =
-            selectedVehicle,
-
-        availableVehicleCount =
-            #availableVehicles
-
-    }
+    end)
 
 end
 
 
--- ============================================================
--- DESTINATION PRIORITY REPORT
--- ============================================================
+-- Splits a planner.lua plan into deficits (delta > 0, need vehicles)
+-- and surpluses (delta < 0, have spare vehicles), each tagged with
+-- `.remaining` (how many more vehicles it still needs/can still
+-- give), sorted largest-first so the biggest gaps get first claim.
+local function buildMoveQueue(plan)
 
-function M.printReport(
-    currentDemand
-)
+    local deficits = {}
+    local surpluses = {}
 
-    if currentDemand == nil then
+    for _, line in ipairs(plan.lines) do
 
-        currentDemand =
-            demand.scan()
+        if line.delta > 0 then
 
-    end
+            line.remaining = line.delta
+            deficits[#deficits + 1] = line
 
+        elseif line.delta < 0 then
 
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "DISPATCHER READ-ONLY TEST"
-    )
-
-    log.info(
-        "NO VEHICLE CONTROL"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-
-    if currentDemand == nil then
-
-        log.info(
-            "No demand data returned."
-        )
-
-        return nil
-
-    end
-
-
-    if currentDemand.error ~= nil then
-
-        log.info(
-            "Cannot rank destinations: "
-                .. tostring(
-                    currentDemand.error
-                )
-        )
-
-        return nil
-
-    end
-
-
-    local ranked =
-        M.rank(
-            currentDemand
-        )
-
-
-    local priority = 0
-
-
-    for _, destination
-        in ipairs(ranked)
-    do
-
-        if destination.demand > 0 then
-
-            priority =
-                priority + 1
-
-
-            log.info(
-                destination.name
-                    .. " | demand="
-                    .. tostring(
-                        destination.demand
-                    )
-                    .. " | PRIORITY "
-                    .. tostring(
-                        priority
-                    )
-            )
-
-        else
-
-            log.info(
-                destination.name
-                    .. " | demand=0 | NO DISPATCH"
-            )
+            line.remaining = -line.delta
+            surpluses[#surpluses + 1] = line
 
         end
 
     end
 
+    table.sort(deficits, function(a, b) return a.delta > b.delta end)
+    table.sort(surpluses, function(a, b) return a.delta < b.delta end)
 
-    log.info(
-        "----------------------------------------"
-    )
-
-
-    local nextDestination =
-        M.getNextDestination(
-            currentDemand
-        )
-
-
-    if nextDestination ~= nil then
-
-        log.info(
-            "NEXT DISPATCH:"
-        )
-
-        log.info(
-            nextDestination.name
-        )
-
-        log.info(
-            "Demand: "
-                .. tostring(
-                    nextDestination.demand
-                )
-        )
-
-        log.info(
-            "Route stop index: "
-                .. tostring(
-                    nextDestination.stopIndex
-                )
-        )
-
-        log.info(
-            "Station group: "
-                .. tostring(
-                    nextDestination.stationGroup
-                )
-        )
-
-    else
-
-        log.info(
-            "NEXT DISPATCH: NONE"
-        )
-
-    end
-
-
-    log.info(
-        "----------------------------------------"
-    )
-
-
-    return nextDestination
+    return deficits, surpluses
 
 end
 
 
--- ============================================================
--- DRY-RUN PLAN REPORT
--- ============================================================
+local function processMoveNext(context)
 
-function M.printDispatchPlan(
-    currentDemand
-)
-
-    local plan =
-        M.buildDispatchPlan(
-            currentDemand
-        )
-
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "EPOD-TD DISPATCH PLAN"
-    )
-
-    log.info(
-        "DRY RUN - NO COMMAND WILL BE SENT"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-
-    if not plan.ready then
+    if context.movesMade >= MAX_MOVES_PER_RUN then
 
         log.info(
-            "DISPATCH NOT READY"
+            "DISPATCH: reached MAX_MOVES_PER_RUN ("
+                .. tostring(MAX_MOVES_PER_RUN)
+                .. ") -- stopping for this run."
         )
 
-        log.info(
-            "Reason: "
-                .. tostring(
-                    plan.reason
-                )
-        )
-
-
-        if plan.destination ~= nil then
-
-            log.info(
-                "Wanted destination: "
-                    .. tostring(
-                        plan.destination.name
-                    )
-            )
-
-            log.info(
-                "Demand: "
-                    .. tostring(
-                        plan.destination.demand
-                    )
-            )
-
-        end
-
-
-        log.info(
-            "----------------------------------------"
-        )
-
-
-        return plan
+        context.onComplete(context.movesMade)
+        return
 
     end
 
+    local deficit = context.deficits[context.deficitIndex]
 
-    log.info(
-        "DISPATCH READY"
-    )
-
-    log.info(
-        "Available Park trucks: "
-            .. tostring(
-                plan.availableVehicleCount
-            )
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "TRUCK"
-    )
-
-    log.info(
-        "Name: "
-            .. tostring(
-                plan.vehicle.name
-            )
-    )
-
-    log.info(
-        "Entity: "
-            .. tostring(
-                plan.vehicle.id
-            )
-    )
-
-    log.info(
-        "Park stopIndex: "
-            .. tostring(
-                plan.vehicle.stopIndex
-            )
-    )
-
-    log.info(
-        "Doors open: "
-            .. tostring(
-                plan.vehicle.doorsOpen
-            )
-    )
-
-    log.info(
-        "Departure timer: "
-            .. tostring(
-                plan.vehicle.timeUntilDeparture
-            )
-    )
-
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "DESTINATION"
-    )
-
-    log.info(
-        "Name: "
-            .. tostring(
-                plan.destination.name
-            )
-    )
-
-    log.info(
-        "Demand: "
-            .. tostring(
-                plan.destination.demand
-            )
-    )
-
-    log.info(
-        "Destination stopIndex: "
-            .. tostring(
-                plan.destination.stopIndex
-            )
-    )
-
-    log.info(
-        "Station group: "
-            .. tostring(
-                plan.destination.stationGroup
-            )
-    )
-
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "PLANNED ACTION:"
-    )
-
-    log.info(
-        tostring(
-            plan.vehicle.name
-        )
-            .. " -> "
-            .. tostring(
-                plan.destination.name
-            )
-    )
-
-    log.info(
-        "*** DRY RUN - NO TF2 COMMAND SENT ***"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-
-    return plan
-
-end
-
-
--- ============================================================
--- LIVE DISPATCH
---
--- Keep the truck on the managed line and only reset its stopIndex
--- to the correct Park entry for the selected destination.
--- ============================================================
-
-function M.executeDispatchPlan(
-    plan
-)
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "REVERSE DESTINATION TEST"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    if liveDispatchAttempted then
+    if deficit == nil then
 
         log.info(
-            "LIVE DISPATCH ABORTED"
+            "DISPATCH COMPLETE: "
+                .. tostring(context.movesMade)
+                .. " vehicle(s) moved."
         )
 
-        log.info(
-            "Single-test guard already triggered."
-        )
+        context.onComplete(context.movesMade)
+        return
 
-        return false
     end
 
-    if not config.LIVE_DISPATCH_ENABLED then
+    if deficit.remaining <= 0 then
 
-        log.info(
-            "LIVE DISPATCH DISABLED"
-        )
+        context.deficitIndex = context.deficitIndex + 1
+        processMoveNext(context)
+        return
 
-        return false
     end
 
-    if plan == nil
-        or not plan.ready
-    then
+    local surplus = context.surpluses[context.surplusIndex]
+
+    if surplus == nil then
 
         log.info(
-            "NO READY DISPATCH PLAN"
+            "DISPATCH: no more surplus lines -- "
+                .. tostring(deficit.name)
+                .. " still short "
+                .. tostring(deficit.remaining)
+                .. "."
         )
 
-        return false
+        context.deficitIndex = context.deficitIndex + 1
+        processMoveNext(context)
+        return
+
     end
 
-    if plan.lineId == nil then
+    if surplus.remaining <= 0 then
 
-        log.info(
-            "LIVE DISPATCH FAILED"
-        )
+        context.surplusIndex = context.surplusIndex + 1
+        processMoveNext(context)
+        return
 
-        log.info(
-            "Plan has no managed line ID."
-        )
-
-        return false
     end
 
-    if plan.vehicle == nil
-        or plan.vehicle.id == nil
-    then
-
-        log.info(
-            "LIVE DISPATCH FAILED"
-        )
-
-        log.info(
-            "No selected vehicle available."
-        )
-
-        return false
-    end
-
-    if plan.destination == nil then
-
-        log.info(
-            "LIVE DISPATCH FAILED"
-        )
-
-        log.info(
-            "Dispatch plan has no destination."
-        )
-
-        return false
-    end
+    local neededCargoTypes =
+        stations.getUnloadedCargoTypes(deficit.destinationStationGroup)
 
     local vehicleId =
-        plan.vehicle.id
+        findMovableVehicle(surplus.id, neededCargoTypes)
 
-    local vehicleBefore =
-        vehicles.get(
-            vehicleId
-        )
-
-    if vehicleBefore == nil then
+    if vehicleId == nil then
 
         log.info(
-            "LIVE DISPATCH FAILED"
+            "DISPATCH: no empty/compatible vehicle on "
+                .. tostring(surplus.name)
+                .. " for "
+                .. tostring(deficit.name)
+                .. " -- trying next surplus line."
         )
 
-        log.info(
-            "Selected vehicle could not be re-read."
-        )
+        context.surplusIndex = context.surplusIndex + 1
+        processMoveNext(context)
+        return
 
-        return false
     end
 
-    local routeMap =
-        vehicles.buildRouteMap(
-            plan.lineId
-        )
-
-    local beforeInspect =
-        vehicles.inspect(
-            vehicleId,
-            routeMap
-        )
-
-    local selectedDestination =
-        plan.destination
-
-    local desiredStopIndex =
-        selectedDestination.stopIndex
-
-    local desiredDestinationName =
-        selectedDestination.name
-
-    local desiredStationGroup =
-        selectedDestination.stationGroup
-
-    liveDispatchAttempted = true
-
     log.info(
-        "EXPECTED DISPATCH DESTINATION"
+        "DISPATCH: moving vehicle "
+            .. tostring(vehicleId)
+            .. " from "
+            .. tostring(surplus.name)
+            .. " -> "
+            .. tostring(deficit.name)
     )
 
-    log.info(
-        "destination name: "
-            .. tostring(
-                desiredDestinationName
-            )
-    )
+    moveOneVehicle(vehicleId, deficit.id, deficit.name, function(success)
 
-    log.info(
-        "destination stopIndex: "
-            .. tostring(
-                desiredStopIndex
-            )
-    )
+        if success then
 
-    log.info(
-        "destination stationGroup: "
-            .. tostring(
-                desiredStationGroup
-            )
-    )
-
-    log.info(
-        "BEFORE REVERSE"
-    )
-
-    log.info(
-        "vehicle ID: "
-            .. tostring(
-                vehicleId
-            )
-    )
-
-    log.info(
-        "line: "
-            .. tostring(
-                lines.safeField(
-                    vehicleBefore,
-                    "line"
-                )
-            )
-    )
-
-    log.info(
-        "stopIndex: "
-            .. tostring(
-                lines.safeField(
-                    vehicleBefore,
-                    "stopIndex"
-                )
-            )
-    )
-
-    log.info(
-        "route stop name: "
-            .. tostring(
-                beforeInspect.routeStopName
-            )
-    )
-
-    log.info(
-        "arrivalStationTerminal: "
-            .. tostring(
-                lines.safeField(
-                    vehicleBefore,
-                    "arrivalStationTerminal"
-                )
-            )
-    )
-
-    log.info(
-        "arrivalStationTerminalLocked: "
-            .. tostring(
-                lines.safeField(
-                    vehicleBefore,
-                    "arrivalStationTerminalLocked"
-                )
-            )
-    )
-
-    log.info(
-        "doorsOpen: "
-            .. tostring(
-                lines.safeField(
-                    vehicleBefore,
-                    "doorsOpen"
-                )
-            )
-    )
-
-    log.info(
-        "timeUntilDeparture: "
-            .. tostring(
-                lines.safeField(
-                    vehicleBefore,
-                    "timeUntilDeparture"
-                )
-            )
-    )
-
-    vehicles.setManualDeparture(
-        vehicleId,
-        true,
-        function(holdSuccess)
-
-            log.info(
-                "STEP 1 - HOLD RESULT: "
-                    .. tostring(
-                        holdSuccess
-                    )
-            )
-
-            if not holdSuccess then
-
-                log.info(
-                    "REVERSE DESTINATION TEST ABORTED"
-                )
-
-                log.info(
-                    "Hold command failed."
-                )
-
-                return
-            end
-
-            vehicles.reverseVehicle(
-                vehicleId,
-                function(reverseSuccess)
-
-                    log.info(
-                        "REVERSE VEHICLE RESULT: "
-                            .. tostring(
-                                reverseSuccess
-                            )
-                    )
-
-                    if not reverseSuccess then
-
-                        log.info(
-                            "REVERSE DESTINATION TEST FAILED"
-                        )
-
-                        log.info(
-                            "Single reverse did not succeed."
-                        )
-
-                        vehicles.setManualDeparture(
-                            vehicleId,
-                            false,
-                            function(releaseSuccess)
-                                log.info(
-                                    "STEP RELEASE RESULT: "
-                                        .. tostring(
-                                            releaseSuccess
-                                        )
-                                )
-                            end
-                        )
-
-                        return
-                    end
-
-                    local afterVehicle =
-                        vehicles.get(
-                            vehicleId
-                        )
-
-                    local afterInspect =
-                        vehicles.inspect(
-                            vehicleId,
-                            routeMap
-                        )
-
-                    local afterLine =
-                        lines.safeField(
-                            afterVehicle,
-                            "line"
-                        )
-
-                    local afterStopIndex =
-                        lines.safeField(
-                            afterVehicle,
-                            "stopIndex"
-                        )
-
-                    local afterRouteStopName =
-                        afterInspect and afterInspect.routeStopName or "UNKNOWN"
-
-                    local afterArrivalTerminal =
-                        lines.safeField(
-                            afterVehicle,
-                            "arrivalStationTerminal"
-                        )
-
-                    local afterArrivalLocked =
-                        lines.safeField(
-                            afterVehicle,
-                            "arrivalStationTerminalLocked"
-                        )
-
-                    log.info(
-                        "AFTER ONE REVERSE"
-                    )
-
-                    log.info(
-                        "line: "
-                            .. tostring(
-                                afterLine
-                            )
-                    )
-
-                    log.info(
-                        "stopIndex: "
-                            .. tostring(
-                                afterStopIndex
-                            )
-                    )
-
-                    log.info(
-                        "route stop name: "
-                            .. tostring(
-                                afterRouteStopName
-                            )
-                    )
-
-                    log.info(
-                        "arrivalStationTerminal: "
-                            .. tostring(
-                                afterArrivalTerminal
-                            )
-                    )
-
-                    log.info(
-                        "arrivalStationTerminalLocked: "
-                            .. tostring(
-                                afterArrivalLocked
-                            )
-                    )
-
-                    local reverseMatchesDemand =
-                        afterStopIndex ~= nil
-                        and desiredStopIndex ~= nil
-                        and afterStopIndex == desiredStopIndex
-
-                    log.info(
-                        "REVERSE DESTINATION TEST"
-                    )
-
-                    log.info(
-                        "Desired destination: "
-                            .. tostring(
-                                desiredDestinationName
-                            )
-                    )
-
-                    log.info(
-                        "Desired stopIndex: "
-                            .. tostring(
-                                desiredStopIndex
-                            )
-                    )
-
-                    log.info(
-                        "Reverse produced stopIndex: "
-                            .. tostring(
-                                afterStopIndex
-                            )
-                    )
-
-                    log.info(
-                        "REVERSE MATCHES DEMAND DESTINATION: "
-                            .. tostring(
-                                reverseMatchesDemand
-                            )
-                    )
-
-                    vehicles.setManualDeparture(
-                        vehicleId,
-                        false,
-                        function(releaseSuccess)
-                            log.info(
-                                "STEP RELEASE RESULT: "
-                                    .. tostring(
-                                        releaseSuccess
-                                    )
-                            )
-
-                            log.info(
-                                "REVERSE DESTINATION TEST COMPLETE"
-                            )
-
-                            log.info(
-                                "Truck released to continue toward TF2-selected stop."
-                            )
-                        end
-                    )
-
-                end
-            )
+            deficit.remaining = deficit.remaining - 1
+            surplus.remaining = surplus.remaining - 1
+            context.movesMade = context.movesMade + 1
 
         end
-    )
 
-    return true
+        processMoveNext(context)
+
+    end)
 
 end
 
 
--- ============================================================
--- FUTURE LIVE UPDATE
--- ============================================================
+-- Applies planner.lua's current target allocation for `hubStationGroup`
+-- by moving real, empty, compatible vehicles between managed lines,
+-- up to MAX_MOVES_PER_RUN. Manually triggered only -- see file
+-- header. onComplete(movesMade) fires once no more moves are
+-- possible or the cap is reached.
+function M.applyPlan(hubStationGroup, onComplete)
 
-function M.update()
+    log.info("----------------------------------------")
+    log.info("APPLY FLEET PLAN")
+    log.info("----------------------------------------")
 
-    local currentDemand =
-        demand.scan()
+    local plan = planner.calculateTargetAllocation(hubStationGroup)
 
+    if #plan.lines == 0 then
 
-    return M.buildDispatchPlan(
-        currentDemand
-    )
+        log.info("Nothing to do: no managed lines at this hub.")
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
+        return
+
+    end
+
+    local deficits, surpluses = buildMoveQueue(plan)
+
+    if #deficits == 0 then
+
+        log.info("Nothing to do: no line currently needs more vehicles.")
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
+        return
+
+    end
+
+    processMoveNext({
+        deficits = deficits,
+        surpluses = surpluses,
+        deficitIndex = 1,
+        surplusIndex = 1,
+        movesMade = 0,
+        onComplete = onComplete or function() end
+    })
 
 end
 

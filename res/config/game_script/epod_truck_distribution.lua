@@ -37,6 +37,7 @@ local managed_registry = require("epod_td.managed_registry")
 local settings = require("epod_td.settings")
 local fleet_naming = require("epod_td.fleet_naming")
 local planner = require("epod_td.planner")
+local dispatcher = require("epod_td.dispatcher")
 local gui = require("gui")
 
 
@@ -1333,6 +1334,91 @@ end
 
 
 -- ============================================================
+-- APPLY FLEET PLAN (config.DEBUG only)
+--
+-- First real piece of the Opportunistic Dispatcher (dispatcher.lua,
+-- PROGRESS.md Not Started #4). Moves real, empty, compatible
+-- vehicles between managed lines toward the Planner's target
+-- allocation -- capped at a handful per click (dispatcher.lua's
+-- MAX_MOVES_PER_RUN) rather than rebalancing an entire fleet blind
+-- on the first live test. Manually triggered only -- does not read
+-- the Auto Redistribute toggle. Same staged approach as every
+-- earlier stage: prove it live via a manual button first.
+-- ============================================================
+
+local function handleApplyFleetPlanButtonClick()
+
+    if distributionState.selectedStationGroupId == nil then
+
+        logUi(
+            "APPLY FLEET PLAN: no station selected."
+        )
+
+        return
+
+    end
+
+    if distributionState.textViews ~= nil
+        and distributionState.textViews.applyFleetPlanButtonLabel ~= nil
+    then
+
+        distributionState.textViews.applyFleetPlanButtonLabel:setText(
+            "[ Working... (see log) ]",
+            WINDOW_WIDTH
+        )
+
+    end
+
+    local hubStationGroupId =
+        distributionState.selectedStationGroupId
+
+    local ok, err =
+        pcall(
+            dispatcher.applyPlan,
+            hubStationGroupId,
+
+            function(movesMade)
+
+                if distributionState.textViews ~= nil
+                    and distributionState.textViews.applyFleetPlanButtonLabel ~= nil
+                then
+
+                    distributionState.textViews.applyFleetPlanButtonLabel:setText(
+                        "[ Apply Fleet Plan (done: "
+                            .. tostring(movesMade)
+                            .. " moved -- see log) ]",
+                        WINDOW_WIDTH
+                    )
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "APPLY FLEET PLAN FAILED: "
+                .. tostring(err)
+        )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.applyFleetPlanButtonLabel ~= nil
+        then
+
+            distributionState.textViews.applyFleetPlanButtonLabel:setText(
+                "[ Apply Fleet Plan (crashed -- see log) ]",
+                WINDOW_WIDTH
+            )
+
+        end
+
+    end
+
+end
+
+
+-- ============================================================
 -- AUTO REDISTRIBUTE TOGGLE (config.DEBUG only, wired to nothing yet)
 --
 -- Deliberately built and persisted (settings.lua, same io.open
@@ -1710,6 +1796,31 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             showFleetPlanButton
+
+
+        distributionState.textViews.applyFleetPlanButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".applyFleetPlanButtonLabel",
+                "[ Apply Fleet Plan (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local applyFleetPlanButton =
+            gui.button_create(
+                WINDOW_ID .. ".applyFleetPlanButton",
+                distributionState.textViews.applyFleetPlanButtonLabel
+            )
+
+        applyFleetPlanButton:onClick(
+            handleApplyFleetPlanButtonClick
+        )
+
+        distributionState.applyFleetPlanButton =
+            applyFleetPlanButton
+
+        fixedViews[#fixedViews + 1] =
+            applyFleetPlanButton
 
     end
 

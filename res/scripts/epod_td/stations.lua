@@ -562,6 +562,76 @@ end
 
 
 -- ============================================================
+-- UNLOADED CARGO TYPES (ALL-TIME)
+--
+-- Real cargo type names (e.g. "FOOD", "FUEL") this destination has
+-- ever received, read from itemsUnloaded's top-level keys -- the
+-- same set already proven to exist in the live dumps (Decision 28),
+-- excluding the reserved _sum/_lastMonth/_lastYear keys.
+--
+-- Deliberately used for dispatcher.lua's vehicle-compatibility gate
+-- INSTEAD OF demand.scan()'s per-destination cargoTypes: this comes
+-- from game.interface.getEntity, the same API vehicles.lua's
+-- getAllCapacities/isCompatibleWithCargoType already use (Decision
+-- 27) -- confirmed matching string keys (FOOD, FUEL, CONSTRUCTION_
+-- MATERIALS, etc., seen identically in both). demand.scan()'s
+-- cargoTypes instead comes from api.engine.getComponent's raw
+-- SIM_CARGO.cargoType field -- a different, lower-level API never
+-- cross-checked against vehicle capacity keys. Mixing the two inside
+-- a safety gate risked a silent format mismatch (every compatibility
+-- check quietly returning false, and the Dispatcher refusing to
+-- move anything without ever explaining why) -- not worth the risk
+-- when a confirmed-matching alternative already exists.
+-- ============================================================
+
+local RESERVED_ITEM_HISTORY_KEYS = {
+    _sum = true,
+    _lastMonth = true,
+    _lastYear = true
+}
+
+function M.getUnloadedCargoTypes(stationGroupId)
+
+    local cargoTypes = {}
+
+    if stationGroupId == nil or stationGroupId < 0 then
+        return cargoTypes
+    end
+
+    local ok, entity = pcall(game.interface.getEntity, stationGroupId)
+
+    if not ok or entity == nil then
+        return cargoTypes
+    end
+
+    local unloadedTable = safeField(entity, "itemsUnloaded")
+
+    if unloadedTable == nil then
+        return cargoTypes
+    end
+
+    local okIter = pcall(function()
+
+        for key, _ in pairs(unloadedTable) do
+
+            if not RESERVED_ITEM_HISTORY_KEYS[key] then
+                cargoTypes[#cargoTypes + 1] = key
+            end
+
+        end
+
+    end)
+
+    if not okIter then
+        return {}
+    end
+
+    return cargoTypes
+
+end
+
+
+-- ============================================================
 -- ITEM HISTORY DEEP DUMP -- one-off research
 --
 -- getItemTotals above only ever reads _sum. The raw entity dump

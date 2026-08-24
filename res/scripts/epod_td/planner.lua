@@ -374,6 +374,7 @@ function M.calculateTargetAllocation(hubStationGroup)
         resultLines[#resultLines + 1] = {
             id = candidate.id,
             name = candidate.name,
+            destinationStationGroup = candidate.destinationStationGroup,
             waiting = candidate.waiting,
             recentUnloaded = candidate.recentUnloaded,
             historicalUnloaded = candidate.historicalUnloaded,

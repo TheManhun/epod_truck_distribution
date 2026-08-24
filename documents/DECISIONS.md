@@ -524,6 +524,27 @@ Live-tested twice in one session (via the newly-self-service `EPOD_Get_Log.bat`,
 
 The floor mechanism works as designed and is live-demonstrated fixing the exact failure mode Decision 29 found — but the protection is deliberately modest (1-2 extra vehicles), not a full restoration of a quiet line's prior fleet. That's intentional: this project has no evidence yet for a larger, more confident number, and Decision 29's own caution against fabricating weights applies here too. `EPOD_Get_Log.bat` can now be run directly rather than relying on the player to paste log output manually, speeding up this kind of live-test loop going forward.
 
+## Decision 31 — Opportunistic Dispatcher built (`dispatcher.lua`), retiring the old dead single-line reverse-test code it replaced
+
+### Decision
+
+Rewrote `dispatcher.lua` entirely. **Removed**: `M.rank`/`M.getNextDestination`/`M.buildDispatchPlan`/`M.printReport`/`M.printDispatchPlan`/`M.executeDispatchPlan` — a "REVERSE DESTINATION TEST" that ranked destinations *within one line* and used `reverseVehicle` to redirect a Park-stopped vehicle toward the highest-demand one. Confirmed via a full-repo search that nothing required this file from anywhere — genuinely dead code, not merely unused, and architecturally obsolete besides: it predates Stage 1 (Decisions 19–23), which now splits every multi-destination line into one managed line per real destination, so "rank destinations within one line" no longer describes anything that exists. `config.LIVE_DISPATCH_ENABLED`, the flag that gated the old `executeDispatchPlan`, was removed alongside it for the same reason.
+
+**Built**: `M.applyPlan(hubStationGroup, onComplete)` — the real Opportunistic Dispatcher, applying `planner.lua`'s target allocation by moving real vehicles between managed lines, capped at `MAX_MOVES_PER_RUN` (5) per call. Wired to a new DEBUG "Apply Fleet Plan" button — manually triggered only, same staged rollout as every earlier stage.
+
+### Reason
+
+This is the first code in the mod that moves a vehicle based on the Planner's dynamic demand read rather than a fixed, deterministic rule (Stage 1–4's split/balance logic always does the same well-tested thing; this decides differently depending on what demand looks like right now). Two safety rules were treated as non-negotiable before writing it, both already flagged as prerequisites in earlier decisions:
+
+- **Only moves a confirmed-empty vehicle** (`vehicles.isVehicleEmpty(id) == true`) — same Bug A avoidance Stage 2/3 already use, reused rather than re-derived.
+- **Only moves a vehicle compatible with the destination's real cargo history** (Decision 27's `isCompatibleWithCargoType`) — PROGRESS.md already stated the Planner's output "must not be wired to any Dispatcher" without this.
+
+**A real risk was caught and avoided while building the compatibility check, not after**: the obvious source for "what cargo does this destination need" was `demand.scan()`'s per-destination `cargoTypes` table — but that field comes from `api.engine.getComponent(entity, SIM_CARGO).cargoType`, a low-level API never cross-checked against `vehicles.lua`'s `allCapacities` keys (which come from `game.interface.getEntity`, a different, higher-level API). Silently mixing the two into one compatibility check risked every single check quietly returning false — the Dispatcher would appear to run, log nothing wrong, and simply never move any vehicle, with no obvious cause. Instead, added `stations.getUnloadedCargoTypes` (the real cargo type names present in `itemsUnloaded`, e.g. `FOOD`, `FUEL` — same `game.interface.getEntity` source as vehicle capacities, confirmed matching representation) and gate against that instead. This is also arguably the better signal anyway — real historical cargo mix at the destination, not an instantaneous snapshot, consistent with Decisions 29/30's whole point.
+
+### Consequence
+
+**Not yet live-tested.** The move-selection logic (largest deficit first, largest surplus first, skip incompatible/loaded vehicles, cap at 5 per run) is built from proven primitives (the hold→setLine→release pattern already used throughout `fleet_allocator.lua`/`line_splitter.lua`/`route_injector.lua`) but has never itself been run. Still deliberately NOT wired to the Auto Redistribute toggle, a timer, or the delivery event — manual button only, matching every earlier stage's rollout discipline. `MAX_MOVES_PER_RUN = 5` is a deliberately conservative first-test cap, not a tuned number.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
