@@ -18,10 +18,15 @@
 -- Names are display-only.
 -- Behaviour is driven by entity IDs.
 --
--- data() also now wires a real handleEvent (SimCargoSystem /
--- OnToArriveAtDestination) -- research toward the Planner's
--- event-driven reassessment trigger (IDEAS.md), not yet used for
--- anything beyond counting real fires.
+-- data() also wires a real handleEvent (SimCargoSystem /
+-- OnToArriveAtDestination, Decision 28) -- now the Planner +
+-- Opportunistic Dispatcher's real trigger: every
+-- AUTO_DISPATCH_DELIVERY_THRESHOLD deliveries, if the Auto
+-- Redistribute toggle is ON, dispatcher.applyPlan runs automatically
+-- against the currently selected hub (attemptAutoDispatch). The
+-- manual "Apply Fleet Plan" button still exists alongside this for
+-- testing -- the toggle only gates automatic execution, never the
+-- Planner's own calculation.
 -- ============================================================
 
 local config = require("epod_td.config")
@@ -1419,26 +1424,29 @@ end
 
 
 -- ============================================================
--- AUTO REDISTRIBUTE TOGGLE (config.DEBUG only, wired to nothing yet)
+-- AUTO REDISTRIBUTE TOGGLE (config.DEBUG only)
 --
--- Deliberately built and persisted (settings.lua, same io.open
--- pattern as managed_registry.lua -- Decision 26) before any real
--- behavior depends on it. Per the design agreed live: this toggle
--- only ever controls whether the Planner (once it exists) is
--- ALLOWED to execute its plan automatically -- it must never control
--- whether the Planner calculates at all. Turning this off should
--- mean "ask me first," not "stop thinking." Currently does nothing
--- beyond flipping and persisting the setting -- kept DEBUG-gated and
--- honestly labelled until the Dispatcher actually reads it.
+-- Built and persisted (settings.lua, same io.open pattern as
+-- managed_registry.lua -- Decision 26) before any real behavior
+-- depended on it, per the design agreed live: this toggle only ever
+-- controls whether the Dispatcher is ALLOWED to execute its plan
+-- automatically -- it never controls whether the Planner calculates
+-- at all (the Planner always runs, gating happens one layer up).
+-- Turning this off means "ask me first," not "stop thinking."
+--
+-- NOW REAL: attemptAutoDispatch (below handleDeliveryEvent) reads
+-- this setting every time the delivery-event material-change
+-- threshold is reached. Still DEBUG-gated since the underlying
+-- Dispatcher itself is.
 -- ============================================================
 
 local function autoRedistributeLabelText()
 
     if settings.get("autoRedistribute") then
-        return "[ Auto Redistribute: ON (DEBUG, not wired yet) ]"
+        return "[ Auto Redistribute: ON ]"
     end
 
-    return "[ Auto Redistribute: OFF (DEBUG, not wired yet) ]"
+    return "[ Auto Redistribute: OFF ]"
 
 end
 
@@ -2951,6 +2959,79 @@ end
 local DELIVERY_EVENT_DETAIL_LOG_LIMIT = 5
 local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 
+-- ============================================================
+-- AUTO DISPATCH TRIGGER (material-change threshold)
+--
+-- OnToArriveAtDestination is genuinely high-frequency and game-wide
+-- (500-1300+ fires in a single session, Decision 28) -- calling
+-- dispatcher.applyPlan on every single fire would be far too often
+-- and would defeat the whole point of the cooldown guards (Decisions
+-- 32/33): the plan needs real time to settle between runs, not a
+-- reassessment on every delivery anywhere in the game.
+--
+-- Deliberately a simple GLOBAL delivery count, not scoped to the
+-- selected hub's own deliveries specifically -- Decision 29 flagged
+-- that whether a delivery event's targetEntity reliably identifies a
+-- managed hub's own destinations is still unconfirmed, and this
+-- shouldn't wait on that research. Using the already-proven raw fire
+-- count as a rough "enough time/activity has passed" clock is an
+-- honest, if crude, stand-in: every AUTO_DISPATCH_DELIVERY_THRESHOLD
+-- deliveries anywhere, reassess the currently selected hub. A
+-- material-change threshold scoped to just this hub's own deliveries
+-- is a real future refinement once targetEntity scoping is proven,
+-- not a blocker for a first working version.
+--
+-- AUTO_DISPATCH_DELIVERY_THRESHOLD is a first guess, not tuned --
+-- needs live observation of how often it actually fires relative to
+-- real demand changes before trusting the number.
+-- ============================================================
+
+local AUTO_DISPATCH_DELIVERY_THRESHOLD = 50
+
+local function attemptAutoDispatch()
+
+    if not settings.get("autoRedistribute") then
+        return
+    end
+
+    if distributionState.selectedStationGroupId == nil then
+        return
+    end
+
+    logUi(
+        "AUTO DISPATCH: material-change threshold reached ("
+            .. tostring(AUTO_DISPATCH_DELIVERY_THRESHOLD)
+            .. " deliveries) -- running Dispatcher."
+    )
+
+    local ok, err =
+        pcall(
+            dispatcher.applyPlan,
+            distributionState.selectedStationGroupId,
+
+            function(movesMade)
+
+                logUi(
+                    "AUTO DISPATCH: "
+                        .. tostring(movesMade)
+                        .. " vehicle(s) moved."
+                )
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "AUTO DISPATCH FAILED: "
+                .. tostring(err)
+        )
+
+    end
+
+end
+
+
 local function handleDeliveryEvent(src, id, name, param)
 
     if id ~= "SimCargoSystem"
@@ -3006,6 +3087,10 @@ local function handleDeliveryEvent(src, id, name, param)
             "DELIVERY EVENT: " .. tostring(count) .. " total fires so far this session."
         )
 
+    end
+
+    if count % AUTO_DISPATCH_DELIVERY_THRESHOLD == 0 then
+        attemptAutoDispatch()
     end
 
 end

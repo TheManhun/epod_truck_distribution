@@ -585,6 +585,22 @@ No single vehicle repeated — each run drew from a large enough pool of untouch
 
 **Fully live-confirmed, including the boundary.** A reload plus 5 more runs produced repeated real blocks (`"...but was in deficit too recently -- skipping"` etc. on multiple lines across runs 2-5) AND two clean expiry examples landing exactly on the `< 3` boundary: The Grove, blocked from flipping to surplus in runs 2-3 (gap 1, gap 2), was correctly allowed to reverse in run 4 (gap exactly 3); Queens Road, blocked in run 3 (gap 1), was correctly allowed to reverse in run 5 (gap exactly 3). Decision 32's per-vehicle cooldown expired correctly in the same run too — vehicles 139237/139398 (moved Queens→Grove in run 1) became eligible again in run 4 (gap exactly 3) and were picked for Grove→Alexander, not a bug, the cooldown releasing exactly on schedule. Both guards now trusted: block when they should, release exactly when they should. Ready to move on to Not Started #4's remaining step — wiring the Dispatcher to the Auto Redistribute toggle + delivery event instead of the manual button.
 
+## Decision 34 — Dispatcher wired to run automatically: Auto Redistribute toggle + delivery-event material-change threshold
+
+### Decision
+
+`attemptAutoDispatch()` (new, `epod_truck_distribution.lua`) is called from `handleDeliveryEvent` every `AUTO_DISPATCH_DELIVERY_THRESHOLD` (50) real `OnToArriveAtDestination` fires. It checks `settings.get("autoRedistribute")` (the toggle built and left deliberately unwired two nights ago) and `distributionState.selectedStationGroupId`, and if both are set, calls `dispatcher.applyPlan` against the currently selected hub — the same function the manual "Apply Fleet Plan" button already calls, both coexisting. The toggle's label dropped its "(DEBUG, not wired yet)" qualifier now that it's real.
+
+### Reason
+
+This is the last piece of PROGRESS.md's Not Started #4. The threshold is deliberately a simple **global** delivery count, not scoped to the selected hub's own deliveries specifically — Decision 29 already flagged that whether a delivery event's `targetEntity` reliably identifies a managed hub's own destinations is unconfirmed, and this shouldn't wait on that research being resolved first. Using the already-proven raw fire count (Decision 28: 500-1300+ per session) as a rough "enough activity has passed" clock is an honest, if crude, stand-in — a real per-hub material-change threshold is a future refinement once `targetEntity` scoping is proven, not a blocker for a first working version.
+
+`AUTO_DISPATCH_DELIVERY_THRESHOLD = 50` is a first guess, not tuned — needs live observation of how often it actually fires relative to real demand changes.
+
+### Consequence
+
+**Not yet live-tested.** This is the first time anything in the mod moves a vehicle without a direct player click — everything before this (Split, Assign & Balance, the manual "Apply Fleet Plan") required a button press. It inherits every safety property already live-confirmed in the Dispatcher (empty-only, cargo-compatible, per-vehicle cooldown, per-line direction cooldown — Decisions 31/32/33), so this is the payoff of that testing work, not a leap past it. Still bounded the same way manual runs are (`MAX_MOVES_PER_RUN = 5` per trigger). Needs: a reload, turning the toggle ON, selecting a hub, and watching real gameplay to confirm it actually fires around the expected delivery count and behaves the same as the manual runs already proven safe.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
