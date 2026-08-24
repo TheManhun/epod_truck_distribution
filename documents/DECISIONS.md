@@ -559,9 +559,9 @@ This directly confirms `IDEAS.md`'s "Terminal Assignment Stability" entry, previ
 
 ### Consequence
 
-**Partially live-tested.** A reload plus 3 more "Apply Fleet Plan" runs showed zero repeated vehicle IDs across all 15 moves — consistent with the fix, but not fully conclusive: `COOLDOWN_RUNS = 3` means a vehicle moved in run 1 wouldn't be eligible again until run 4, which the 3-run sample never reached, so the cooldown's *expiry* behavior specifically hasn't been observed yet. `COOLDOWN_RUNS = 3` remains a first guess, not tuned — needs to be long enough that a vehicle actually settles at its new line before being reconsidered, short enough that a genuinely persistent demand shift doesn't stay artificially blocked. This was the right thing to catch and fix *before* Not Started #4's remaining step (wiring the Dispatcher to run automatically) — an automatic trigger firing more often than manual clicks would have made this worse, not better, shuffling vehicles continuously instead of letting them settle.
+**Fully live-tested, including expiry.** The first 3-run sample showed zero repeated vehicle IDs (consistent, but the cooldown's expiry specifically unobserved). A later 5-run sample confirmed expiry directly: vehicles 139237/139398, moved in run 1, became eligible again exactly in run 4 (gap 3, matching `COOLDOWN_RUNS`) and were picked for a new reassignment — the cooldown releasing exactly on schedule, not a bug. `COOLDOWN_RUNS = 3` remains a first guess in terms of whether it's the *right* number, not tuned against how long a vehicle actually takes to settle — but the mechanism itself now works exactly as coded. This was the right thing to catch and fix *before* Not Started #4's remaining step (wiring the Dispatcher to run automatically) — an automatic trigger firing more often than manual clicks would have made this worse, not better, shuffling vehicles continuously instead of letting them settle.
 
-That same 3-run sample surfaced a second, related problem — see Decision 33.
+That first 3-run sample also surfaced a second, related problem — see Decision 33.
 
 ## Decision 33 — Whole-line direction flapping caught live (different trucks, same waste); added a per-line direction cooldown
 
@@ -583,7 +583,7 @@ No single vehicle repeated — each run drew from a large enough pool of untouch
 
 ### Consequence
 
-**Not yet live-tested** — written in direct response to this run's data, not itself confirmed yet. Needs a reload and enough runs to see: (1) the reversal actually blocked when it would otherwise have happened, and (2) a genuinely persistent demand shift eventually gets through once `LINE_DIRECTION_COOLDOWN_RUNS` expires, not permanently stuck. Two independent, complementary guards now exist (Decision 32: no vehicle bounces; Decision 33: no line's correction reverses too soon) — together they should be enough to trust automatic triggering, but that trust itself still needs live confirmation before Not Started #4's remaining step (wiring to the Auto Redistribute toggle + delivery event) is attempted.
+**Fully live-confirmed, including the boundary.** A reload plus 5 more runs produced repeated real blocks (`"...but was in deficit too recently -- skipping"` etc. on multiple lines across runs 2-5) AND two clean expiry examples landing exactly on the `< 3` boundary: The Grove, blocked from flipping to surplus in runs 2-3 (gap 1, gap 2), was correctly allowed to reverse in run 4 (gap exactly 3); Queens Road, blocked in run 3 (gap 1), was correctly allowed to reverse in run 5 (gap exactly 3). Decision 32's per-vehicle cooldown expired correctly in the same run too — vehicles 139237/139398 (moved Queens→Grove in run 1) became eligible again in run 4 (gap exactly 3) and were picked for Grove→Alexander, not a bug, the cooldown releasing exactly on schedule. Both guards now trusted: block when they should, release exactly when they should. Ready to move on to Not Started #4's remaining step — wiring the Dispatcher to the Auto Redistribute toggle + delivery event instead of the manual button.
 
 ## Appendix — open runtime-verification items
 
