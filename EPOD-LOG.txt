@@ -1,52 +1,52 @@
 EPOD Log Extract
-Generated: Mon 24/08/2026 13:52:30.43
+Generated: Mon 24/08/2026 14:07:27.21
 Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 ============================================================
 
   ?epod_truck_distribution/1 (1) (TF2 Truck Distribution)
-[TD-UI] DELIVERY EVENT #1: src= param=146948 entity={ sourceEntity=48260, cargoType=CRUDE, speed=0, targetEntity=42245, id=146948, startTime=111503600, type=SIM_CARGO, vehicleUsed=true }
-[TD-UI] DELIVERY EVENT #2: src= param=146723 entity={ sourceEntity=48260, cargoType=CRUDE, speed=0, targetEntity=42245, id=146723, startTime=111369400, type=SIM_CARGO, vehicleUsed=true }
-[TD-UI] DELIVERY EVENT #3: src= param=149643 entity={ sourceEntity=48260, cargoType=CRUDE, speed=0, targetEntity=42245, id=149643, startTime=101122200, type=SIM_CARGO, vehicleUsed=true }
-[TD-UI] DELIVERY EVENT #4: src= param=149638 entity={ sourceEntity=48260, cargoType=CRUDE, speed=0, targetEntity=42245, id=149638, startTime=109256400, type=SIM_CARGO, vehicleUsed=true }
-[TD-UI] DELIVERY EVENT #5: src= param=149637 entity={ sourceEntity=48260, cargoType=CRUDE, speed=0, targetEntity=42245, id=149637, startTime=108969000, type=SIM_CARGO, vehicleUsed=true }
 [TD-UI] ----------------------------------------
 [TD-UI] COMMAND SURFACE DIAGNOSTIC: api.cmd.make.*
 [TD-UI] ----------------------------------------
-[TD-UI]   setLine
-[TD-UI]   setSimBuildingClosureTimeStamp
+[TD-UI]   sellVehicle
+[TD-UI]   connectTownsAndIndustries
 [TD-UI]   removeField
-[TD-UI]   buildProposal
-[TD-UI]   instantlyUpdateTownCargoNeeds
-[TD-UI]   setSimBuildingManualDevelopment
-[TD-UI]   setColor
-[TD-UI]   createLine
-[TD-UI]   replaceTerrain
-[TD-UI]   sendScriptEvent
 [TD-UI]   setGameSpeed
-[TD-UI]   setName
-[TD-UI]   spawnAnimal
-[TD-UI]   setCalendarSpeed
+[TD-UI]   sendToDepot
+[TD-UI]   setVehicleManualDeparture
+[TD-UI]   setLine
 [TD-UI]   setVehicleShouldDepart
 [TD-UI]   setDate
-[TD-UI]   reverseVehicle
-[TD-UI]   updateLine
-[TD-UI]   developTown
-[TD-UI]   setUserStopped
-[TD-UI]   setVehicleTargetMaintenanceState
-[TD-UI]   setAnimalState
-[TD-UI]   connectTownsAndIndustries
+[TD-UI]   setColor
+[TD-UI]   setName
 [TD-UI]   setTownInfo
-[TD-UI]   setVehicleManualDeparture
-[TD-UI]   sendToDepot
+[TD-UI]   setAnimalState
 [TD-UI]   deleteLine
+[TD-UI]   developTown
+[TD-UI]   replaceTerrain
 [TD-UI]   buyVehicle
-[TD-UI]   bookJournalEntry
-[TD-UI]   createTowns
-[TD-UI]   sellVehicle
-[TD-UI]   removeTown
+[TD-UI]   setVehicleTargetMaintenanceState
+[TD-UI]   spawnAnimal
 [TD-UI]   replaceVehicle
+[TD-UI]   setSimBuildingManualDevelopment
+[TD-UI]   sendScriptEvent
+[TD-UI]   updateLine
+[TD-UI]   bookJournalEntry
+[TD-UI]   instantlyUpdateTownCargoNeeds
+[TD-UI]   removeTown
+[TD-UI]   reverseVehicle
+[TD-UI]   setSimBuildingClosureTimeStamp
+[TD-UI]   createLine
+[TD-UI]   setUserStopped
+[TD-UI]   buildProposal
+[TD-UI]   setCalendarSpeed
+[TD-UI]   createTowns
 [TD-UI] Total commands: 33
 [TD-UI] ----------------------------------------
+[TD-UI] DELIVERY EVENT #1: src= param=138472 entity={ sourceEntity=48260, id=138472, vehicleUsed=true, startTime=113265600, cargoType=CRUDE, targetEntity=42245, speed=0, type=SIM_CARGO }
+[TD-UI] DELIVERY EVENT #2: src= param=138453 entity={ sourceEntity=48260, id=138453, vehicleUsed=true, startTime=113312000, cargoType=CRUDE, targetEntity=42245, speed=0, type=SIM_CARGO }
+[TD-UI] DELIVERY EVENT #3: src= param=149891 entity={ sourceEntity=48260, id=149891, vehicleUsed=true, startTime=113301000, cargoType=CRUDE, targetEntity=42245, speed=0, type=SIM_CARGO }
+[TD-UI] DELIVERY EVENT #4: src= param=149888 entity={ sourceEntity=48260, id=149888, vehicleUsed=true, startTime=109233600, cargoType=CRUDE, targetEntity=42245, speed=0, type=SIM_CARGO }
+[TD-UI] DELIVERY EVENT #5: src= param=149874 entity={ sourceEntity=48260, id=149874, vehicleUsed=true, startTime=113079400, cargoType=CRUDE, targetEntity=42245, speed=0, type=SIM_CARGO }
 [TD-UI] Truck Distribution window created.
 [TD-UI] Positioning window at x=3260 y=20 (screen width=3840, WINDOW_WIDTH=560)
 [EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
@@ -57,79 +57,43 @@ Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
+[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
 [EPOD-TD] ----------------------------------------
-[EPOD-TD] FLEET PLAN: Hendon East -- 54 managed vehicle(s), 213 total waiting
+[EPOD-TD] APPLY FLEET PLAN
 [EPOD-TD] ----------------------------------------
-[EPOD-TD]   ● Hendon East ↔ Queens Road | waiting=1 | tier=ACTIVE | floor=1 | current=14 | target=1 | delta=-13
-[EPOD-TD]   ● Hendon East ↔ Park Avenue | waiting=0 | tier=HISTORICAL | floor=2 | current=2 | target=2 | delta=0
-[EPOD-TD]   ● Hendon East ↔ The Grove | waiting=181 | tier=ACTIVE | floor=1 | current=13 | target=42 | delta=+29
-[EPOD-TD]   ● Hendon East ↔ Alexander Road | waiting=7 | tier=ACTIVE | floor=1 | current=23 | target=3 | delta=-20
-[EPOD-TD]   ● Hendon East ↔ Highfield Road | waiting=24 | tier=ACTIVE | floor=1 | current=2 | target=6 | delta=+4
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 200 total fires so far this session.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] FLEET PLAN: Hendon East -- 54 managed vehicle(s), 211 total waiting
-[EPOD-TD] ----------------------------------------
-[EPOD-TD]   ● Hendon East ↔ Queens Road | waiting=10 | tier=ACTIVE | floor=1 | current=14 | target=3 | delta=-11
-[EPOD-TD]   ● Hendon East ↔ Park Avenue | waiting=1 | tier=ACTIVE | floor=1 | current=2 | target=1 | delta=-1
-[EPOD-TD]   ● Hendon East ↔ The Grove | waiting=171 | tier=ACTIVE | floor=1 | current=13 | target=40 | delta=+27
-[EPOD-TD]   ● Hendon East ↔ Alexander Road | waiting=0 | tier=HISTORICAL | floor=2 | current=23 | target=2 | delta=-21
-[EPOD-TD]   ● Hendon East ↔ Highfield Road | waiting=29 | tier=ACTIVE | floor=1 | current=2 | target=8 | delta=+6
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 300 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 400 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 500 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 700 total fires so far this session.
+[EPOD-TD] DISPATCH: moving vehicle 151649 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 151649 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 147568 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 147568 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 135325 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 135325 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 132438 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 132438 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 131092 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 131092 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
@@ -146,7 +110,6 @@ Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 800 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
@@ -155,7 +118,6 @@ Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 900 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 103 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
@@ -164,4 +126,3 @@ Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=74
-[TD-UI] DELIVERY EVENT: 1000 total fires so far this session.
