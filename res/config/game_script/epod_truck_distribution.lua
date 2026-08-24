@@ -2873,58 +2873,15 @@ local function runStartupDiagnosticsOnce()
     hasRunStartupDiagnostics =
         true
 
-    -- ONE-OFF, DISPOSABLE: checks whether Bug B (PROGRESS.md --
-    -- vehicles reassigned via a bare setLine failing to pick up
-    -- cargo at their new destination's first stop) is affecting the
-    -- 10 real vehicles dispatcher.lua's first two live runs actually
-    -- moved (Decision 31) -- Alexander Road -> The Grove. Hardcoded
-    -- vehicle IDs, this session's real ones, not a general mechanism
-    -- -- remove once the question is answered, same as every other
-    -- disposable check in this file's history.
-    if config.DEBUG then
-
-        local bugBCheckVehicleIds = {
-            151649, 147568, 135325, 132438, 131092,
-            128982, 114859, 116791, 117443, 115663
-        }
-
-        logUi("----------------------------------------")
-        logUi("BUG B CHECK -- DISPATCHER-MOVED VEHICLES (Alexander Road -> The Grove)")
-        logUi("----------------------------------------")
-
-        for _, vehicleId in ipairs(bugBCheckVehicleIds) do
-
-            local cargoLoad = vehicles.getCargoLoad(vehicleId)
-            local isEmpty = vehicles.isVehicleEmpty(vehicleId)
-
-            local cargoText = "<unreadable>"
-
-            if cargoLoad ~= nil then
-
-                local parts = {}
-
-                for cargoType, amount in pairs(cargoLoad) do
-                    parts[#parts + 1] = tostring(cargoType) .. "=" .. tostring(amount)
-                end
-
-                cargoText = "{ " .. table.concat(parts, ", ") .. " }"
-
-            end
-
-            logUi(
-                "vehicle "
-                    .. tostring(vehicleId)
-                    .. ": isEmpty="
-                    .. tostring(isEmpty)
-                    .. " cargoLoad="
-                    .. cargoText
-            )
-
-        end
-
-        logUi("----------------------------------------")
-
-    end
+    -- A one-off, disposable Bug B check used to fire here --
+    -- hardcoded to the 10 real vehicle IDs dispatcher.lua's first
+    -- two live runs moved (Alexander Road -> The Grove, Decision 31).
+    -- Answered and removed: vehicle 131092 was carrying real cargo
+    -- (CONSTRUCTION_MATERIALS=5), a second independent clean-positive
+    -- data point for Bug B alongside the dedicated Bug B test's own
+    -- result (PROGRESS.md). Hardcoded to those specific vehicle IDs,
+    -- so it can't be reused for a future Dispatcher run's different
+    -- vehicles -- served its one-time purpose.
 
     dumpAvailableCommands()
 
