@@ -705,7 +705,9 @@ Decision 38's tighter failure handling worked as designed, but the underlying qu
 
 ### Consequence
 
-Deferring all real `dispatcher.applyPlan` calls to run from `guiUpdate` fixes both problems in one change, not two separate fixes: (1) the engine-modification call context is now the same one manual clicks already proved safe, and (2) since manual clicks *also* run from `guiUpdate`'s script instance, every real dispatch call now shares the same `runCounter`/cooldown/reentrancy state regardless of trigger source — the cooldowns finally mean what they were always supposed to mean. **Not yet live-tested.** This is the most structurally significant fix in the automatic-dispatch saga so far — if confirmed, it should eliminate the systemic failures entirely rather than just bounding their cost (Decisions 37/38), since the actual triggering cause is now avoided rather than survived.
+Deferring all real `dispatcher.applyPlan` calls to run from `guiUpdate` fixes both problems in one change, not two separate fixes: (1) the engine-modification call context is now the same one manual clicks already proved safe, and (2) since manual clicks *also* run from `guiUpdate`'s script instance, every real dispatch call now shares the same `runCounter`/cooldown/reentrancy state regardless of trigger source — the cooldowns finally mean what they were always supposed to mean.
+
+**Live-confirmed, completely clean.** 14 automatic dispatch runs observed after reload — zero failures across all of them, real successful moves throughout (`DISPATCH: vehicle X -> ...: true`, runs of 5, 3, 2, and 1 vehicle moved), several runs correctly completing with 0 moves via `DISPATCH COMPLETE` (no deficit needing filling, not a failure). Not one `could not hold vehicle` line anywhere. The pauses the player had been feeling on every automatic trigger were gone in the same session. This closes the automatic-dispatch incident saga (Decisions 36-39) — the actual triggering cause was avoided, not just bounded.
 
 ## Appendix — open runtime-verification items
 
