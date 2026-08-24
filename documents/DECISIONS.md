@@ -727,6 +727,55 @@ Decisions 37/38's failure-path was cheap (a handful of failed hold attempts, qui
 
 **Not yet live-tested.** Worth deciding empirically rather than guessing further: if 5000 still feels too frequent, the number should keep climbing rather than assuming a fix is needed elsewhere. This is a tuning question, not a bug — unlike every other decision in the 36-39 range, nothing here was broken, the toggle is just working exactly as often as told to.
 
+## Decision 41 — Automatic new-line detection and adoption (`line_adopter.lua`)
+
+### What happened
+
+Tonight's live testing proved the manual adoption workaround twice: renaming a pre-existing unmanaged line ("Grain") and a brand-new player-created line ("Hendon East - Main Street") to carry the "● " prefix by hand caused `managed_registry.migrateAndValidate()` to pick each one up on its next check, after which the Planner/Dispatcher immediately and correctly folded it into the shared fleet (5 vehicles pulled onto Main Street, drained proportionally from Grain's surplus). The player then proposed removing the manual rename step entirely: detect a new line touching the hub, adopt it automatically, and let it join the network as demand grows — explicitly matching their original stated vision for the mod ("the only thing the player does is add more trucks and add new stops").
+
+### Reason
+
+Scope decision, player-confirmed: for this first version, ANY road/truck line found touching the hub (via `vehicles.getManagedLinesForStation`, the same topological check the panel display already uses) that isn't yet in the persistent registry gets swept in automatically, with no opt-out yet. A per-line "leave this alone" escape hatch — a toggle, or a confirmation popup ("New line detected at Hendon, want this to be Auto managed?") — was explicitly deferred to a later pass, not built now.
+
+### Decision
+
+New module `line_adopter.lua`: `M.detectAndAdopt(hubStationGroup, onComplete)` scans lines touching the hub, filters to ones not already `managed_registry.isManaged()`, and for each one attempts `api.cmd.make.setName` to rename it to match the hub's existing convention (`line_splitter.lua`'s "● <hub> ↔ <destination>"), then calls `managed_registry.register()` regardless of whether the rename succeeded — the persistent registry, not the name, has been the real authority since Decision 22/26, so adoption does not depend on the cosmetic rename working.
+
+Wired into `epod_truck_distribution.lua` as `pollNewLineAdoption()`, called from `guiUpdate()` right alongside `pollAutoDispatchPending()` — never from `handleEvent`, per Decision 39's deferred-execution rule, since this issues real `setName`/registration commands. Gated on the same `autoRedistribute` toggle and persisted hub designation as auto-dispatch, throttled independently (`AUTO_ADOPT_POLL_INTERVAL = 600`, looser than the dispatch poll since this is topological, not urgent), and reentrancy-guarded (`isLineAdoptionRunning`) the same way `dispatcher.applyPlan` is, since the adoption chain is itself asynchronous (setName → sendCommand → register, one candidate at a time).
+
+### Consequence
+
+**Not yet live-tested — two real unknowns flagged, not assumed:**
+
+1. `api.cmd.make.setName` is live-confirmed on a VEHICLE entity (`fleet_naming.lua`) but has never been tried against a LINE entity — every line so far got its name baked in at `createLine` time, never renamed afterward. If it fails or no-ops on a LINE, the line still gets registered and managed correctly, just without the cosmetic "●" name matching the rest of the fleet.
+2. `vehicles.getManagedLinesForStation` only returns lines it can classify as ROAD carrier, which requires at least one currently-assigned vehicle (see `classifyLineCarrier`) — a line created with zero vehicles won't be detected until the player assigns at least one. Matches the real workflow observed tonight (both Grain and Hendon East already had a vehicle before being noticed) and the panel display's existing constraint, not a new gap.
+
+**Update — first real test, same session:** the player added a new line ("School Lane") with a truck, and it WAS auto-adopted (line count 7→8, confirmed live) — both open unknowns above are resolved: `setName` DOES work on a LINE entity, and a line with ≥1 vehicle is detected correctly. One real bug surfaced by this first live case: the adopted name came out as "● Hendon East ↔ Hendon East + School Lane" — `vehicles.getManagedLinesForStation`'s `destinations` list deliberately includes the hub's own stop (for return-direction demand display), which `buildAdoptedLineName` was joining in unfiltered. Fixed by filtering out any destination whose `stationGroup` matches the hub before building the name.
+
+## Decision 42 — Stage 4 replaced: shared terminal pool via `alternativeTerminals` instead of a per-line dedicated-terminal lock
+
+### What happened
+
+The player shared a code snippet for `api.cmd.make.setLineStopAlternativeTerminals(lineId, stopIndex, allTerminalIds)` — a command never used anywhere in this codebase. `Line.Stop.alternativeTerminals` itself already existed (`lines.makeNativeStopCopy` copies it when duplicating a stop onto a freshly split line), but nothing had ever written it directly; it is a distinct field from `Line.Stop.terminal`, which is what the existing Stage 4 (Decision 22) writes to hard-lock one line to one terminal.
+
+### Reason
+
+Player-directed replacement, not an addition: rather than the mod computing which single terminal each managed line should get (demand-ranked, with a real stock-take of pre-existing occupancy — Decision 22's hard-won design, including the line-count-before-load tiebreak fix and the source-line-exclusion fix), give every managed line's hub stop the exact same pool of every real terminal at the hub and let TF2's own native vehicle terminal-selection logic balance load across them per trip. Simpler mechanism, and it removes an entire class of allocation bugs (the two Decision 22 fixes above no longer apply — there is nothing left to rank or stock-take once every line gets the same full pool).
+
+### Decision
+
+Rewrote `terminal_allocator.lua`'s `M.spreadLinesAcrossTerminals`: dropped `setLineHubTerminal` (the full `api.type.Line.new()` reconstruction + `api.cmd.make.updateLine` rewrite) and `stockTakeExistingLoad` entirely — no longer needed, since there's no per-line ranking or existing-occupancy accounting left to do. New body finds every managed ("● ") line touching the hub, builds `{0, 1, ..., terminalCount-1}` as a plain Lua array (matching the pasted snippet's own form, not a native vector type), and calls `api.cmd.make.setLineStopAlternativeTerminals(lineId, nativeStopIndex, allTerminalIds)` once per line — `nativeStopIndex` converted from the 1-based Lua `stops` array position the same way `vehicles.buildRouteMap`'s `routeIndex` already does (`hubStopIndex - 1`). `Line.Stop.terminal` itself is left untouched. Call site (`epod_truck_distribution.lua`'s "Split Into Lines & Organize Terminals" button) unchanged — same function signature, same manual-click call context, so Decision 39's rule about never issuing commands from `handleEvent` doesn't come into play here (this only ever runs from a player button click).
+
+### Consequence
+
+**Not yet live-tested — three real unknowns, not assumed:**
+
+1. Whether `api.cmd.make.setLineStopAlternativeTerminals` exists at all in this TF2 version.
+2. Whether it accepts a plain Lua array of terminal indices, or requires a native vector type instead (every call is `pcall`-wrapped and logs its own result either way, so a wrong type shows up as a clean logged error, not a crash).
+3. Whether `Line.Stop.terminal` needs to already hold a valid in-range value for the alternatives to be considered at all, or whether the default (untouched) value is fine.
+
+If this doesn't pan out, Decision 22's original demand-ranked single-terminal-lock design is the documented fallback (see `IDEAS.md`'s "Demand-Weighted Terminal Sharing" — kept there, marked superseded rather than deleted, specifically for this possibility) and is fully recoverable from git history.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

@@ -228,6 +228,8 @@ Only relevant once (if) terminal spreading is ever triggered automatically/repea
 
 **Graduated to `DECISIONS.md` Decision 22** (`terminal_allocator.lua`) — built and live-run once, with a real pre-existing-occupancy bug found and fixed (see DECISIONS.md). Left here because the "not yet confirmed" questions below are still genuinely open even though the feature itself now exists.
 
+**SUPERSEDED by Decision 42, not yet live-tested.** The demand-ranked single-dedicated-terminal-per-line model described below (rebuild the whole `Line`, write one `Line.Stop.terminal` value) has been replaced in `terminal_allocator.lua` with a much simpler shared-pool model: every managed line's hub stop gets the SAME full set of terminals via the (previously unused) `Line.Stop.alternativeTerminals` field and `api.cmd.make.setLineStopAlternativeTerminals`, letting TF2's own vehicle terminal-selection balance load per trip instead of the mod computing an assignment. If that command turns out not to exist/work as hoped, this section's original design (and its git history) is the fallback to revert to — kept below for that reason, not as active guidance.
+
 ### Origin
 
 Raised live immediately after `route_injector.runTerminalAssignmentTest()` confirmed `Line.Stop.terminal` is genuinely writable and the game's own TERMINALS tab agrees (see DECISIONS.md's terminal-assignment entry). Once it's possible to deliberately choose which terminal a line uses, the next question is what to do once there are more managed lines than physical terminals at the hub.
@@ -855,6 +857,17 @@ When the network-change trigger fires, compare the current structure with the pr
 Only run the more expensive integration logic when the structure has genuinely changed.
 
 If TF2 does not expose reliable network-edit events, a very slow lightweight topology check could provide a fallback.
+
+---
+
+## New-Line Detection/Adoption — V1 BUILT (Decision 41), opt-out still open
+
+The "new destination/delivery line" and "new feeder service" cases above are now handled by `line_adopter.lua` + `pollNewLineAdoption()`: a slow topology poll (no separate fingerprint/snapshot needed — `managed_registry.isManaged()` already IS the "known network" state) finds any road/truck line touching the hub that isn't registered yet, renames it to match the hub's convention, and registers it. Player-confirmed scope for V1: anything touching the hub is swept in, no opt-out.
+
+Still open, deliberately deferred, not built:
+
+- **Per-line opt-out.** Either a reserved name prefix meaning "leave this one alone" (mirrors "●" meaning "managed"), or a live confirmation popup when a new line is first detected — *"New line detected at Hendon, want this to be Auto managed?"* (the player's own suggested phrasing). A popup needs a proven TF2 GUI confirmation-dialog mechanism, not yet researched in this codebase.
+- **Safe line shutdown** — the other half of "Automatic Network Change Detection & Safe Line Shutdown": detecting a managed line's removal/edit and recovering its vehicles before anything is lost, with a waiting-cargo warning first. Not started.
 
 ---
 

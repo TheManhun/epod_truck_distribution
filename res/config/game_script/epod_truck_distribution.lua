@@ -50,6 +50,7 @@ local settings = require("epod_td.settings")
 local fleet_naming = require("epod_td.fleet_naming")
 local planner = require("epod_td.planner")
 local dispatcher = require("epod_td.dispatcher")
+local line_adopter = require("epod_td.line_adopter")
 local gui = require("gui")
 
 
@@ -169,6 +170,20 @@ local AUTO_DISPATCH_POLL_INTERVAL =
 
 local autoDispatchPollCounter =
     0
+
+-- New-line adoption (PROGRESS.md Not Started #5 / IDEAS.md "Automatic
+-- Network Change Detection") is topological, not event-driven -- it
+-- only needs to notice a line that now touches the hub, not react
+-- within seconds. Polled far less often than dispatch itself so the
+-- getLines() walk inside detectAndAdopt doesn't add per-frame cost.
+local AUTO_ADOPT_POLL_INTERVAL =
+    600
+
+local autoAdoptPollCounter =
+    0
+
+local isLineAdoptionRunning =
+    false
 
 
 -- ============================================================
@@ -3148,11 +3163,87 @@ local function pollAutoDispatchPending()
 end
 
 
+-- Runs line_adopter.detectAndAdopt from an ordinary per-frame poll,
+-- same call context as pollAutoDispatchPending above and for the same
+-- reason (Decision 39): setName/register issue real commands, so this
+-- must never run from inside handleEvent. Gated on the same
+-- autoRedistribute toggle and hub designation as auto-dispatch --
+-- adoption without a hub to adopt INTO would be meaningless, and a
+-- player with the feature off should see no automatic renaming at
+-- all. Reentrancy-guarded the same way dispatcher.applyPlan is: the
+-- adoption chain in line_adopter.lua is itself asynchronous
+-- (setName -> sendCommand -> register, one candidate at a time), so a
+-- second poll firing mid-chain would double up exactly like the
+-- Decision 36 incident this is modeled after avoiding.
+local function pollNewLineAdoption()
+
+    autoAdoptPollCounter = autoAdoptPollCounter + 1
+
+    if autoAdoptPollCounter < AUTO_ADOPT_POLL_INTERVAL then
+        return
+    end
+
+    autoAdoptPollCounter = 0
+
+    if not settings.get("autoRedistribute") then
+        return
+    end
+
+    if isLineAdoptionRunning then
+        return
+    end
+
+    local hubStationGroupId =
+        settings.get("autoDispatchHubStationGroupId")
+
+    if hubStationGroupId == nil then
+        return
+    end
+
+    isLineAdoptionRunning = true
+
+    local ok, err =
+        pcall(
+            line_adopter.detectAndAdopt,
+            hubStationGroupId,
+
+            function(adoptedCount)
+
+                isLineAdoptionRunning = false
+
+                if adoptedCount > 0 then
+
+                    logUi(
+                        "AUTO ADOPT: " .. tostring(adoptedCount)
+                            .. " new line(s) adopted into management."
+                    )
+
+                    distributionState.dirty = true
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        isLineAdoptionRunning = false
+
+        logUi(
+            "AUTO ADOPT FAILED: " .. tostring(err)
+        )
+
+    end
+
+end
+
+
 local function guiUpdate()
 
     runStartupDiagnosticsOnce()
 
     pollAutoDispatchPending()
+    pollNewLineAdoption()
 
 
     if distributionState.selectedEntityId == nil then
