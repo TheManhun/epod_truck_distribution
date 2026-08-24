@@ -672,6 +672,23 @@ __CRASHDB_DUMP__ <uuid>
 
 This is the most serious incident logged in this project to date — worse than Decision 36's, because it appears to have caused actual repeated crashes, not just unresponsiveness. Two real defensive layers now exist in `dispatcher.lua` (exclusion-on-failure, hard attempt cap) on top of Decision 36's reentrancy guard and Decisions 32/33's cooldowns — the Dispatcher has accumulated meaningful real-world hardening through this testing, each layer added in direct response to an actual observed failure, not speculative "just in case" code. **Not yet live-tested.** Given the severity, testing this again warrants real caution: watch the log closely on the very first automatic or manual trigger after reload rather than leaving it running unattended.
 
+## Decision 38 — Decision 37's fix confirmed working (no runaway), but revealed a systemic failure pattern; added a fast consecutive-failure bailout
+
+### What happened
+
+After Decision 37's fix, the player reloaded, turned Auto Redistribute on, and reported "having moments" of freezing — clearly less severe than the earlier incidents, but still real. The log confirmed the fix is working exactly as designed: two separate `AUTO DISPATCH` runs each correctly logged `DISPATCH: reached MAX_ATTEMPTS_PER_RUN (20) -- stopping for this run (repeated failures)` and completed with `0 vehicle(s) moved` — no runaway, no unbounded recursion, no repeat of Decision 37's 1,397-dump storm.
+
+But the pattern underneath was new and worth taking seriously: **every single vehicle attempted failed** — roughly 19-20 attempts per run, 0 successes, across two runs and two different source lines (Alexander Road, then Queens Road). This is not one rare per-vehicle timing collision (Decision 37's confirmed cause) — it's the whole hub, consistently, both times. Each bounded-but-still-~20-attempt burst was apparently enough to cause a brief, real hitch every time the delivery threshold fired.
+
+### Decision (the fix)
+
+1. **`MAX_ATTEMPTS_PER_RUN` lowered from 20 to 8** — still a backstop, just a smaller one, given a full run of failures is evidently costly enough to notice even bounded.
+2. **New: `MAX_CONSECUTIVE_FAILURES` (3).** If 3 attempts in a row fail with no intervening success, the whole run bails out immediately rather than continuing to grind toward the attempt cap. This targets the specific pattern just observed directly: if failures are systemic, trying more vehicles is very likely to keep failing too, so exiting fast keeps each burst small. A run with occasional, scattered failures among real successes is unaffected — this only counts a streak, not a running total.
+
+### Consequence
+
+**Not yet live-tested.** The underlying question — why is *every* vehicle at this hub currently failing to hold, not just an occasional one — remains open and is a bigger, more interesting question than this fix answers. Leading theory, not yet confirmed: this save has been deliberately stress-tested with very high vehicle counts and delivery volume (100+ vehicles, thousands of deliveries per session), and the underlying `ecs::Engine::BeginModification` "between changes" state (Decision 37) may simply be common, not rare, when the simulation is under this much concurrent load — meaning the collision rate scales with how hard the save is being pushed, not a fixed per-vehicle defect. If that's right, this may partly resolve itself under more normal (less deliberately extreme) play, and is worth re-testing under lighter load before concluding anything further needs fixing here.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

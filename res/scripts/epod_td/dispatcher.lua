@@ -97,8 +97,24 @@ local MAX_MOVES_PER_RUN = 5
 -- enough to fill crash_dump with hundreds of .dmp files in under a
 -- minute. This cap is the backstop; excludedVehicleIds (see
 -- findMovableVehicle) is the actual fix that stops a failed vehicle
--- from being retried at all.
-local MAX_ATTEMPTS_PER_RUN = 20
+-- from being retried at all. Lowered from 20 (Decision 38): a
+-- follow-up live test showed EVERY attempted vehicle failing across
+-- two separate runs (~40 attempts, 0 successes, both Alexander Road
+-- and Queens Road) -- not one rare per-vehicle timing collision but
+-- something systemic at this hub, so grinding through the full 20
+-- every time was still causing real, if bounded, hitches ("moments"
+-- of freezing) every time the threshold fired.
+local MAX_ATTEMPTS_PER_RUN = 8
+
+-- NEW (Decision 38): bail out of the WHOLE run after this many
+-- CONSECUTIVE failures with no intervening success, rather than
+-- always grinding to MAX_ATTEMPTS_PER_RUN. If failures are systemic
+-- (the whole hub is in a bad state right now, not one unlucky
+-- vehicle), continuing to try more vehicles is very likely to keep
+-- failing too -- exiting fast keeps each burst small. A run with
+-- occasional, scattered failures among real successes is unaffected,
+-- since this only counts a streak, not a total.
+local MAX_CONSECUTIVE_FAILURES = 3
 
 -- First-guess number, not yet tuned against live data -- needs to be
 -- large enough that a vehicle actually reaches and settles at its
@@ -340,6 +356,20 @@ local function processMoveNext(context)
 
     end
 
+    if context.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES then
+
+        log.info(
+            "DISPATCH: "
+                .. tostring(context.consecutiveFailures)
+                .. " consecutive failures -- stopping this run early "
+                .. "(likely systemic, not one bad vehicle)."
+        )
+
+        context.onComplete(context.movesMade)
+        return
+
+    end
+
     if context.movesMade >= MAX_MOVES_PER_RUN then
 
         log.info(
@@ -442,6 +472,7 @@ local function processMoveNext(context)
             surplus.remaining = surplus.remaining - 1
             context.movesMade = context.movesMade + 1
             lastMovedRun[vehicleId] = runCounter
+            context.consecutiveFailures = 0
 
         else
 
@@ -450,6 +481,7 @@ local function processMoveNext(context)
             -- findMovableVehicle would hand the exact same vehicle
             -- straight back out again next call.
             context.excludedVehicleIds[vehicleId] = true
+            context.consecutiveFailures = context.consecutiveFailures + 1
 
         end
 
@@ -545,6 +577,7 @@ function M.applyPlan(hubStationGroup, onComplete)
         surplusIndex = 1,
         movesMade = 0,
         attempts = 0,
+        consecutiveFailures = 0,
         excludedVehicleIds = {},
         onComplete = finish
     })
