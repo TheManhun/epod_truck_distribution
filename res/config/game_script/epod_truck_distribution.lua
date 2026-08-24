@@ -17,6 +17,11 @@
 --
 -- Names are display-only.
 -- Behaviour is driven by entity IDs.
+--
+-- data() also now wires a real handleEvent (SimCargoSystem /
+-- OnToArriveAtDestination) -- research toward the Planner's
+-- event-driven reassessment trigger (IDEAS.md), not yet used for
+-- anything beyond counting real fires.
 -- ============================================================
 
 local config = require("epod_td.config")
@@ -175,6 +180,18 @@ local distributionState = {
         false,
 
     guiUpdateCounter =
+        0,
+
+    -- Event-trigger research (PROGRESS.md Not Started #3, IDEAS.md
+    -- "Event-Driven Demand Reassessment"): counts real
+    -- OnToArriveAtDestination fires so we can confirm live whether
+    -- the event actually fires reliably before any Planner logic
+    -- depends on it. Kept as a running count rather than logging
+    -- every fire -- this event is game-wide (every cargo delivery
+    -- in the whole save, not just our hubs), and logging each one
+    -- would repeat the "logs getting full" problem already fixed
+    -- once this session.
+    deliveryEventCount =
         0
 
 }
@@ -2499,6 +2516,16 @@ local function handleStationSelection(value)
             entityId
         )
 
+    -- stations.dumpItemHistory used to fire here once per session --
+    -- answered "do itemsLoaded/itemsUnloaded's _lastMonth/_lastYear
+    -- sub-tables break down by cargo type" -- yes, confirmed live
+    -- (Decision 28): { _sum=0, CONSTRUCTION_MATERIALS=0, FUEL=0,
+    -- FOOD=0 } etc., real per-type keys, not just an opaque total.
+    -- Removed now that the question is answered, matching this
+    -- session's own log-volume discipline -- still available to call
+    -- manually (stations.dumpItemHistory(stationGroupId, label)) if
+    -- ever needed again.
+
     -- A fresh selection means the player wants the window again,
     -- even if they closed it earlier this session.
     distributionState.windowClosedByUser =
@@ -2702,6 +2729,89 @@ local function runStartupDiagnosticsOnce()
 end
 
 
+-- ============================================================
+-- SIMULATION EVENT TRIGGER TEST
+--
+-- `handleEvent` is a separate field on data()'s returned table from
+-- `guiHandleEvent` -- confirmed real via shipped code
+-- (res/scripts/mission/arrivaltracker.lua), never actually wired up
+-- in this mod until now. Only reason to build this first: it's the
+-- load-bearing assumption behind "Event-Driven Demand Reassessment"
+-- (IDEAS.md) and the Planner (PROGRESS.md Not Started #3/#4) --
+-- if OnToArriveAtDestination doesn't fire the way the shipped
+-- reference code implies, that whole design needs rethinking before
+-- any of it gets built.
+--
+-- Detail is logged only for the first few fires (enough to see a
+-- real param/entity id and confirm the shape), then collapses to a
+-- periodic count -- this event fires per cargo delivery GAME-WIDE,
+-- not just at our hubs, so logging every one would be exactly the
+-- kind of log spam already removed once this session.
+-- ============================================================
+
+local DELIVERY_EVENT_DETAIL_LOG_LIMIT = 5
+local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
+
+local function handleDeliveryEvent(src, id, name, param)
+
+    if id ~= "SimCargoSystem"
+        or name ~= "OnToArriveAtDestination"
+    then
+        return
+    end
+
+    distributionState.deliveryEventCount =
+        distributionState.deliveryEventCount + 1
+
+    local count =
+        distributionState.deliveryEventCount
+
+    if count <= DELIVERY_EVENT_DETAIL_LOG_LIMIT then
+
+        local okEntity, entity =
+            pcall(game.interface.getEntity, param)
+
+        local fieldsText = "<unreadable>"
+
+        if okEntity and entity ~= nil then
+
+            local okIter, iterErr =
+                pcall(function()
+
+                    local parts = {}
+
+                    for key, value in pairs(entity) do
+                        parts[#parts + 1] = tostring(key) .. "=" .. tostring(value)
+                    end
+
+                    fieldsText = "{ " .. table.concat(parts, ", ") .. " }"
+
+                end)
+
+            if not okIter then
+                fieldsText = "<not enumerable: " .. tostring(iterErr) .. ">"
+            end
+
+        end
+
+        logUi(
+            "DELIVERY EVENT #" .. tostring(count)
+                .. ": src=" .. tostring(src)
+                .. " param=" .. tostring(param)
+                .. " entity=" .. fieldsText
+        )
+
+    elseif count % DELIVERY_EVENT_MILESTONE_INTERVAL == 0 then
+
+        logUi(
+            "DELIVERY EVENT: " .. tostring(count) .. " total fires so far this session."
+        )
+
+    end
+
+end
+
+
 local function guiUpdate()
 
     runStartupDiagnosticsOnce()
@@ -2767,7 +2877,10 @@ function data()
             end,
 
         guiUpdate =
-            guiUpdate
+            guiUpdate,
+
+        handleEvent =
+            handleDeliveryEvent
 
     }
 

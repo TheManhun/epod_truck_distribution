@@ -472,6 +472,24 @@ The first version of this test sampled only one vehicle per managed line and fou
 
 This closes the "is the raw compatibility data reliable" question that PROGRESS.md's cargo-compatibility item was blocked on. It does NOT yet mean compatibility is used anywhere in real dispatch decisions — no code path today checks a vehicle's compatibility before reassigning it (Stage 2/3's only current safety check is `isVehicleEmpty`, unrelated to cargo type). This is a hard prerequisite for the Planner/Opportunistic Dispatcher (`IDEAS.md`, PROGRESS.md Not Started #4), not the dispatcher itself — that logic still needs to be built on top of this now-proven-reliable mechanism.
 
+## Decision 28 — Planner prerequisites live-confirmed: the `OnToArriveAtDestination` event fires reliably (very frequently, game-wide), and station cargo history genuinely breaks down by cargo type
+
+### Decision
+
+Wired `handleEvent` for real for the first time (`epod_truck_distribution.lua`'s `handleDeliveryEvent`, on `data()`'s `handleEvent` field, separate from `guiHandleEvent`) and ran it live, alongside a one-off deeper dump of a station's `itemsLoaded`/`itemsUnloaded._lastMonth`/`_lastYear` sub-tables (`stations.dumpItemHistory`, since removed — see below).
+
+### Reason
+
+Both were genuine open questions blocking the Planner + Opportunistic Dispatcher work (PROGRESS.md Not Started #3/#4): whether `OnToArriveAtDestination` (only ever confirmed present in shipped reference code, never actually fired in this mod) is real and reliable, and whether the cargo-profile idea from `IDEAS.md`'s "Runtime Fleet Rebalancing" (compatibility based on observed history, not just instantaneous waiting cargo) has real data to draw on.
+
+**Event trigger — confirmed live and firing reliably.** A single, fairly short test session produced over 500 real fires (`DELIVERY EVENT: 500 total fires so far this session` was the last milestone logged). `param` reliably carried a real, readable cargo entity id each time; `src` was consistently empty across all 5 detail-logged fires — not yet understood, but `param` is the field that matters for identifying what arrived. **This is a genuinely high-frequency, game-wide event** — every cargo delivery in the whole save, not scoped to managed hubs — confirming `IDEAS.md`'s own "Material Change Threshold" caution was the right instinct: a Planner reacting to every single fire would reassess far too often to be useful; some batching/threshold is a real requirement, not a hypothetical one.
+
+**Cargo history — confirmed to genuinely break down by cargo type.** The one-level-deep `dumpEntityInfo` had only ever shown `_lastMonth`/`_lastYear` as opaque table addresses; a dedicated one-level-deeper dump showed real per-type keys: `itemsLoaded._lastMonth = { _sum=0, CONSTRUCTION_MATERIALS=0, FUEL=0, FOOD=0 }`, `itemsUnloaded._lastMonth = { GRAIN=0, _sum=0 }` (station 126300 — Hendon East itself, all values 0 in this short test, but the STRUCTURE is what was in question, not the specific numbers). This confirms the Planner can read a service's recent cargo-type history straight from data TF2 already tracks, without building new history-tracking from scratch.
+
+### Consequence
+
+Both findings are prerequisites now closed, not the Planner itself — nothing yet consumes either. The `stations.dumpItemHistory` one-shot dump served its purpose and was removed (matching this session's own log-volume discipline) but stays available to call manually. The event handler stays wired permanently (it's cheap — increments a counter, only logs detail for the first 5 fires and a periodic count after that) since the Planner will eventually need it live. Next real design step: decide the actual "material change" threshold/batching rule now that real fire-frequency data exists to inform it, rather than picking a number blind.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

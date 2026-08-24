@@ -529,6 +529,94 @@ function M.getItemTotals(stationGroupId)
 end
 
 
+-- ============================================================
+-- ITEM HISTORY DEEP DUMP -- one-off research
+--
+-- getItemTotals above only ever reads _sum. The raw entity dump
+-- (EPOD-LOG.txt) already showed itemsLoaded/itemsUnloaded break
+-- down by CARGO TYPE at the top level (e.g. FOOD=2482, FUEL=2853
+-- alongside _sum), confirmed live -- that part needs no further
+-- test. What's never been seen is what's actually inside the
+-- _lastMonth/_lastYear sub-tables also present on that same
+-- object -- the one-level-deep dumpEntityInfo only ever printed
+-- their table address, not their contents. This answers IDEAS.md's
+-- "Runtime Fleet Rebalancing" cargo-profile refinement: if
+-- _lastMonth/_lastYear also break down by cargo type, the Planner
+-- gets a ready-made recent-history signal for free instead of
+-- needing new tracking.
+-- ============================================================
+
+local function dumpNestedTable(label, tableValue)
+
+    if tableValue == nil then
+        log.info("  " .. label .. " = <nil>")
+        return
+    end
+
+    local okIter, iterErr =
+        pcall(function()
+
+            local parts = {}
+
+            for key, value in pairs(tableValue) do
+                parts[#parts + 1] = tostring(key) .. "=" .. tostring(value)
+            end
+
+            log.info("  " .. label .. " = { " .. table.concat(parts, ", ") .. " }")
+
+        end)
+
+    if not okIter then
+        log.info("  " .. label .. " = <not enumerable: " .. tostring(iterErr) .. ">")
+    end
+
+end
+
+function M.dumpItemHistory(stationGroupId, label)
+
+    if stationGroupId == nil or stationGroupId < 0 then
+        return
+    end
+
+    local ok, entity = pcall(game.interface.getEntity, stationGroupId)
+
+    if not ok or entity == nil then
+        log.info(tostring(label) .. ": could not read entity " .. tostring(stationGroupId))
+        return
+    end
+
+    local loadedTable = safeField(entity, "itemsLoaded")
+    local unloadedTable = safeField(entity, "itemsUnloaded")
+
+    log.info("----------------------------------------")
+    log.info("ITEM HISTORY DEEP DUMP: " .. tostring(label) .. " (id=" .. tostring(stationGroupId) .. ")")
+    log.info("----------------------------------------")
+
+    dumpNestedTable(
+        "itemsLoaded._lastMonth",
+        loadedTable ~= nil and safeField(loadedTable, "_lastMonth") or nil
+    )
+
+    dumpNestedTable(
+        "itemsLoaded._lastYear",
+        loadedTable ~= nil and safeField(loadedTable, "_lastYear") or nil
+    )
+
+    dumpNestedTable(
+        "itemsUnloaded._lastMonth",
+        unloadedTable ~= nil and safeField(unloadedTable, "_lastMonth") or nil
+    )
+
+    dumpNestedTable(
+        "itemsUnloaded._lastYear",
+        unloadedTable ~= nil and safeField(unloadedTable, "_lastYear") or nil
+    )
+
+    log.info("----------------------------------------")
+
+end
+
+
 function M.getStationGroup(stationGroupId)
     if stationGroupId == nil
         or stationGroupId < 0
