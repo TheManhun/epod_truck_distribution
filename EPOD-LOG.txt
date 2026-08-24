@@ -1,1165 +1,474 @@
 EPOD Log Extract
-Generated: Mon 24/08/2026 18:40:09.86
+Generated: Mon 24/08/2026 19:12:33.40
 Source: D:\Steam\userdata\141261032\1066780\local\crash_dump\stdout.txt
 ============================================================
 
   ?epod_truck_distribution/1 (1) (TF2 Truck Distribution)
-[TD-UI] DELIVERY EVENT #1: src= param=155000 entity={ vehicleUsed=true, speed=0, targetEntity=42245, type=SIM_CARGO, sourceEntity=42354, startTime=144830800, cargoType=CRUDE, id=155000 }
-[TD-UI] DELIVERY EVENT #2: src= param=154997 entity={ vehicleUsed=true, speed=0, targetEntity=42245, type=SIM_CARGO, sourceEntity=42354, startTime=144682200, cargoType=CRUDE, id=154997 }
-[TD-UI] DELIVERY EVENT #3: src= param=154951 entity={ vehicleUsed=true, speed=0, targetEntity=42245, type=SIM_CARGO, sourceEntity=42354, startTime=144645800, cargoType=CRUDE, id=154951 }
-[TD-UI] DELIVERY EVENT #4: src= param=154568 entity={ vehicleUsed=true, speed=0, targetEntity=42245, type=SIM_CARGO, sourceEntity=42354, startTime=144712400, cargoType=CRUDE, id=154568 }
-[TD-UI] DELIVERY EVENT #5: src= param=154538 entity={ vehicleUsed=true, speed=0, targetEntity=42245, type=SIM_CARGO, sourceEntity=42354, startTime=144830000, cargoType=CRUDE, id=154538 }
+[TD-UI] DELIVERY EVENT #1: src= param=108954 entity={ cargoType=FUEL, type=SIM_CARGO, targetEntity=115917, vehicleUsed=true, id=108954, speed=0, startTime=151044800, sourceEntity=10196 }
+[TD-UI] DELIVERY EVENT #2: src= param=146560 entity={ cargoType=FUEL, type=SIM_CARGO, targetEntity=115721, vehicleUsed=true, id=146560, speed=0, startTime=153016800, sourceEntity=10196 }
+[TD-UI] DELIVERY EVENT #3: src= param=144596 entity={ cargoType=MACHINES, type=SIM_CARGO, targetEntity=130684, vehicleUsed=true, id=144596, speed=0, startTime=152622000, sourceEntity=22995 }
 [TD-UI] ----------------------------------------
 [TD-UI] COMMAND SURFACE DIAGNOSTIC: api.cmd.make.*
 [TD-UI] ----------------------------------------
-[TD-UI]   setColor
-[TD-UI]   spawnAnimal
-[TD-UI]   buildProposal
-[TD-UI]   setSimBuildingManualDevelopment
-[TD-UI]   setAnimalState
-[TD-UI]   bookJournalEntry
-[TD-UI]   setGameSpeed
-[TD-UI]   createLine
-[TD-UI]   removeField
+[TD-UI]   reverseVehicle
 [TD-UI]   setCalendarSpeed
-[TD-UI]   setDate
-[TD-UI]   instantlyUpdateTownCargoNeeds
-[TD-UI]   connectTownsAndIndustries
-[TD-UI]   sendToDepot
-[TD-UI]   setTownInfo
-[TD-UI]   developTown
-[TD-UI]   removeTown
-[TD-UI]   updateLine
-[TD-UI]   setName
-[TD-UI]   sellVehicle
 [TD-UI]   setVehicleTargetMaintenanceState
-[TD-UI]   setSimBuildingClosureTimeStamp
-[TD-UI]   setVehicleManualDeparture
+[TD-UI]   connectTownsAndIndustries
 [TD-UI]   setVehicleShouldDepart
+[TD-UI]   removeField
+[TD-UI]   setVehicleManualDeparture
+[TD-UI]   instantlyUpdateTownCargoNeeds
+[TD-UI]   buyVehicle
+[TD-UI]   updateLine
+[TD-UI]   setUserStopped
+[TD-UI]   setGameSpeed
+[TD-UI]   setSimBuildingClosureTimeStamp
+[TD-UI]   sendToDepot
 [TD-UI]   setLine
 [TD-UI]   sendScriptEvent
+[TD-UI]   setColor
+[TD-UI]   developTown
+[TD-UI]   setName
+[TD-UI]   bookJournalEntry
 [TD-UI]   replaceVehicle
-[TD-UI]   replaceTerrain
-[TD-UI]   createTowns
-[TD-UI]   buyVehicle
-[TD-UI]   setUserStopped
+[TD-UI]   removeTown
+[TD-UI]   sellVehicle
 [TD-UI]   deleteLine
-[TD-UI]   reverseVehicle
+[TD-UI]   spawnAnimal
+[TD-UI]   setAnimalState
+[TD-UI]   setTownInfo
+[TD-UI]   buildProposal
+[TD-UI]   replaceTerrain
+[TD-UI]   createLine
+[TD-UI]   setSimBuildingManualDevelopment
+[TD-UI]   setDate
+[TD-UI]   createTowns
 [TD-UI] Total commands: 33
 [TD-UI] ----------------------------------------
-[TD-UI] DELIVERY EVENT: 100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 1)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 45011 from ● Hendon East ↔ Park Avenue -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 45011 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 133882 from ● Hendon East ↔ Park Avenue -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 133882 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 137571 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Queens Road
-[TD-UI] DELIVERY EVENT: 600 total fires so far this session.
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 137571 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 135557 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135557 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 132968 from ● Hendon East ↔ Highfield Road -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 132968 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
-[TD-UI] AUTO DISPATCH: 5 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 2)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 1100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 3)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 1600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 1900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 4)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 98441 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 98441 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 90157 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 90157 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 135534 from ● Hendon East ↔ Highfield Road -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135534 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 3 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 3 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 2100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 5)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 2600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 2900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 6)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 3100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 7)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 132438 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ Highfield Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 132438 -> ● Hendon East ↔ Highfield Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 116723 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Highfield Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 116723 -> ● Hendon East ↔ Highfield Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 2 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 2 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 3600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 3900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 8)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 4100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 9)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 136157 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Park Avenue
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 136157 -> ● Hendon East ↔ Park Avenue: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 4600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 4900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 5000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 5100 total fires so far this session.
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 10)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Park Avenue reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 139398 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 139398 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 5200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 5300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 5400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 5500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 5600 total fires so far this session.
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 11)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Park Avenue reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 5700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 5800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 5900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 6000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 6100 total fires so far this session.
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 12)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 135537 from ● Hendon East ↔ Highfield Road -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135537 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Park Avenue for ● Hendon East ↔ Alexander Road -- trying next surplus line.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 6200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 6300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 6400 total fires so far this session.
+[TD-UI] DELIVERY EVENT #4: src= param=100042 entity={ cargoType=FUEL, type=SIM_CARGO, targetEntity=154440, vehicleUsed=true, id=100042, speed=0, startTime=151950600, sourceEntity=10196 }
+[TD-UI] DELIVERY EVENT #5: src= param=143970 entity={ cargoType=FUEL, type=SIM_CARGO, targetEntity=161423, vehicleUsed=true, id=143970, speed=0, startTime=152965800, sourceEntity=10196 }
 [TD-UI] Truck Distribution window created.
 [TD-UI] Positioning window at x=3260 y=20 (screen width=3840, WINDOW_WIDTH=560)
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 6500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 6600 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 100 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 200 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 300 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
+[TD-UI] DELIVERY EVENT: 400 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 500 total fires so far this session.
+[EPOD-TD] MANAGED REGISTRY: migrating "● Grain" (id=136284) from name prefix -- not yet in the persistent record
 [EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 13)
+[EPOD-TD] FLEET PLAN: Hendon East -- 104 managed vehicle(s), 433 total waiting
 [EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 130729 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ Alexander Road
+[EPOD-TD]   ● Hendon East ↔ Queens Road | waiting=101 | tier=ACTIVE | floor=1 | current=16 | target=24 | delta=+8
+[EPOD-TD]   ● Hendon East ↔ Park Avenue | waiting=8 | tier=ACTIVE | floor=1 | current=2 | target=3 | delta=+1
+[EPOD-TD]   ● Hendon East ↔ The Grove | waiting=194 | tier=ACTIVE | floor=1 | current=14 | target=44 | delta=+30
+[EPOD-TD]   ● Grain | waiting=0 | tier=HISTORICAL | floor=2 | current=50 | target=2 | delta=-48
+[EPOD-TD]   ● Hendon East ↔ Alexander Road | waiting=126 | tier=ACTIVE | floor=1 | current=18 | target=29 | delta=+11
+[EPOD-TD]   ● Hendon East ↔ Highfield Road | waiting=4 | tier=ACTIVE | floor=1 | current=4 | target=2 | delta=-2
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 1)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 160287 from ● Grain -> ● Hendon East ↔ The Grove
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 130729 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 6700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 6800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 6900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 7000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 7100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 7200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 14)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 7300 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 7400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 7500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 15)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 115663 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Highfield Road
+[EPOD-TD] DISPATCH: vehicle 160287 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 157873 from ● Grain -> ● Hendon East ↔ The Grove
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 115663 -> ● Hendon East ↔ Highfield Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 135350 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Highfield Road
+[EPOD-TD] DISPATCH: vehicle 157873 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 153375 from ● Grain -> ● Hendon East ↔ The Grove
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135350 -> ● Hendon East ↔ Highfield Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 2 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 2 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 7600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 7700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 7800 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 7900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 8000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 16)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 8100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 8200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 17)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 90157 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Queens Road
+[EPOD-TD] DISPATCH: vehicle 153375 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 151249 from ● Grain -> ● Hendon East ↔ The Grove
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 90157 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 8300 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 8400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 8500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 8600 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 18)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Park Avenue for ● Hendon East ↔ The Grove -- trying next surplus line.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ The Grove still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 8700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 8800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 8900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 9000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 19)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 9100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 9200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 9300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 9400 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 9500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 20)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 9600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 9700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 9800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 9900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 10000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 10100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 10200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 21)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 116723 from ● Hendon East ↔ Highfield Road -> ● Hendon East ↔ The Grove
+[EPOD-TD] DISPATCH: vehicle 151249 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 141019 from ● Grain -> ● Hendon East ↔ The Grove
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 116723 -> ● Hendon East ↔ The Grove: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 85726 from ● Hendon East ↔ Park Avenue -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] DISPATCH: vehicle 141019 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[TD-UI] DELIVERY EVENT: 600 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 700 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 800 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 900 total fires so far this session.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] FLEET PLAN: Hendon East -- 104 managed vehicle(s), 452 total waiting
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   ● Hendon East ↔ Queens Road | waiting=107 | tier=ACTIVE | floor=1 | current=16 | target=24 | delta=+8
+[EPOD-TD]   ● Hendon East ↔ Park Avenue | waiting=6 | tier=ACTIVE | floor=1 | current=2 | target=2 | delta=0
+[EPOD-TD]   ● Hendon East ↔ The Grove | waiting=182 | tier=ACTIVE | floor=1 | current=19 | target=40 | delta=+21
+[EPOD-TD]   ● Grain | waiting=9 | tier=ACTIVE | floor=1 | current=45 | target=3 | delta=-42
+[EPOD-TD]   ● Hendon East ↔ Alexander Road | waiting=136 | tier=ACTIVE | floor=1 | current=18 | target=31 | delta=+13
+[EPOD-TD]   ● Hendon East ↔ Highfield Road | waiting=12 | tier=ACTIVE | floor=1 | current=4 | target=4 | delta=0
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 2)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 137529 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 85726 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 2 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 2 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 10300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 10400 total fires so far this session.
+[EPOD-TD] DISPATCH: vehicle 137529 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 136718 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 136718 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 128859 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 128859 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 147274 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 147274 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 122976 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 122976 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[TD-UI] DELIVERY EVENT: 1000 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1100 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1200 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
+[TD-UI] line=● Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 10500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 10600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 10700 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1300 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1400 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
+[TD-UI] line=● Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
+[TD-UI] DELIVERY EVENT: 1500 total fires so far this session.
 [EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 22)
+[EPOD-TD] APPLY FLEET PLAN (run 3)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 135391 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 135391 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 144700 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 144700 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 115356 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 115356 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 157783 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 157783 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 153995 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 153995 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[TD-UI] DELIVERY EVENT: 1600 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 1700 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 1800 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 1900 total fires so far this session.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 4)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 151163 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 151163 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 132464 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 132464 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 138976 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 138976 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 153356 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 153356 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 157625 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 157625 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 2000 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 2100 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 2200 total fires so far this session.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] FLEET PLAN: Hendon East -- 104 managed vehicle(s), 360 total waiting
+[EPOD-TD] ----------------------------------------
+[EPOD-TD]   ● Hendon East ↔ Queens Road | waiting=79 | tier=ACTIVE | floor=1 | current=16 | target=22 | delta=+6
+[EPOD-TD]   ● Hendon East ↔ Park Avenue | waiting=3 | tier=ACTIVE | floor=1 | current=2 | target=2 | delta=0
+[EPOD-TD]   ● Hendon East ↔ The Grove | waiting=143 | tier=ACTIVE | floor=1 | current=29 | target=40 | delta=+11
+[EPOD-TD]   ● Grain | waiting=14 | tier=ACTIVE | floor=1 | current=30 | target=5 | delta=-25
+[EPOD-TD]   ● Hendon East ↔ Alexander Road | waiting=113 | tier=ACTIVE | floor=1 | current=23 | target=32 | delta=+9
+[EPOD-TD]   ● Hendon East ↔ Highfield Road | waiting=8 | tier=ACTIVE | floor=1 | current=4 | target=3 | delta=-1
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 5)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 136194 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 136194 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 137948 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 137948 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 120889 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 120889 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 138526 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 138526 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 150449 from ● Grain -> ● Hendon East ↔ The Grove
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 150449 -> ● Hendon East ↔ The Grove: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[TD-UI] DELIVERY EVENT: 2300 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 2400 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 2500 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 6)
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] DISPATCH: moving vehicle 136778 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 136778 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 152868 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 152868 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 156554 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 156554 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 115353 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 115353 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 120651 from ● Grain -> ● Hendon East ↔ Alexander Road
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[TD-UI] DELIVERY EVENT: 2600 total fires so far this session.
+[EPOD-TD] SET LINE RESULT: true
+[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
+[EPOD-TD] DISPATCH: vehicle 120651 -> ● Hendon East ↔ Alexander Road: true (release: true)
+[EPOD-TD] DISPATCH: reached MAX_MOVES_PER_RUN (5) -- stopping for this run.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 2700 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 2800 total fires so far this session.
+[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
+[TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
+[TD-UI] line=● Hendon East ↔ The Grove id=137085
+[TD-UI] line=● Grain id=136284
+[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
+[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
+[TD-UI] DELIVERY EVENT: 2900 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3000 total fires so far this session.
+[EPOD-TD] ----------------------------------------
+[EPOD-TD] APPLY FLEET PLAN (run 7)
 [EPOD-TD] ----------------------------------------
 [EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Queens Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 10800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 10900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] DELIVERY EVENT: 11000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 23)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
 [EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Park Avenue reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Queens Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 11100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 11200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 11300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 11400 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 11500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 11600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 11700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 24)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 135325 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Queens Road
+[EPOD-TD] DISPATCH: moving vehicle 125524 from ● Grain -> ● Hendon East ↔ Queens Road
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135325 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 135537 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Queens Road
+[EPOD-TD] DISPATCH: vehicle 125524 -> ● Hendon East ↔ Queens Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 153397 from ● Grain -> ● Hendon East ↔ Queens Road
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135537 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 131664 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Highfield Road
+[EPOD-TD] DISPATCH: vehicle 153397 -> ● Hendon East ↔ Queens Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 142490 from ● Grain -> ● Hendon East ↔ Queens Road
+[TD-UI] DELIVERY EVENT: 3100 total fires so far this session.
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 131664 -> ● Hendon East ↔ Highfield Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 137414 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Park Avenue
+[EPOD-TD] DISPATCH: vehicle 142490 -> ● Hendon East ↔ Queens Road: true (release: true)
+[EPOD-TD] DISPATCH: moving vehicle 125983 from ● Grain -> ● Hendon East ↔ Queens Road
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
 [EPOD-TD] SET LINE RESULT: true
 [EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 137414 -> ● Hendon East ↔ Park Avenue: true (release: true)
-[EPOD-TD] DISPATCH: reached MAX_ATTEMPTS_PER_RUN (8) -- stopping for this run (repeated failures).
-[TD-UI] AUTO DISPATCH: 4 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 11800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 11900 total fires so far this session.
+[EPOD-TD] DISPATCH: vehicle 125983 -> ● Hendon East ↔ Queens Road: true (release: true)
+[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Grain for ● Hendon East ↔ Queens Road -- trying next surplus line.
+[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Queens Road still short 7.
+[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 3.
+[EPOD-TD] DISPATCH COMPLETE: 4 vehicle(s) moved.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
+[TD-UI] line=● Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 12000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 12100 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3200 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3300 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3400 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
+[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
+[TD-UI] line=● Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 25)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 12200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 12300 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3500 total fires so far this session.
+[TD-UI] DELIVERY EVENT: 3600 total fires so far this session.
 [EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
 [TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 12400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 12500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 26)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Park Avenue reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 12600 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 12700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 12800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 12900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 13000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 27)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 117443 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 117443 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 128982 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 128982 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Park Avenue for ● Hendon East ↔ Alexander Road -- trying next surplus line.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 2 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 2 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 13100 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 13200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 13300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 13400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 13500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 28)
-[EPOD-TD] ----------------------------------------
-[TD-UI] DELIVERY EVENT: 13600 total fires so far this session.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] Nothing to do: no line currently needs more vehicles.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 13700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 13800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 13900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 14000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 29)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 135350 from ● Hendon East ↔ Highfield Road -> ● Hendon East ↔ Alexander Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[TD-UI] DELIVERY EVENT: 14100 total fires so far this session.
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135350 -> ● Hendon East ↔ Alexander Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 14200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 14300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 14400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 14500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 14600 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 30)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: moving vehicle 116723 from ● Hendon East ↔ The Grove -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 116723 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 14700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 14800 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 14900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 15000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 15100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 15200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 31)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Park Avenue for ● Hendon East ↔ Queens Road -- trying next surplus line.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Queens Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 15300 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 15400 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 15500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 15600 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 32)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 130737 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ Queens Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 130737 -> ● Hendon East ↔ Queens Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 15700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 15800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 15900 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 16000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 33)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 135534 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135534 -> ● Hendon East ↔ The Grove: true (release: true)
-[EPOD-TD] DISPATCH: moving vehicle 135350 from ● Hendon East ↔ Alexander Road -> ● Hendon East ↔ The Grove
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 135350 -> ● Hendon East ↔ The Grove: true (release: true)
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Highfield Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 2 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 2 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 16100 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 16200 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 16300 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 16400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 16500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 16600 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 34)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Queens Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Highfield Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 16700 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 16800 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 16900 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 17000 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 17100 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=Grain id=136284
 [TD-UI] line=● Hendon East ↔ Park Avenue id=142769
 [TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
+[TD-UI] line=● Grain id=136284
 [TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 35)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ The Grove reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Alexander Road reads as needing vehicles, but was surplus too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: moving vehicle 45011 from ● Hendon East ↔ Queens Road -> ● Hendon East ↔ Highfield Road
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] SET LINE RESULT: true
-[EPOD-TD] SET MANUAL DEPARTURE RESULT: true
-[EPOD-TD] DISPATCH: vehicle 45011 -> ● Hendon East ↔ Highfield Road: true (release: true)
-[EPOD-TD] DISPATCH COMPLETE: 1 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 1 vehicle(s) moved.
-[TD-UI] DELIVERY EVENT: 17200 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 17300 total fires so far this session.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 36)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
 [TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
 [TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] DELIVERY EVENT: 17400 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 17500 total fires so far this session.
-[TD-UI] AUTO DISPATCH: material-change threshold reached (500 deliveries) -- flagging a dispatch as due (actual run deferred to the next frame update).
-[TD-UI] DELIVERY EVENT: 17600 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 17700 total fires so far this session.
-[TD-UI] DELIVERY EVENT: 17800 total fires so far this session.
-[EPOD-TD] ROAD VEHICLE LOOKUP: 169 road-carrier vehicles found game-wide.
-[TD-UI] line=Grain id=136284
-[TD-UI] line=● Hendon East ↔ Park Avenue id=142769
-[TD-UI] line=● Hendon East ↔ The Grove id=137085
-[TD-UI] line=● Hendon East ↔ Highfield Road id=130826
-[TD-UI] line=● Hendon East ↔ Alexander Road id=135278
-[TD-UI] line=● Hendon East ↔ Queens Road id=149872
-[TD-UI] entity=126300 stationGroup=126300 managedLines=6 managedTrucks=104
-[TD-UI] AUTO DISPATCH: running deferred Dispatcher on hub 126300.
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] APPLY FLEET PLAN (run 37)
-[EPOD-TD] ----------------------------------------
-[EPOD-TD] DISPATCH: ● Hendon East ↔ Highfield Road reads as having surplus, but was in deficit too recently -- skipping this run to avoid reversing itself.
-[EPOD-TD] DISPATCH: no eligible vehicle (empty + compatible + not in cooldown) on ● Hendon East ↔ Park Avenue for ● Hendon East ↔ Alexander Road -- trying next surplus line.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ Alexander Road still short 2.
-[EPOD-TD] DISPATCH: no more surplus lines -- ● Hendon East ↔ The Grove still short 1.
-[EPOD-TD] DISPATCH COMPLETE: 0 vehicle(s) moved.
-[TD-UI] AUTO DISPATCH: 0 vehicle(s) moved.
+[TD-UI] DELIVERY EVENT: 3700 total fires so far this session.

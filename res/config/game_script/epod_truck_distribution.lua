@@ -212,7 +212,13 @@ local distributionState = {
     -- would repeat the "logs getting full" problem already fixed
     -- once this session.
     deliveryEventCount =
-        0
+        0,
+
+    -- One-off research question (see the LINE CYCLE-TIME RESEARCH
+    -- dump in updateDistributionWindow): fires at most once per
+    -- session. Remove alongside that dump once answered.
+    hasRunLineEntityDump =
+        false
 
 }
 
@@ -2223,6 +2229,38 @@ local function updateDistributionWindow()
             -- to call manually (demand.printReport(lineId,
             -- stationGroupId)) if a specific line's destination
             -- breakdown is ever needed for debugging again.
+
+        end
+
+
+        -- ONE-OFF, DISPOSABLE: research question raised live -- does
+        -- a LINE entity already expose a round-trip/cycle-time
+        -- statistic (TF2's own LINE STATISTICS panel shows
+        -- frequency-like numbers, so this seems plausible), which
+        -- would let the Planner factor travel distance into how many
+        -- vehicles a line actually needs without us tracking
+        -- anything ourselves. Reuses vehicles.dumpEntityInfo
+        -- (already proven generic -- entity-agnostic, works on any
+        -- entity type, not just vehicles) against every line
+        -- currently shown in the panel. Fires once per session, on
+        -- the first refresh with real lines to dump. Remove once
+        -- answered.
+        if config.DEBUG
+            and not distributionState.hasRunLineEntityDump
+            and #managedLines > 0
+        then
+
+            distributionState.hasRunLineEntityDump =
+                true
+
+            for _, lineInfo in ipairs(managedLines) do
+
+                vehicles.dumpEntityInfo(
+                    lineInfo.id,
+                    "LINE CYCLE-TIME RESEARCH: " .. tostring(lineInfo.name)
+                )
+
+            end
 
         end
 
