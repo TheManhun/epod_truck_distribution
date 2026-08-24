@@ -18,6 +18,26 @@ When an idea reaches a definite outcome, it must be removed from `IDEAS.md`.
 `PROGRESS.md` = what currently exists and works.
 _______________________________________________________________________________________________________________________________
 
+## Fleet Utilization Display (%)
+
+### Origin
+
+Raised live while stress-testing the newly-wired automatic Dispatcher (Decision 34) — the player found it hard to keep the hub's demand full enough to give the Dispatcher something real to do, and had to deliberately add more deliveries to make the test interesting.
+
+### The idea
+
+A simple utilization percentage per hub (or per line): how full the current fleet is relative to what it actually needs. 100% (or over) signals "add more trucks"; well under 100% signals "you could sell some." Cheap to compute — `planner.lua`'s `calculateTargetAllocation` already produces `currentVehicleCount` and `targetVehicleCount` per line; utilization is just `current / target` (or its inverse, framed as surplus).
+
+### What's actually confirmed vs. still a story
+
+**Confirmed**: the underlying numbers already exist and are live-verified correct (Decisions 29/30) — no new data collection needed, just a display/formatting layer.
+
+**Not yet decided**: what "target" should mean for this specific display once the cargo-profile floor (Decision 30) and any future per-vehicle-type sub-pooling are in the mix — a floor-boosted target isn't quite the same thing as "true need," so a naive `current/target` could read as under-utilized even when a line is genuinely fine. Where this lives (hub-level single number vs. per-line breakdown) and whether it belongs in the existing panel or a future overview window (`IDEAS.md`'s "Distribution Network Overview") is also undecided.
+
+### If it does pan out
+
+A small, self-contained addition on top of already-proven data — no dependency on anything not already built. Good candidate for the eventual GUI polish pass (`IDEAS.md`'s "Final GUI Research and Cleanup Phase") rather than urgent now.
+
 ## Vehicle Identity Naming and Fleet Colour-Coding
 
 ### Origin
