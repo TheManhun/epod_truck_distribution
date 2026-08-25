@@ -80,6 +80,10 @@ Two mechanisms for actually separating the cargo were considered and both reject
 
 See "Point-to-Point Source Runners" below for the mechanism now considered the leading candidate instead of either of these.
 
+### Update -- comparative signal promoted from DEBUG report into the live CARGO tab (Decision 79)
+
+The same waiting-vs-all-time-unloaded comparison the Cargo Balance Inspector proved correct now also renders directly in the DD Central Manager's CARGO tab (no DEBUG mode needed) -- one section per multi-cargo destination, worst-served type flagged, via a new shared `demand.buildDestinationCargoRows` helper used by both the tab and the original report. Still read-only/display-only -- nothing here feeds an allocation decision yet, that's still the open question above.
+
 ## Point-to-Point Source Runners ("Steel Runners") -- Mine-to-Mill-to-Hub Loops
 
 ### Origin

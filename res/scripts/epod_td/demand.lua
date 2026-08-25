@@ -28,6 +28,7 @@
 -- ============================================================
 
 local log = require("epod_td.log")
+local stations = require("epod_td.stations")
 
 local M = {}
 
@@ -375,6 +376,113 @@ function M.getCargoTypeIconPath(cargoType)
     return "ui/hud/cargo_"
         .. tostring(id):lower()
         .. "_small.tga"
+
+end
+
+
+-- Decision 79: shared per-destination cargo-type breakdown, extracted
+-- from the Cargo Balance Inspector (Decisions 77/78) so the live
+-- CARGO tab (gui_tab_cargo.lua) can show the same comparatively-
+-- under-served signal instead of it only existing in a DEBUG report
+-- file. Merges scan()'s numeric-keyed waiting cargo with
+-- stations.getUnloadedAmountsByType's string-keyed all-time history
+-- (Decision 78's key-space fix), sorts worst-served-first, and flags
+-- anything at or below 25% of the destination's busiest type -- same
+-- threshold, same relative-only caveat as the original inspector.
+-- Returns nil when the destination has fewer than 2 real cargo types
+-- (nothing to compare).
+function M.buildDestinationCargoRows(destination)
+
+    local waitingByType = {}
+    local displayNameByKey = {}
+
+    for cargoType, amount in pairs(destination.cargoTypes or {}) do
+
+        local normalizedKey =
+            M.getCargoTypeId(cargoType) or ("unresolved:" .. tostring(cargoType))
+
+        waitingByType[normalizedKey] = (waitingByType[normalizedKey] or 0) + amount
+        displayNameByKey[normalizedKey] = M.getCargoTypeDisplayName(cargoType)
+
+    end
+
+    local okUnloaded, unloadedByType =
+        pcall(stations.getUnloadedAmountsByType, destination.stationGroup)
+
+    if not okUnloaded then
+        unloadedByType = {}
+    end
+
+    local allTypes = {}
+
+    for cargoType, _ in pairs(waitingByType) do
+        allTypes[cargoType] = true
+    end
+
+    for cargoType, _ in pairs(unloadedByType) do
+        allTypes[cargoType] = true
+    end
+
+    local typeCount = 0
+
+    for _ in pairs(allTypes) do
+        typeCount = typeCount + 1
+    end
+
+    if typeCount < 2 then
+        return nil
+    end
+
+    local rows = {}
+
+    for cargoType, _ in pairs(allTypes) do
+
+        -- displayNameByKey only has an entry when this cargo type was
+        -- seen on the waiting side (the only side that resolves a
+        -- real name via cargoTypeRep -- Decision 78). A type seen
+        -- only in all-time unloaded history has no resolvable name;
+        -- fall back to a prettified version of the raw constant
+        -- ("IRON_ORE" -> "Iron Ore").
+        local displayName = displayNameByKey[cargoType]
+
+        if displayName == nil then
+
+            displayName =
+                tostring(cargoType)
+                    :gsub("_", " ")
+                    :gsub("(%a)([%w']*)", function(first, rest)
+                        return first:upper() .. rest:lower()
+                    end)
+
+        end
+
+        rows[#rows + 1] = {
+            displayName = displayName,
+            waiting = waitingByType[cargoType] or 0,
+            unloaded = unloadedByType[cargoType] or 0
+        }
+
+    end
+
+    table.sort(rows, function(a, b)
+        return a.waiting > b.waiting
+    end)
+
+    local maxWaiting = 0
+
+    for _, row in ipairs(rows) do
+
+        if row.waiting > maxWaiting then
+            maxWaiting = row.waiting
+        end
+
+    end
+
+    for _, row in ipairs(rows) do
+        row.underServed = maxWaiting > 0 and row.waiting <= maxWaiting * 0.25
+    end
+
+    return rows
 
 end
 

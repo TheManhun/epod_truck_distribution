@@ -62,6 +62,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
         else
 
             slot.label:setText("[ Re-Organize Terminals ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
 
             slot.handler = function()
 
@@ -119,6 +120,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
     local rowIndex = 1
 
     rows[rowIndex].label:setText(tostring(hubName), 560)
+    pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdTableHeader" })
     rowIndex = rowIndex + 1
 
     rows[rowIndex].label:setText(
@@ -149,6 +151,10 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
         "Auto Redistribute: " .. (autoRedistributeOn and "ON" or "OFF"),
         560
     )
+
+    if not autoRedistributeOn then
+        pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdWarningText" })
+    end
 
 end
 

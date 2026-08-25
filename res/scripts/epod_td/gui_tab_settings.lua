@@ -15,29 +15,33 @@ local M = {}
 -- these already exist as buttons on the current panel; this tab
 -- would just present the same state differently.
 --
--- Decision 72/73: this tab was briefly repurposed as a GUI-element
+-- Decision 72/73/75: this tab was briefly repurposed as a GUI-element
 -- experiment (Slider/ComboBox/ToggleButton/ImageView via raw
--- api.gui.comp.* constructors). LIVE-CONFIRMED REAL CRASH: the
--- ComboBox object was created, but layout:addItem(comboBox) threw a
--- native "value is not a string" exception from inside gui.lua's own
--- boxLayout_addItem, leaving a broken, unparented native component in
--- memory. On the next game close, the engine's own shutdown
--- consistency check (`CComponent::NumInstances() == 0`) found that
--- orphaned component still alive and hard-crashed with a fatal
--- assertion. Slider and ToggleButton also failed (wrong arg count;
--- type mismatch passing a gui.textView_create label into a raw
--- constructor expecting real userdata) but failed CLEANLY, no leak.
+-- api.gui.comp.* constructors) passed into THIS window's gui.lua-based
+-- layout tree. LIVE-CONFIRMED REAL CRASH: the ComboBox object was
+-- created, but layout:addItem(comboBox) -- a gui.lua boxLayout method
+-- that expects child.id to be a string -- threw a native "value is
+-- not a string" exception, leaving a broken, unparented native
+-- component in memory. On the next game close, the engine's own
+-- shutdown consistency check (`CComponent::NumInstances() == 0`)
+-- found that orphaned component still alive and hard-crashed.
 --
--- CONCLUSION, confirmed by dumping require("gui")'s real contents
--- live: this game version's `gui` convenience module wraps
--- window/button/textView/boxLayout/imageView/table/scrollArea/
--- component -- but NOT Slider/ComboBox/ToggleButton/CheckBox/
--- TabWidget/List. Those six have no safe wrapper and must not be
--- constructed via the raw api.gui.comp.* path in this window's
--- layout tree -- confirmed unsafe, not just untested. ImageView
--- (via the real gui.imageView_create wrapper, not the raw fallback)
--- worked cleanly and is safe to build on. See DECISIONS.md Decision
--- 72/73 for the full evidence trail.
+-- CORRECTED CONCLUSION (Decision 75, after reading a real, mature,
+-- shipped mod's source -- "Move It Enhanced"): it was never that
+-- Slider/ComboBox/ToggleButton/CheckBox/List are unsafe components --
+-- it's that mixing a raw api.gui.comp.* object into a gui.lua method
+-- (which only knows how to forward a plain id string) is unsafe. Used
+-- CONSISTENTLY within the raw system -- never crossed into gui.lua --
+-- all of these are real and safe; see gui_experiment.lua, a
+-- completely separate window built entirely on the raw system with a
+-- working Slider/CheckBox/ToggleButtonGroup/styled Button, live-
+-- confirmed with no crash on close. gui.lua's own wrapper still only
+-- covers window/button/textView/boxLayout/imageView/table/scrollArea/
+-- component -- so THIS window (built on gui.lua) still can't safely
+-- use Slider/ComboBox/etc. directly; ImageView (via the real
+-- gui.imageView_create wrapper) remains the one experiment element
+-- confirmed safe to build on here. See DECISIONS.md Decisions 72/73/75
+-- for the full evidence trail.
 -- ============================================================
 
 local WINDOW_WIDTH = 560
@@ -205,11 +209,12 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
     )
 
     rows[2].label:setText(
-        "GUI element experiment result (Decision 72/73): ComboBox/Slider/"
-            .. "ToggleButton confirmed UNSAFE in this game version (ComboBox "
-            .. "specifically caused a real crash-on-close) -- see log/"
-            .. "DECISIONS.md. Table and ScrollArea confirmed SAFE and not "
-            .. "yet used anywhere.",
+        "GUI element experiment result (Decisions 72/73/75): Slider/ComboBox/"
+            .. "ToggleButton are safe in the SEPARATE raw-API window "
+            .. "(\"Open Raw UI Experiment\"), but not safe to mix into THIS "
+            .. "window's gui.lua layout tree (that mix is what crashed once "
+            .. "-- see DECISIONS.md). Table and ScrollArea are gui.lua-"
+            .. "wrapped and safe here, but unused so far.",
         WINDOW_WIDTH
     )
 

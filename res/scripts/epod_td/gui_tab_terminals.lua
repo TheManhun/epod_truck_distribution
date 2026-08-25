@@ -21,6 +21,24 @@ function M.getLabel()
 end
 
 
+-- Display-only: managed lines are themselves renamed with a "● "
+-- marker (the mechanism managed_registry.lua's self-heal relies on to
+-- recognize its own lines). Every row in this tab is a managed line
+-- by definition, so the marker is 100% redundant here -- just clutter
+-- eating into the already-tight truncated name space. Stripped for
+-- display only; the real line name (and the self-heal mechanism that
+-- depends on it) is untouched.
+local function stripManagedLineMarker(name)
+
+    if type(name) == "string" and name:sub(1, 4) == "\xE2\x97\x8f " then
+        return name:sub(5)
+    end
+
+    return name
+
+end
+
+
 function M.refresh(rows, hubStationGroupId)
 
     if hubStationGroupId == nil then
@@ -62,11 +80,11 @@ function M.refresh(rows, hubStationGroupId)
                 byTerminal[terminal] = {}
             end
 
-            table.insert(byTerminal[terminal], lineInfo.name)
+            table.insert(byTerminal[terminal], stripManagedLineMarker(lineInfo.name))
 
         else
 
-            unassigned[#unassigned + 1] = lineInfo.name
+            unassigned[#unassigned + 1] = stripManagedLineMarker(lineInfo.name)
 
         end
 
@@ -78,6 +96,7 @@ function M.refresh(rows, hubStationGroupId)
         "Terminals at this hub: " .. tostring(terminalCount),
         560
     )
+    pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdTableHeader" })
     rowIndex = rowIndex + 1
 
     for terminal = 0, math.max(terminalCount - 1, 0) do
@@ -88,14 +107,20 @@ function M.refresh(rows, hubStationGroupId)
 
         local lineNames = byTerminal[terminal]
         local text = "T" .. tostring(terminal + 1) .. "    "
+        local isEmpty = lineNames == nil or #lineNames == 0
 
-        if lineNames == nil or #lineNames == 0 then
+        if isEmpty then
             text = text .. "(empty)"
         else
             text = text .. table.concat(lineNames, ", ")
         end
 
         rows[rowIndex].label:setText(text, 560)
+
+        if isEmpty then
+            pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdMutedText" })
+        end
+
         rowIndex = rowIndex + 1
 
     end
@@ -106,6 +131,8 @@ function M.refresh(rows, hubStationGroupId)
             "Unassigned/unreadable: " .. table.concat(unassigned, ", "),
             560
         )
+
+        pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdWarningText" })
 
     end
 

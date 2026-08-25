@@ -2186,63 +2186,16 @@ local function handleCargoBalanceInspectorButtonClick()
                             and not reportedDestinations[destination.stationGroup]
                         then
 
-                            -- Decision 78: demand.scan's cargoTypes is keyed
-                            -- by the raw numeric SIM_CARGO type id;
-                            -- stations.getUnloadedAmountsByType is keyed by
-                            -- the uppercase string constant (e.g.
-                            -- "IRON_ORE"). Confirmed live these are
-                            -- genuinely different key spaces for the same
-                            -- real cargo type -- normalize the waiting side
-                            -- onto the string-constant key (via
-                            -- demand.getCargoTypeId) before merging, or
-                            -- "Iron ore" and "CargoType IRON_ORE" show up as
-                            -- two separate, wrong rows for one real thing.
-                            local waitingByType = {}
-                            local displayNameByKey = {}
+                            -- Decision 79: the merge/flag logic itself now
+                            -- lives in demand.buildDestinationCargoRows,
+                            -- shared with the live CARGO tab
+                            -- (gui_tab_cargo.lua) so both places show
+                            -- exactly the same comparative signal instead of
+                            -- maintaining two copies of Decision 78's
+                            -- key-normalization fix.
+                            local rows = demand.buildDestinationCargoRows(destination)
 
-                            for cargoType, amount in pairs(destination.cargoTypes or {}) do
-
-                                local normalizedKey =
-                                    demand.getCargoTypeId(cargoType)
-                                        or ("unresolved:" .. tostring(cargoType))
-
-                                waitingByType[normalizedKey] =
-                                    (waitingByType[normalizedKey] or 0) + amount
-
-                                displayNameByKey[normalizedKey] =
-                                    demand.getCargoTypeDisplayName(cargoType)
-
-                            end
-
-                            local okUnloaded, unloadedByType =
-                                pcall(stations.getUnloadedAmountsByType, destination.stationGroup)
-
-                            if not okUnloaded then
-                                unloadedByType = {}
-                            end
-
-                            -- Only interesting if this destination genuinely
-                            -- involves 2+ distinct cargo types -- combines
-                            -- current waiting AND all-time history so a type
-                            -- with 0 waiting right now but a real delivery
-                            -- history still counts.
-                            local allTypes = {}
-
-                            for cargoType, _ in pairs(waitingByType) do
-                                allTypes[cargoType] = true
-                            end
-
-                            for cargoType, _ in pairs(unloadedByType) do
-                                allTypes[cargoType] = true
-                            end
-
-                            local typeCount = 0
-
-                            for _ in pairs(allTypes) do
-                                typeCount = typeCount + 1
-                            end
-
-                            if typeCount >= 2 then
+                            if rows ~= nil then
 
                                 reportedDestinations[destination.stationGroup] = true
 
@@ -2252,66 +2205,13 @@ local function handleCargoBalanceInspectorButtonClick()
                                         .. tostring(getEntityName(ownerHubId))
                                         .. ")"
 
-                                local rows = {}
-
-                                for cargoType, _ in pairs(allTypes) do
-
-                                    -- displayNameByKey only has an entry when
-                                    -- this cargo type was seen on the waiting
-                                    -- side (the only side that can resolve a
-                                    -- real name via cargoTypeRep -- see
-                                    -- Decision 78). A type seen ONLY in
-                                    -- all-time unloaded history has no
-                                    -- resolvable name; fall back to a plain
-                                    -- prettified version of the raw constant
-                                    -- ("IRON_ORE" -> "Iron Ore") rather than
-                                    -- the confusing "CargoType IRON_ORE".
-                                    local displayName = displayNameByKey[cargoType]
-
-                                    if displayName == nil then
-
-                                        displayName =
-                                            tostring(cargoType)
-                                                :gsub("_", " ")
-                                                :gsub("(%a)([%w']*)", function(first, rest)
-                                                    return first:upper() .. rest:lower()
-                                                end)
-
-                                    end
-
-                                    rows[#rows + 1] = {
-                                        displayName = displayName,
-                                        waiting = waitingByType[cargoType] or 0,
-                                        unloaded = unloadedByType[cargoType] or 0
-                                    }
-
-                                end
-
-                                table.sort(rows, function(a, b)
-                                    return a.waiting > b.waiting
-                                end)
-
-                                local maxWaiting = 0
-
-                                for _, row in ipairs(rows) do
-
-                                    if row.waiting > maxWaiting then
-                                        maxWaiting = row.waiting
-                                    end
-
-                                end
-
                                 for _, row in ipairs(rows) do
 
                                     local flag = ""
 
-                                    if maxWaiting > 0
-                                        and row.waiting <= maxWaiting * 0.25
-                                    then
-
+                                    if row.underServed then
                                         flag = "  <-- comparatively under-served"
                                         flaggedCount = flaggedCount + 1
-
                                     end
 
                                     output[#output + 1] =

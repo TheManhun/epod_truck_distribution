@@ -22,6 +22,22 @@ function M.getLabel()
 end
 
 
+-- Display-only: managed lines are themselves renamed with a "● "
+-- marker (managed_registry.lua's self-heal relies on it). Every row
+-- here is a managed line by definition, so it's pure clutter eating
+-- into the already-tight truncated name space -- stripped for display
+-- only, real line name untouched.
+local function stripManagedLineMarker(name)
+
+    if type(name) == "string" and name:sub(1, 4) == "\xE2\x97\x8f " then
+        return name:sub(5)
+    end
+
+    return name
+
+end
+
+
 function M.refresh(rows, hubStationGroupId)
 
     if hubStationGroupId == nil then
@@ -82,6 +98,7 @@ function M.refresh(rows, hubStationGroupId)
         "Service                              Vehicles  Waiting",
         560
     )
+    pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdTableHeader" })
     rowIndex = rowIndex + 1
 
     for _, entry in ipairs(entries) do
@@ -90,18 +107,23 @@ function M.refresh(rows, hubStationGroupId)
             break
         end
 
-        local idleFlag = entry.waiting == 0 and "  <-- idle" or ""
+        local isIdle = entry.waiting == 0
+        local idleFlag = isIdle and "  <-- idle" or ""
 
         rows[rowIndex].label:setText(
             string.format(
                 "%-36s %9d %8d%s",
-                tostring(entry.name):sub(1, 36),
+                stripManagedLineMarker(tostring(entry.name)):sub(1, 36),
                 entry.vehicleCount,
                 entry.waiting,
                 idleFlag
             ),
             560
         )
+
+        if isIdle then
+            pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdWarningText" })
+        end
 
         rowIndex = rowIndex + 1
 

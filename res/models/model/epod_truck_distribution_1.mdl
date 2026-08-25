@@ -1,0 +1,71 @@
+function data()
+return {
+	boundingInfo = {
+		bbMax = { 45.075000762939, 45.074996948242, 1.4000074863434, },
+		bbMin = { -45.075000762939, -45.100002288818, -7.3436490310996e-06, },
+	},
+	collider = {
+		params = {
+			halfExtents = { 45.075000762939, 45.087501525879, 0.70000743865967, },
+		},
+		transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+		type = "BOX",
+	},
+	lods = {
+		{
+			node = {
+				children = {
+					{
+						materials = { "epod_truck_distribution_1/MAT_Wood.mtl", },
+						mesh = "epod_truck_distribution_1/Cube.065_lod0.msh",
+						name = "Fence",
+						transf = { 100, 0, 0, 0, 0, -1.6292067812174e-05, -100, 0, 0, 100, -1.6292067812174e-05, 0, 0, 0, 0, 1, },
+					},
+					{
+						materials = { "epod_truck_distribution_1/MAT_Wood.mtl", },
+						mesh = "epod_truck_distribution_1/Cube.164_lod0.msh",
+						name = "Fence_South",
+						transf = { 100, 0, 0, 0, 0, -1.6292067812174e-05, -100, 0, 0, 100, -1.6292067812174e-05, 0, 0, 0, 0, 1, },
+					},
+					{
+						materials = { "epod_truck_distribution_1/MAT_Wood.mtl", },
+						mesh = "epod_truck_distribution_1/Cube.187_lod0.msh",
+						name = "GatePosts",
+						transf = { 100, 0, 0, 0, 0, -1.6292067812174e-05, -100, 0, 0, 100, -1.6292067812174e-05, 0, 0, 0, 0, 1, },
+					},
+					{
+						materials = { "epod_truck_distribution_1/MAT_Gravel.mtl", },
+						mesh = "epod_truck_distribution_1/Ground_mesh.001_lod0.msh",
+						name = "Ground",
+						transf = { 100, 0, 0, 0, 0, -1.6292067812174e-05, -100, 0, 0, 100, -1.6292067812174e-05, 0, 0, 0, 0, 1, },
+					},
+				},
+				name = "RootNode",
+				transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+			},
+			static = false,
+			visibleFrom = 0,
+			visibleTo = 20799.8359375,
+		},
+	},
+	-- ============================================================
+	-- TRANSPORT NETWORK -- REVERTED PENDING ISOLATION (Decision 87)
+	--
+	-- A hand-authored metadata.transportNetworkProvider block (laneList
+	-- + terminal, real coordinates from the Blender build) was added
+	-- here and caused a real, reproducible engine crash the moment the
+	-- player selected this construction from the menu (confirmed via
+	-- the live game log: a genuine hang + minidump, not a clean
+	-- resource-error message). Pulled back out to isolate it from the
+	-- .con file's own new edgeLists addition (epod_truck_park.con) --
+	-- one change at a time, same debugging discipline as everything
+	-- else tonight. This was always the less-certain of the two new
+	-- pieces (the only real reference example read had an ambiguous
+	-- 4-node junction shape, not a simple 2-node line, so the exact
+	-- format guessed here was never fully grounded). See DECISIONS.md
+	-- Decision 85/87 for the full trail before re-adding this.
+	-- ============================================================
+	metadata = { },
+	version = 1,
+}
+end

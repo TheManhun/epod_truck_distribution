@@ -8,14 +8,41 @@ local M = {}
 -- CARGO TAB (gui_manager.lua)
 --
 -- GUI ONLY -- reads demand.scan's per-destination cargoTypes
--- breakdown (already computed for real dispatch decisions elsewhere),
--- totaled by cargo type across every managed line at the focused hub.
--- Calculates nothing of its own beyond summing what demand.scan
--- already reports.
+-- breakdown plus demand.buildDestinationCargoRows (Decision 79, the
+-- same shared helper the DEBUG "Cargo Balance Inspector" report uses)
+-- for every destination at the focused hub. Calculates nothing of its
+-- own -- shows the SAME per-destination, comparatively-under-served
+-- signal the DEBUG report already proved correct (Goole Steel Plant's
+-- real 4:1 iron/coal imbalance), live, without needing DEBUG mode or
+-- a file dump.
+--
+-- Deliberately per-destination rather than one combined hub total
+-- (the tab's original shape): a single combined number hides exactly
+-- the imbalance this view exists to surface -- see Decision 78's
+-- discovery and documents/IDEAS.md's "Cargo-Type-Aware Allocation"
+-- entry.
 -- ============================================================
 
 function M.getLabel()
     return "CARGO"
+end
+
+
+-- Display-only: a destination's raw name can itself carry the "● "
+-- hub marker (Decision 69) if that same station is ALSO one of the
+-- player's enabled hubs elsewhere in the network -- real, meaningful
+-- information, just visual noise in a per-destination cargo list
+-- where every row already reads "this is a destination." Stripped
+-- here for display only; the underlying stationGroup id and hub
+-- registry are completely untouched.
+local function stripHubMarker(name)
+
+    if type(name) == "string" and name:sub(1, 4) == "\xE2\x97\x8f " then
+        return name:sub(5)
+    end
+
+    return name
+
 end
 
 
@@ -45,7 +72,8 @@ function M.refresh(rows, hubStationGroupId)
 
     end
 
-    local totalsByCargoType = {}
+    local reportedDestinations = {}
+    local destinationEntries = {}
 
     for _, lineInfo in ipairs(managedLines) do
 
@@ -55,12 +83,27 @@ function M.refresh(rows, hubStationGroupId)
 
             for _, destination in pairs(scanResult.destinations) do
 
-                if destination.cargoTypes ~= nil then
+                if destination.stationGroup ~= hubStationGroupId
+                    and not reportedDestinations[destination.stationGroup]
+                then
 
-                    for cargoType, amount in pairs(destination.cargoTypes) do
+                    local cargoRows = demand.buildDestinationCargoRows(destination)
 
-                        totalsByCargoType[cargoType] =
-                            (totalsByCargoType[cargoType] or 0) + amount
+                    if cargoRows ~= nil then
+
+                        reportedDestinations[destination.stationGroup] = true
+
+                        local totalWaiting = 0
+
+                        for _, cargoRow in ipairs(cargoRows) do
+                            totalWaiting = totalWaiting + cargoRow.waiting
+                        end
+
+                        destinationEntries[#destinationEntries + 1] = {
+                            name = stripHubMarker(destination.name),
+                            rows = cargoRows,
+                            totalWaiting = totalWaiting
+                        }
 
                     end
 
@@ -72,22 +115,11 @@ function M.refresh(rows, hubStationGroupId)
 
     end
 
-    local entries = {}
-
-    for cargoType, amount in pairs(totalsByCargoType) do
-
-        entries[#entries + 1] = {
-            cargoType = cargoType,
-            displayName = demand.getCargoTypeDisplayName(cargoType),
-            amount = amount
-        }
-
-    end
-
-    if #entries == 0 then
+    if #destinationEntries == 0 then
 
         rows[1].label:setText(
-            "No waiting cargo detected at this hub right now.",
+            "No multi-cargo-type destinations at this hub right now"
+                .. " (single-cargo destinations have nothing to compare).",
             560
         )
 
@@ -95,32 +127,50 @@ function M.refresh(rows, hubStationGroupId)
 
     end
 
-    table.sort(entries, function(a, b)
-        return a.amount > b.amount
+    table.sort(destinationEntries, function(a, b)
+        return a.totalWaiting > b.totalWaiting
     end)
 
     local rowIndex = 1
 
-    rows[rowIndex].label:setText(
-        "Cargo Type                          Waiting",
-        560
-    )
-    rowIndex = rowIndex + 1
-
-    for _, entry in ipairs(entries) do
+    for _, entry in ipairs(destinationEntries) do
 
         if rowIndex > #rows then
             break
         end
 
-        rows[rowIndex].label:setText(
-            string.format(
-                "%-36s %8d",
-                tostring(entry.displayName):sub(1, 36),
-                entry.amount
-            ),
-            560
-        )
+        rows[rowIndex].label:setText(tostring(entry.name), 560)
+        pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdTableHeader" })
+        rowIndex = rowIndex + 1
+
+        for _, cargoRow in ipairs(entry.rows) do
+
+            if rowIndex > #rows then
+                break
+            end
+
+            local flag = cargoRow.underServed and "  <-- under-served" or ""
+
+            rows[rowIndex].label:setText(
+                string.format(
+                    "  %-34s %8d waiting  %8d all-time%s",
+                    tostring(cargoRow.displayName):sub(1, 34),
+                    cargoRow.waiting,
+                    cargoRow.unloaded,
+                    flag
+                ),
+                560
+            )
+
+            pcall(
+                rows[rowIndex].label.setStyleClassList,
+                rows[rowIndex].label,
+                { cargoRow.underServed and "EpodTdWarningText" or "EpodTdMutedText" }
+            )
+
+            rowIndex = rowIndex + 1
+
+        end
 
         rowIndex = rowIndex + 1
 

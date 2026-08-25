@@ -119,9 +119,22 @@ local function positionWindow()
 end
 
 
+-- Decision 81: also resets style class list, not just text. Rows are
+-- a shared, reused pool across every tab and every refresh (native
+-- component IDs can't be recreated on demand -- this file's own
+-- header comment) -- a style class set by one tab's refresh (e.g.
+-- FLEET flagging row 4 as idle) otherwise stays on that row object
+-- forever, silently bleeding into whatever the NEXT tab (or the same
+-- tab's next non-flagged render) puts in that row. Live-confirmed
+-- real bug: OVERVIEW's plain "Total vehicles"/"Total waiting"/
+-- "Terminals" rows and even an "Auto Redistribute: ON" row all showed
+-- the orange warning color, despite gui_tab_overview.lua never
+-- setting a style on them -- leftover from whichever tab/condition
+-- last touched those row indices.
 local function clearRow(row)
 
     row.label:setText("", ROW_WIDTH)
+    pcall(row.label.setStyleClassList, row.label, {})
 
 end
 
@@ -139,10 +152,9 @@ local function clearAllRows()
 end
 
 
--- Blanks every action-button slot's label and drops its handler --
--- same "reset before refill" treatment as clearAllRows above, so a
--- tab that only needs 2 of the 8 slots doesn't leave some other tab's
--- stale button (and stale handler) sitting there clickable.
+-- Blanks every action-button slot's label, drops its handler, AND
+-- resets its style class list (Decision 81 -- same reused-object
+-- leak as clearRow above, applies equally to buttons).
 local function clearActionButtons()
 
     if state.actionButtons == nil then
@@ -152,6 +164,7 @@ local function clearActionButtons()
     for _, slot in ipairs(state.actionButtons) do
         slot.label:setText("", WINDOW_WIDTH)
         slot.handler = nil
+        pcall(slot.button.setStyleClassList, slot.button, {})
     end
 
 end
@@ -195,6 +208,13 @@ function M.refresh(hubStationGroupId)
 end
 
 
+-- Decision 80: tab look now driven primarily by style class (via the
+-- shared button, not just its label -- a button's background is what
+-- actually reads as a "tab" visually), with the old bracket text kept
+-- as a cheap fallback marker in case setStyleClassList turns out not
+-- to apply from gui.lua's wrapper side (unverified from this side --
+-- see the style sheet's own Decision 80 note). Either signal alone is
+-- enough to tell tabs apart; having both costs nothing.
 local function selectTab(tabIndex, hubStationGroupId)
 
     state.activeTabIndex = tabIndex
@@ -202,13 +222,22 @@ local function selectTab(tabIndex, hubStationGroupId)
     for index, label in ipairs(state.tabButtonLabels) do
 
         local tabModule = TABS[index]
-        local text = "[ " .. tostring(tabModule.getLabel()) .. " ]"
-
-        if index == tabIndex then
-            text = "[ *" .. tostring(tabModule.getLabel()) .. "* ]"
-        end
+        local isActive = index == tabIndex
+        local text = (isActive and "> " or "  ") .. tostring(tabModule.getLabel())
 
         label:setText(text, WINDOW_WIDTH / #TABS)
+
+        local button = state.tabButtons[index]
+
+        if button ~= nil then
+
+            pcall(
+                button.setStyleClassList,
+                button,
+                { isActive and "EpodTdTabActive" or "EpodTdTabInactive" }
+            )
+
+        end
 
     end
 
@@ -254,6 +283,8 @@ local function ensureWindow(hubStationGroupId)
             WINDOW_WIDTH,
             false
         )
+
+    pcall(state.headerLabel.setStyleClassList, state.headerLabel, { "EpodTdHeader" })
 
     layout:addItem(state.headerLabel)
 

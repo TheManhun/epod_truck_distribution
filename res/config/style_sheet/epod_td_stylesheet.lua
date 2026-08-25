@@ -16,6 +16,24 @@ local ssu = require "stylesheetutil"
 -- Deliberately small and disposable for now -- just enough to prove
 -- the mechanism works and give the raw-system experiment window a
 -- distinct, intentional look, not a finished design system.
+--
+-- Decision 80: also applied to "DD Central Manager" (gui_manager.lua
+-- and its gui_tab_*.lua tabs), which is built on the OTHER object
+-- system (gui.lua's ID-string wrapper, not the raw api.gui.comp.*
+-- system this file was first written for). componentMetatable in
+-- res/scripts/gui.lua (read directly from the TF2 install dir) shows
+-- every gui.lua-wrapped object -- window/textView/imageView/button/
+-- table/scrollArea -- already forwards a genuine
+-- setStyleClassList(list) call straight to
+-- game.gui.component_setStyleClassList(id, list), the same native
+-- style-class mechanism this style sheet's selectors already hook
+-- into. Same style classes, same style sheet file, used from BOTH
+-- object systems -- the classes below aren't tied to one or the
+-- other. Not yet live-verified from the gui.lua side specifically
+-- (only the raw side was live-confirmed working, Decision 76) -- each
+-- call site wraps this in its own pcall so a mismatch fails
+-- harmlessly (falls back to unstyled text) rather than breaking the
+-- window.
 -- ============================================================
 
 function data()
@@ -60,6 +78,33 @@ function data()
 
     a("!EpodTdSectionLabel", {
         color = { 0.7, 0.9, 0.8, 1 }
+    })
+
+    -- Decision 80 additions -- DD Central Manager polish pass.
+
+    a("!EpodTdTabActive", {
+        backgroundColor = ssu.makeColor(70, 140, 110, 200)
+    })
+
+    a("!EpodTdTabInactive", {
+        backgroundColor = ssu.makeColor(255, 255, 255, 15)
+    })
+
+    -- Decision 82: original 0.85/0.85/0.95 header color and 0.75/0.75/
+    -- 0.78 muted color were live-confirmed nearly indistinguishable
+    -- from this window's default (near-white) text -- both bumped to
+    -- actually read as visually distinct against default text AND
+    -- against each other.
+    a("!EpodTdTableHeader", {
+        color = { 0.95, 0.8, 0.5, 1 }
+    })
+
+    a("!EpodTdWarningText", {
+        color = { 0.95, 0.55, 0.4, 1 }
+    })
+
+    a("!EpodTdMutedText", {
+        color = { 0.5, 0.55, 0.55, 1 }
     })
 
     return result

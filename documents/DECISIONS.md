@@ -1473,6 +1473,194 @@ Added `demand.getCargoTypeId(cargoType)` -- returns the same raw string constant
 
 Not yet re-tested live. The one genuinely useful, unaffected signal from the first run stands on its own regardless of this bug: Goole Steel Plant showed Iron ore waiting=184 against Coal waiting=36 -- both numbers came from the SAME key space (both matched on the waiting side, no merge involved), a real ~5:1 imbalance, exactly the problem this whole feature exists to surface. Worth a second run now to see the fully corrected report before deciding anything about Stage 2.
 
+## Decision 79 — Cargo Balance Inspector's comparison logic promoted from a DEBUG-only report file into the live CARGO tab, via a new shared `demand.buildDestinationCargoRows` helper
+
+### What happened
+
+The player asked to focus on presenting the mod's existing data and functionality better. The CARGO tab (`gui_tab_cargo.lua`) already existed but only showed one combined waiting total per cargo type across the whole hub -- exactly the shape of number that hides a multi-input imbalance (Decision 77/78's whole point). Meanwhile the real, live-confirmed comparative signal (Goole Steel Plant's genuine 4:1 iron/coal imbalance) only ever reached the player through a DEBUG-gated report file dump.
+
+### Reason
+
+Duplicating the Decision 78 key-normalization + comparison logic into the CARGO tab as a second copy would violate this project's own stated architecture for these tabs ("reads existing modules, calculates nothing of its own") and would leave two copies of a subtle, already-once-buggy merge to keep in sync.
+
+### Decision
+
+Extracted the per-destination merge/flag logic out of `handleCargoBalanceInspectorButtonClick` into `demand.buildDestinationCargoRows(destination)` -- takes one `demand.scan` destination entry, returns sorted, flagged rows (`displayName`, `waiting`, `unloaded`, `underServed`) or `nil` if the destination has fewer than 2 real cargo types. Both the original DEBUG report handler and the new `gui_tab_cargo.lua` call this same function; the report keeps its own network-wide, all-hubs traversal and file-writing, the tab keeps its own single-hub traversal and GUI row-writing. `gui_tab_cargo.lua` was rewritten from "one combined total per cargo type" to "one section per destination, worst-served type flagged," matching the report's shape exactly. No DEBUG gate on this tab -- it was already always-visible.
+
+### Consequence
+
+Not yet live-tested. If it renders as intended, the CARGO tab becomes the mod's first live, always-on surface for the multi-input imbalance question that's been under discussion all session (Steel Runners, City vs Production Distribution Centre) -- seeing it passively during normal play rather than only via a manually-triggered DEBUG report.
+
+## Decision 80 — GUI Central Manager style pass: applied the Decision 76 style sheet to the OTHER (gui.lua-wrapped) object system, not yet live-verified from that side
+
+### What happened
+
+Same "present the data better" request. `res/scripts/gui.lua` (already read in full for Decision 74) shows every wrapped object's `componentMetatable` forwards a real `setStyleClassList(list)` call straight to `game.gui.component_setStyleClassList(id, list)` -- the identical native style-class mechanism the Decision 76 style sheet already hooks into from the OTHER (raw `api.gui.comp.*`) object system, just never called from the gui.lua side before now.
+
+### Reason
+
+The DD Central Manager window (`gui_manager.lua` + `gui_tab_*.lua`) is built entirely on gui.lua's wrapper, not the raw system -- Decision 75's rule (never mix the two systems' objects) says nothing about reusing the same style sheet's class NAMES from gui.lua's own, separate `setStyleClassList` method. That's calling a method that already belongs to gui.lua's own object, not passing a foreign object into it -- not the crash pattern from Decision 73.
+
+### Decision
+
+Added new classes to `res/config/style_sheet/epod_td_stylesheet.lua` (`!EpodTdTabActive`/`!EpodTdTabInactive`, `!EpodTdTableHeader`, `!EpodTdWarningText`, `!EpodTdMutedText`) alongside the existing raw-system classes -- one file, both systems. Applied via `pcall(label.setStyleClassList, label, {...})` at every call site (header label, tab buttons, action buttons, and per-row in OVERVIEW/SERVICES/FLEET/TERMINALS/CARGO for header rows and warning conditions -- idle services, services short on fleet, hubs with Auto Redistribute off, under-served cargo types, unassigned terminal lines). Every call is individually pcall-wrapped and the existing text-based fallback markers (e.g. the tab row's leading "> ") were kept, not removed -- if `setStyleClassList` turns out not to apply from this side, the window degrades to unstyled text exactly as it already did, nothing breaks.
+
+### Consequence
+
+Not yet live-tested -- this is the one genuinely unverified assumption in this pass (does a gui.lua-wrapped component actually pick up style classes from a style sheet the same way a raw-system component does). Needs a real in-game check before this is trusted for anything beyond cosmetic tolerance of failure.
+
+## Decision 81 — Decision 80's style pass, live-tested: `setStyleClassList` DOES work from gui.lua's wrapper side, but style classes leaked across the shared row/button pool
+
+### What happened
+
+Player tested Decision 80 live and shared a screenshot of the OVERVIEW tab. Good news first: the header bar, active/inactive tab backgrounds, and the "Re-Organize Terminals" action button all rendered exactly as styled -- confirming, for the first time, that `setStyleClassList` genuinely works from gui.lua-wrapped components, not just the raw `api.gui.comp.*` side (Decision 76). Bad news: "Total vehicles: 65", "Total waiting: 1366", "Terminals: 11", and "Auto Redistribute: **ON**" all rendered in the orange warning color -- despite `gui_tab_overview.lua` never calling `setStyleClassList` on any of those rows, and despite "ON" specifically being the one state that should never be flagged. The 7 unused action-button slots also rendered as bare, ugly green squares with no text.
+
+### Reason
+
+`state.rows` and `state.actionButtons` are a shared, reused pool of native components across every tab and every refresh (the whole reason this framework exists -- native component IDs can't be created on demand). `clearAllRows()`/`clearActionButtons()` only ever reset TEXT (`setText("", ...)`) between refreshes -- never style. A style class applied conditionally by one tab (e.g. FLEET flagging an idle row, or OVERVIEW's own Auto-Redistribute-OFF row on some earlier refresh/hub) stuck on that row object permanently, silently bleeding into whatever unrelated content later landed in the same row index. Decision 80's action buttons had the mirror-image bug: `EpodTdPrimaryButton` was applied once at creation time to all 8 slots, so any slot a tab didn't claim that refresh still kept its green background with blank text.
+
+### Decision
+
+`clearRow()` now also resets style via `pcall(row.label.setStyleClassList, row.label, {})`, and `clearActionButtons()` does the same for `slot.button` -- both run at the start of every `M.refresh()`, before the active tab repopulates content, so every row/button starts genuinely neutral each frame and only carries a style class if THIS refresh's content actually earned one. Removed the now-pointless blanket `EpodTdPrimaryButton` application at button-creation time in `ensureWindow` (it was always overwritten by the very next `clearActionButtons()` call anyway); `gui_tab_overview.lua`'s Re-Organize Terminals slot now (re-)applies `EpodTdPrimaryButton` itself only in its active (non-busy) branch, matching the same "style attaches only when there's real, actionable content" pattern already used for row-level warning colors.
+
+### Consequence
+
+**Live-confirmed fixed.** Player re-tested and shared a second screenshot: "Goole North" now renders in the new gold header color, "Total vehicles/waiting/Terminals" and "Auto Redistribute: ON" are back to plain default text (no more orange leak), and the 7 unused action-button slots no longer render at all. General lesson for this pool-based framework, not just this one bug: any per-refresh mutation beyond `setText` (style, tooltip, anything else `componentMetatable` exposes) must be reset centrally in the clear step, not left to individual tabs to remember to un-set on their own non-flagged rows.
+
+## Decision 82 — Header/muted text colors bumped after live screenshot showed them nearly indistinguishable from default text
+
+### What happened
+
+Same screenshot: `!EpodTdTableHeader`'s `{0.85, 0.85, 0.95, 1}` and `!EpodTdMutedText`'s `{0.75, 0.75, 0.78, 1}` were both so close to the window's default near-white text color that "Goole North" (styled as a header) looked no different from "Managed lines: 10" (unstyled) in the actual screenshot.
+
+### Decision
+
+Bumped `!EpodTdTableHeader` to a warm gold `{0.95, 0.8, 0.5, 1}` and `!EpodTdMutedText` to a visibly dimmer `{0.5, 0.55, 0.55, 1}`, chosen to read as distinct from default text, from the orange warning color, and from each other.
+
+### Consequence
+
+**Live-confirmed working.** Second screenshot shows "Goole North" clearly gold and visually distinct from both default and warning text.
+
+## Decision 83 — Full live pass across CARGO/SERVICES/FLEET/TERMINALS confirmed the polish pass clean; stripped the "● " managed-line marker from display in all three fleet-facing tabs
+
+### What happened
+
+Player screenshotted all four remaining tabs. Result: CARGO's under-served flagging and header styling were correct across four real destinations (Thatcham West, Stow-on-the-Wold Transfer, Springfield Road, The Drive) with no leak; SERVICES' delta>0 rows were consistently orange and delta<=0 rows consistently default; FLEET's two genuinely idle lines were the only two rows flagged; TERMINALS' header was gold with no leak. Decision 81's fix held up everywhere, not just OVERVIEW.
+
+One new, non-bug observation: every line name in SERVICES/FLEET/TERMINALS carries a leading "● " -- confirmed this is managed_registry.lua's own convention (managed lines get renamed with this marker, the same mechanism its self-heal logic uses to recognize its own lines on load). Unlike the CARGO tab's hub marker (which only appeared on the occasional dual-role destination and carried real information there), this marker is on literally every row in these three tabs by definition -- zero information value in THIS context, just clutter eating into the already-tight 36-character truncated name budget (names were visibly cut off mid-word, e.g. "Hemel H").
+
+### Decision
+
+Added the same display-only `stripManagedLineMarker` helper (byte-identical logic to `gui_tab_cargo.lua`'s `stripHubMarker`, kept as separate small local functions per file rather than a shared module -- each gui_tab_*.lua is already a self-contained "GUI ONLY" file by convention, and this project already tolerates small duplicated helpers at this layer, e.g. `findAnyLiveCargoType` exists separately in both `gui_tab_settings.lua` and `gui_experiment.lua`) to `gui_tab_services.lua`, `gui_tab_fleet.lua`, and `gui_tab_terminals.lua`. Applied only to the displayed name string passed to `string.format`/`table.concat`; the real line name (and the self-heal mechanism reading it) is untouched.
+
+### Consequence
+
+Not yet re-tested live.
+
+## Decision 84 — Real live data exposed a slow-converging fleet imbalance; "Apply Fleet Plan" promoted from a DEBUG-only button into a SERVICES tab action button
+
+### What happened
+
+The player's own live SERVICES tab screenshot showed two lines sitting 5-7 vehicles OVER their planner-computed target (9 vehicles against targets of 4 and 2) while five other lines sat 2-5 vehicles under theirs, with waiting cargo up to 273. "The spread is not going well."
+
+### Reason
+
+Not a bug in the plan itself -- `planner.calculateTargetAllocation` already correctly identifies the right numbers (that's exactly what the Delta column showed). The gap is convergence SPEED: `dispatcher.lua`'s automatic trigger only fires every `AUTO_DISPATCH_DELIVERY_THRESHOLD` (5000) deliveries network-wide, and even then caps itself at `MAX_MOVES_PER_RUN` (5) vehicle moves per run -- both deliberately conservative limits added after two real crash incidents (Decisions 36-38, an unresponsive-game hang and a repeated-crash pileup). A ~16-vehicle imbalance at one hub can take a long time to close through the automatic path alone. The fix for this already existed -- a manual "Apply Fleet Plan (DEBUG)" button on the old panel calls the exact same `dispatcher.applyPlan` instantly -- it just wasn't reachable from the new GUI, and required DEBUG mode.
+
+### Decision
+
+Wired `dispatcher.applyPlan` into the SERVICES tab's action-button slot 1, guarded by the shared `operation_lock` (same category of hub-mutating action as Re-Organize Terminals/Split/Assign & Balance, Decision 71's precedent) -- always visible, no DEBUG gate, right on the tab where the imbalance is visible. Deliberately still 100% player-triggered, not new automation -- matches [[feedback_automation_preference]]. Did NOT attempt to show a "done: N moved" confirmation on the button label itself -- `gui_manager.lua`'s `M.refresh` runs every `guiUpdate` frame and would overwrite any such text on the very next frame (immediately after `operation_lock.finish()` releases the busy state), making it effectively invisible. Logged instead, same restraint Re-Organize Terminals's own completion callback already uses -- the SERVICES table's own rows are the real, durable confirmation once they refresh with the new Current/Waiting/Delta numbers.
+
+### Consequence
+
+Not yet live-tested. If the player clicks it several times in a row, cooldowns (Decisions 32/33) mean each click can only move a few more vehicles before hitting the cap or running out of currently-empty, not-in-cooldown candidates on the surplus lines -- closing a ~16-vehicle gap may take several manual clicks spread over real time (each vehicle needs to actually reach and settle at its new line before `COOLDOWN_RUNS` lets it be reconsidered), not one click.
+
+## Decision 85 — New research thread: a custom-modeled truck parking lot construction, built the same evidence-first way as everything else tonight
+
+### What happened
+
+Player is modeling a real 90x90m truck parking lot in Blender (with a second Claude instance in Blender) and asked whether roads, ~11 parking stops, and vehicle pathing could be added to it as a real TF2 construction. Rather than answer from general training knowledge, read real files at every step: the base game's own `depot/road_depot_era_a.con` and `station/street/modular_terminal.con` (from `construction.zip`), then two real, purpose-built mods the player already had installed -- "Warehouse" (Workshop 2152226924, `dsd_road_station1.con`) and its own road-segment/platform `.mdl` files -- cross-checked against the official wiki (`modding:constructionbasics`, `modding:constructiontypes`).
+
+### What was found, in order
+
+1. `.con` files are plain Lua returning `result.models` (placed `.mdl` instances) and `result.edgeLists` (`type = "STREET"`/`"TRACK"`, literal point-path `edges`, `snapNodes` marking which points connect to the public road network when the player builds manually) -- confirmed both by the real depot file and the wiki.
+2. `.mdl` files are ALSO plain, human-editable Lua text (not compiled binaries) -- confirmed by opening a real one from the Warehouse mod, and by the player's own `epod_truck_distribution_1.mdl` (exported via ModelEditor's real FBX import, itself confirmed working live this session -- Decision 86 below).
+3. The actual truck-pathing/parking mechanism lives inside a placed model's own `metadata.transportNetworkProvider`: a `laneLists` table (drivable curve nodes tagged by `transportModes`, e.g. `{"TRUCK"}`) and a `terminals` table (`vehicleNode = N`, an index into a laneList's nodes marking the stop point). Confirmed both by the real `dsd_road_station1_platform0.mdl` and the wiki's `constructiontypes` page (`result.terminalGroups` groups model-supplied terminals; `vehicleNodeOverride` optionally overrides a terminal's own embedded `vehicleNode`; `result.stations` groups terminalGroups/terminal indices into a tagged, capacity-pooled station).
+4. Genuinely NOT resolved by either source: the exact multi-node curve-stitching format (one real example's 4-entry laneList reads as a junction/turnaround, not a simple chain, so its shape doesn't generalize cleanly), and whether `vehicleNode`/`snapNodes` indices are 0- or 1-based.
+5. `.msh` mesh files are plain text too, but only as an offset/layout header -- real vertex data lives in an accompanying binary `.msh.blob`, not worth reverse-engineering when the player could just state the real gate coordinates directly (which they did: lot center at world origin, south fence at y=-45 as the public-road side, entrance gate centered at x=-30, exit at x=+30, each a 6m-wide gap).
+
+### Decision
+
+Given the multi-node curve format's genuine ambiguity, staged this exactly like every other unverified-API question tonight: smallest provable slice first. Added a `metadata.transportNetworkProvider` block directly to `epod_truck_distribution_1.mdl` with ONE simple 2-node straight TRUCK lane (real coordinates: entrance gate at (-30,-45,0) to a first terminal stop at (-30,-20,0)) rather than attempting the full 11-stop layout or any turns. Added a matching `result.edgeLists` stub to `epod_truck_park.con` (`type="STREET"`, real syntax copied from `road_depot_era_a.con`) connecting that same entrance point out to the public road. Deliberately did NOT add `terminalGroups`/`stations` yet -- construction `type` is still `ASSET_DEFAULT`, not `STREET_STATION`; this stage only tests whether a plain asset can contribute a driveable, connected TRUCK lane at all, not whether it can register as a cargo stop.
+
+### Consequence
+
+Not yet live-tested -- explicitly flagged to the player as a first real experiment, not confirmed working, with the single least-certain detail (`vehicleNode` 0- vs 1-based indexing) called out by name as the first thing to try changing if the truck doesn't behave as expected.
+
+## Decision 86 — Confirmed live: the Blender -> FBX -> ModelEditor -> real, loadable `.mdl` pipeline works end-to-end in this project
+
+### What happened
+
+This was the single biggest unverified risk flagged when the parking-lot idea first came up (Decision-adjacent conversation, same session). Player used ModelEditor.exe's real FBX import (`model_editor/plugins/FbxImportPlugin.dll`, confirmed present in the game install) on `epod_truck_park.fbx`, producing real files on disk: `res/models/model/epod_truck_distribution_1.mdl`, per-object `.msh`/`.msh.blob` mesh data, and real `.mtl` materials (`MAT_Gravel`, `MAT_Wood`) matching the Blender build.
+
+### Decision
+
+Wrote a minimal `ASSET_DEFAULT` construction (`res/construction/asset/epod_truck_park.con`) referencing the exported model, modeled on the real base-game `asset/default_multi_bench_new.con`.
+
+### Consequence
+
+First live placement test showed a small white checkered placeholder cube, not the real lot -- NOT a pipeline failure. The real game log (`stdout.txt`) gave the exact cause: `[RESOURCE ERROR] Referenced model not found: 'models/model/epod_truck_distribution_1.mdl'`. Root cause: model `id` paths are relative to where `res/models/model.zip` mounts (`res/models/model/`), not to `res/` -- confirmed by finding the base game's own `bench_new.mdl` on disk at `res/models/model/asset/bench_new.mdl` but referenced in its `.con` as just `"asset/bench_new.mdl"`. Fixed by dropping the redundant `models/model/` prefix. Not yet re-tested live after the fix.
+
+## Decision 87 — Real crash selecting the construction from the menu; isolated by reverting the more speculative of two new changes
+
+### What happened
+
+Player selected "EPOD Truck Park" from the construction menu's misc category and got a real "Internal error" dialog. The live log confirmed a genuine engine-level crash (a hang warning + `MinidumpCallback` with a real minidump ID), not a clean `[RESOURCE ERROR]`-style message like the earlier model-path bug. Selecting an item in the construction menu is exactly when the engine calls the `.con`'s `updateFn` to build a preview -- confirmed this is the trigger, not something unrelated, by asking the player exactly what they were doing (selecting from assets) before touching the log.
+
+### Reason
+
+Two genuinely new, previously-untested pieces were added together in the same edit: `epod_truck_park.con`'s `result.edgeLists` (syntax copied near-verbatim from a real, working base-game file, `depot/road_depot_era_a.con`) and `epod_truck_distribution_1.mdl`'s hand-authored `metadata.transportNetworkProvider` block (a 2-node laneList + terminal, with NO exact matching real precedent -- the one real reference read, `dsd_road_station1_platform0.mdl`, has an ambiguous 4-node junction/turnaround shape that never cleanly confirmed the simple 2-node case). With two unverified changes stacked, the crash can't be attributed to either one without isolating them.
+
+### Decision
+
+Reverted `epod_truck_distribution_1.mdl`'s `metadata` back to empty (`{}`), keeping `epod_truck_park.con`'s `edgeLists` addition in place -- the more speculative, less-grounded piece is the one pulled out first. One live retest now cleanly answers which change was fatal: if selecting the construction works with just the edgeLists change present, the hand-authored transport-network metadata was the crash cause; if it still crashes, the edgeLists addition itself is.
+
+### Consequence
+
+Not yet retested live. If the transport-network metadata is confirmed as the cause, the next step is narrowing down what specifically about the hand-authored format is invalid -- most likely candidates: the duplicate-final-node convention, the `vehicleNode` indexing guess, or `laneLists` requiring more structure than a bare 2-node line provides.
+
+## Decision 88 — Isolation completed: the `.con`'s `edgeLists` addition was the real, fatal crash cause, not the `.mdl`'s transport-network metadata
+
+### What happened
+
+Retested after Decision 87's revert (transport-network metadata removed, `edgeLists` addition still in place). Still crashed -- this time with a full, detailed dialog instead of the earlier generic one: `Assertion Failure: Assertion `it->second.second == 1' failed`, with a real minidump and a UI hierarchy showing `styleClasses = {"action-constructionbuilder"}` -- confirming the crash is inside the construction-preview builder, consistent with selecting the item from the menu being the trigger.
+
+### Reason
+
+Isolation is now conclusive: removing the transport-network metadata did NOT fix the crash, so that was never the cause (Decision 87's suspicion was wrong). The `.con`'s `edgeLists` addition is the actual fault. Root cause not fully diagnosed, but the most likely candidate: the real reference file (`depot/road_depot_era_a.con`) uses TWO edges sharing a common inner point (offering two alternate snap distances), and this version simplified that to a single edge -- the assertion's shape (`it->second.second == 1`, reading like a reference-count check expecting exactly one thing and finding a different count) is consistent with some internal edge/node bookkeeping invariant that the two-edge shape satisfies and the single-edge simplification does not.
+
+### Decision
+
+Reverted `epod_truck_park.con`'s `edgeLists` addition entirely, restoring the last confirmed-clean state (Stage 1: plain model placement, no road connection). Not yet re-attempted -- next try should copy the real depot file's edge shape more exactly (two edges, matching point-sharing pattern) rather than simplifying it, and/or investigate whether `edgeLists` on an `ASSET_DEFAULT` construction is even the right mechanism versus needing a different construction `type`.
+
+### Consequence
+
+Confirms this project's own established discipline paid off directly: stacking two unverified changes in one edit would have left the actual cause ambiguous; isolating one at a time turned two plausible suspects into one conclusively-identified one, cheaply (two live tests, not a longer guessing loop). **Live-confirmed clean afterward**: player placed the reverted construction with no crash -- the real 90x90m fenced lot rendered correctly. Ground texture shows expected grass-bleed-through patchiness since `terrainAlignmentLists` is still empty (no ground reshaping yet) -- cosmetic, not a sign of a broken pipeline.
+
+## Decision 89 — Second road-connection attempt: copied the real depot file's exact two-edge shape instead of simplifying to one
+
+### What happened
+
+Decision 88 conclusively isolated the crash to the `edgeLists` addition, most likely to simplifying the real reference file's two edges (sharing one inner point, differing outer points) down to a single edge. Second attempt copies that exact structural shape onto real coordinates: both edges share the lot's real gate point `(-30,-45,0)` as their inner/second element, differing only in how far south their outer/first element sits (`(-30,-56,0)` and `(-30,-66,0)`), with `snapNodes = {1}` unchanged from the real file.
+
+### Decision
+
+Construction `type` deliberately left as `ASSET_DEFAULT`, unchanged -- this test isolates edge SHAPE specifically. If it still crashes, construction type becomes the next thing to try changing, not before.
+
+### Consequence
+
+**Live-confirmed working.** No crash this time -- the two-edge shape was the real fix for Decision 88's fatal assertion. First placement attempts (near an existing road/small park, then in an open field) showed the ordinary "Too much curvature" build-validation message, ruling out "just needs an empty spot" -- it reproduced even on open grass. Root cause: the same completely normal TF2 rule any vanilla construction follows -- a road connection needs a reasonable angle to whatever it's snapping near. Confirmed by the player rotating/repositioning until the angle worked, at which point it placed cleanly next to a real road with real traffic passing by. This is the pipeline's first full end-to-end live success: a custom Blender model, exported through ModelEditor's real FBX import, placed in-game as a working construction with a real, functioning road connection.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
