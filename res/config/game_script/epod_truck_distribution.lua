@@ -58,7 +58,9 @@ local line_adopter = require("epod_td.line_adopter")
 local hub_registry = require("epod_td.hub_registry")
 local line_ownership = require("epod_td.line_ownership")
 local source_line_registry = require("epod_td.source_line_registry")
+local operation_lock = require("epod_td.operation_lock")
 local gui_manager = require("epod_td.gui_manager")
+local gui_experiment = require("epod_td.gui_experiment")
 local gui = require("gui")
 
 
@@ -270,8 +272,13 @@ local distributionState = {
     -- process regardless. Refusing to start a second hub setup while
     -- one is already running removes the race entirely rather than
     -- trying to defend against it after the fact.
-    hubSetupInProgress =
-        false,
+    --
+    -- Decision 71: this flag itself moved out to operation_lock.lua
+    -- so gui_manager.lua's action buttons can share the exact same
+    -- lock -- a private field on this file's own distributionState
+    -- table couldn't be reached from a different module, and the new
+    -- GUI window is deliberately a second, independent window that
+    -- can be open and clicked at the same time as this one.
 
     dirty =
         false,
@@ -1035,7 +1042,7 @@ local function handleSplitButtonClick()
     -- risk (one run deleting/rewriting a line entity another run is
     -- mid-scan against) if triggered concurrently with a hub setup, or
     -- with itself at another hub. Now shares the same flag.
-    if distributionState.hubSetupInProgress then
+    if operation_lock.isRunning() then
 
         logUi(
             "SPLIT: another hub operation is still running -- "
@@ -1046,8 +1053,7 @@ local function handleSplitButtonClick()
 
     end
 
-    distributionState.hubSetupInProgress =
-        true
+    operation_lock.begin()
 
 
     local stationGroupId =
@@ -1062,8 +1068,7 @@ local function handleSplitButtonClick()
 
     if not ok or managedLines == nil then
 
-        distributionState.hubSetupInProgress =
-            false
+        operation_lock.finish()
 
         logUi(
             "SPLIT: could not read managed lines: "
@@ -1101,8 +1106,7 @@ local function handleSplitButtonClick()
 
         function()
 
-            distributionState.hubSetupInProgress =
-                false
+            operation_lock.finish()
 
         end
     )
@@ -1137,7 +1141,7 @@ local function handleReorganizeTerminalsButtonClick()
     -- Same overlap risk as Split (see its own comment above) --
     -- spreadLinesAcrossTerminals reads every line at the hub, including
     -- ones a concurrent hub setup could be mid-deleting.
-    if distributionState.hubSetupInProgress then
+    if operation_lock.isRunning() then
 
         logUi(
             "REORGANIZE TERMINALS: another hub operation is still "
@@ -1149,8 +1153,7 @@ local function handleReorganizeTerminalsButtonClick()
 
     end
 
-    distributionState.hubSetupInProgress =
-        true
+    operation_lock.begin()
 
 
     local stationGroupId =
@@ -1177,8 +1180,7 @@ local function handleReorganizeTerminalsButtonClick()
 
             function(processedCount)
 
-                distributionState.hubSetupInProgress =
-                    false
+                operation_lock.finish()
 
                 if distributionState.textViews ~= nil
                     and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
@@ -1198,8 +1200,7 @@ local function handleReorganizeTerminalsButtonClick()
 
     if not ok then
 
-        distributionState.hubSetupInProgress =
-            false
+        operation_lock.finish()
 
         logUi(
             "REORGANIZE TERMINALS FAILED: "
@@ -1433,9 +1434,9 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                                 -- Decision 66: must still call onAllDone
                                 -- (not just log+setDoneLabel) -- otherwise
                                 -- a synchronous crash here would leave the
-                                -- caller's hubSetupInProgress guard stuck
-                                -- true forever, permanently disabling hub
-                                -- setup for the rest of the session.
+                                -- caller's operation_lock guard stuck true
+                                -- forever, permanently disabling hub setup
+                                -- for the rest of the session.
                                 -- Stops processing further source lines
                                 -- for this hub, but still finishes the
                                 -- overall sequence.
@@ -1507,7 +1508,7 @@ local function handleAssignAndBalanceButtonClick()
 
     -- Same overlap risk as Split/Reorganize Terminals (see their own
     -- comments above) -- this walks and mutates lines at the hub too.
-    if distributionState.hubSetupInProgress then
+    if operation_lock.isRunning() then
 
         logUi(
             "ASSIGN & BALANCE: another hub operation is still running -- "
@@ -1518,8 +1519,7 @@ local function handleAssignAndBalanceButtonClick()
 
     end
 
-    distributionState.hubSetupInProgress =
-        true
+    operation_lock.begin()
 
 
     if distributionState.textViews ~= nil
@@ -1550,8 +1550,7 @@ local function handleAssignAndBalanceButtonClick()
 
     if #sourceLineIds == 0 then
 
-        distributionState.hubSetupInProgress =
-            false
+        operation_lock.finish()
 
         logUi(
             "ASSIGN & BALANCE: no recorded source line for this hub -- "
@@ -1605,8 +1604,7 @@ local function handleAssignAndBalanceButtonClick()
 
         function()
 
-            distributionState.hubSetupInProgress =
-                false
+            operation_lock.finish()
 
             local keptText =
                 #totals.kept > 0
@@ -2219,6 +2217,26 @@ local function handleOpenNewGuiButtonClick()
 end
 
 
+-- Decision 75/76: completely separate raw-api.gui.comp.* experiment,
+-- deliberately never touching gui_manager.lua's gui.lua-based tree
+-- (see gui_experiment.lua's own header for why mixing the two systems
+-- is the exact thing that crashed the game in Decision 73).
+local function handleOpenRawUiExperimentButtonClick()
+
+    local ok, err =
+        pcall(gui_experiment.toggleVisibility)
+
+    if not ok then
+
+        logUi(
+            "OPEN RAW UI EXPERIMENT FAILED: " .. tostring(err)
+        )
+
+    end
+
+end
+
+
 -- ============================================================
 -- APPLY FLEET PLAN (config.DEBUG only)
 --
@@ -2585,7 +2603,7 @@ local function handleAutoRedistributeToggleButtonClick()
     -- earlier one is still running -- live-confirmed real crash
     -- (native engine assertion) when two setup chains overlapped and
     -- one deleted a line entity the other was mid-scan against.
-    if distributionState.hubSetupInProgress then
+    if operation_lock.isRunning() then
 
         logUi(
             "DISTRIBUTION HUB: another hub's setup is still running -- "
@@ -2596,8 +2614,7 @@ local function handleAutoRedistributeToggleButtonClick()
 
     end
 
-    distributionState.hubSetupInProgress =
-        true
+    operation_lock.begin()
 
     -- Decision 62: turning ON now also runs the full first-time setup
     -- sequence (Split -> Rename Fleet -> Assign & Balance) rather than
@@ -2656,8 +2673,7 @@ local function handleAutoRedistributeToggleButtonClick()
 
             function()
 
-                distributionState.hubSetupInProgress =
-                    false
+                operation_lock.finish()
 
                 if distributionState.textViews ~= nil
                     and distributionState.textViews.autoRedistributeButtonLabel ~= nil
@@ -2675,8 +2691,7 @@ local function handleAutoRedistributeToggleButtonClick()
 
     if not ok then
 
-        distributionState.hubSetupInProgress =
-            false
+        operation_lock.finish()
 
         logUi(
             "DISTRIBUTION HUB SETUP FAILED: "
@@ -3217,6 +3232,35 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             openNewGuiButton
+
+
+        -- Decision 75/76: same always-visible treatment as Open New
+        -- GUI above -- a real operational experiment, not a
+        -- diagnostic. Built entirely on the raw api.gui.comp.* system
+        -- (see gui_experiment.lua); this button itself is a normal
+        -- gui.lua button like every other on this panel, since it
+        -- only ever calls a plain Lua function (toggleVisibility) --
+        -- no GUI object crosses between the two systems here.
+        local rawUiExperimentButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".rawUiExperimentButtonLabel",
+                "[ Open Raw UI Experiment (TEST) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local rawUiExperimentButton =
+            gui.button_create(
+                WINDOW_ID .. ".rawUiExperimentButton",
+                rawUiExperimentButtonLabel
+            )
+
+        rawUiExperimentButton:onClick(
+            handleOpenRawUiExperimentButtonClick
+        )
+
+        fixedViews[#fixedViews + 1] =
+            rawUiExperimentButton
 
 
         if distributionState.debugToolsVisible then

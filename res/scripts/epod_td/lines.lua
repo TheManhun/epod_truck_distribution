@@ -138,6 +138,37 @@ function M.findDominantStationGroup(lineId)
 end
 
 
+-- Returns the raw (0-based) `terminal` value of whichever stop on
+-- this line matches stationGroupId, or nil if the line doesn't touch
+-- that station at all. Pure structural read, no calculation --
+-- callers wanting the game's own displayed (1-based) number should
+-- add 1 themselves (Decision 21's confirmed UI offset).
+function M.getStopTerminal(lineId, stationGroupId)
+
+    local stops = M.getStops(lineId)
+    local stopCount = M.safeLength(stops)
+
+    for index = 1, stopCount do
+
+        local stop = stops[index]
+
+        if stop ~= nil then
+
+            local stopStationGroup = M.safeField(stop, "stationGroup")
+
+            if stopStationGroup == stationGroupId then
+                return M.safeField(stop, "terminal")
+            end
+
+        end
+
+    end
+
+    return nil
+
+end
+
+
 function M.getName(lineId)
     if lineId == nil or lineId < 0 then
         return "NO LINE"

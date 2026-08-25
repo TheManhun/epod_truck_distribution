@@ -51,6 +51,22 @@ local WINDOW_WIDTH = 560
 local ROW_WIDTH = WINDOW_WIDTH
 local MAX_ROWS = 24
 
+-- Decision 71: a pool of pre-allocated, reusable action-button slots,
+-- same "pre-allocate once, refill on tab switch" reasoning as the row
+-- pool above (native TF2 UI component IDs cannot be created on demand
+-- -- see this file's own header comment). A tab's refresh() function
+-- claims however many of these it needs each time it runs (e.g.
+-- OVERVIEW's Split/Distribution Hub/Assign & Balance/Re-Organize
+-- Terminals/Rename Fleet buttons) by setting a slot's label text and
+-- .handler function; unused slots are blanked the same way unused text
+-- rows already are. Every slot's onClick is wired exactly ONCE, at
+-- window-creation time, to call whatever .handler is CURRENTLY set on
+-- that slot -- deliberately avoids ever needing to call :onClick a
+-- second time on the same button (whether that stacks or replaces
+-- handlers has never been tested in this codebase, so this sidesteps
+-- the question entirely rather than assuming either answer).
+local ACTION_BUTTON_COUNT = 8
+
 local TABS = {
     tab_overview,
     tab_hubs,
@@ -70,6 +86,7 @@ local state = {
     tabButtons = {},
     headerLabel = nil,
     rows = nil,
+    actionButtons = nil,
     closedByUser = false
 }
 
@@ -122,6 +139,24 @@ local function clearAllRows()
 end
 
 
+-- Blanks every action-button slot's label and drops its handler --
+-- same "reset before refill" treatment as clearAllRows above, so a
+-- tab that only needs 2 of the 8 slots doesn't leave some other tab's
+-- stale button (and stale handler) sitting there clickable.
+local function clearActionButtons()
+
+    if state.actionButtons == nil then
+        return
+    end
+
+    for _, slot in ipairs(state.actionButtons) do
+        slot.label:setText("", WINDOW_WIDTH)
+        slot.handler = nil
+    end
+
+end
+
+
 -- Re-renders whichever tab is currently active into the shared row
 -- pool. Safe to call often -- it's just setText calls, same cost
 -- profile as the existing panel's own refresh.
@@ -136,6 +171,7 @@ function M.refresh(hubStationGroupId)
     end
 
     clearAllRows()
+    clearActionButtons()
 
     local activeTab = TABS[state.activeTabIndex]
 
@@ -144,7 +180,7 @@ function M.refresh(hubStationGroupId)
     end
 
     local ok, err =
-        pcall(activeTab.refresh, state.rows, hubStationGroupId)
+        pcall(activeTab.refresh, state.rows, hubStationGroupId, state.actionButtons)
 
     if not ok then
 
@@ -214,7 +250,7 @@ local function ensureWindow(hubStationGroupId)
     state.headerLabel =
         gui.textView_create(
             WINDOW_ID .. ".header",
-            "DD Central Manager -- framework preview, most tabs are placeholders",
+            "DD Central Manager -- HUBS/ACTIVITY/SETTINGS still placeholders",
             WINDOW_WIDTH,
             false
         )
@@ -256,6 +292,56 @@ local function ensureWindow(hubStationGroupId)
 
     layout:addItem(tabRow)
 
+    -- Decision 71: pre-allocated action-button pool, shared across
+    -- tabs the same way the row pool below is. Positioned above the
+    -- info rows so a tab's controls read naturally above its display
+    -- content.
+    state.actionButtons = {}
+
+    for slotIndex = 1, ACTION_BUTTON_COUNT do
+
+        local label =
+            gui.textView_create(
+                WINDOW_ID .. ".actionLabel." .. tostring(slotIndex),
+                "",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local button =
+            gui.button_create(
+                WINDOW_ID .. ".actionButton." .. tostring(slotIndex),
+                label
+            )
+
+        button:onClick(function()
+
+            local slot = state.actionButtons[slotIndex]
+
+            if slot ~= nil and slot.handler ~= nil then
+
+                local ok, err = pcall(slot.handler)
+
+                if not ok then
+
+                    log.info(
+                        "GUI MANAGER: action button "
+                            .. tostring(slotIndex)
+                            .. " handler failed: " .. tostring(err)
+                    )
+
+                end
+
+            end
+
+        end)
+
+        layout:addItem(button)
+
+        state.actionButtons[slotIndex] = { label = label, button = button, handler = nil }
+
+    end
+
     state.rows = {}
 
     for rowIndex = 1, MAX_ROWS do
@@ -271,6 +357,28 @@ local function ensureWindow(hubStationGroupId)
         layout:addItem(label)
 
         state.rows[rowIndex] = { label = label }
+
+    end
+
+    -- Decision 72: SETTINGS tab's one-time GUI-element experiment
+    -- (slider/comboBox/toggleButton/imageView). Wrapped in this file's
+    -- OWN pcall too, on top of every individual element's own internal
+    -- pcall in gui_tab_settings.lua -- this is genuinely unproven code,
+    -- and a failure here must never take down the rest of the window
+    -- (header/tabs/action buttons/rows are already built above this
+    -- point either way).
+    if tab_settings.build ~= nil then
+
+        local okSettingsBuild, settingsBuildErr = pcall(tab_settings.build, layout)
+
+        if not okSettingsBuild then
+
+            log.info(
+                "GUI MANAGER: SETTINGS tab experimental build failed: "
+                    .. tostring(settingsBuildErr)
+            )
+
+        end
 
     end
 

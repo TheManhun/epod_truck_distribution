@@ -51,6 +51,29 @@ Measure a line's real round-trip cycle time (departure from the hub to next depa
 
 A genuine refinement to `planner.lua`'s target-allocation math, on top of the already-proven demand-weighted apportionment (Decisions 29/30) — not a replacement for it. Must be built with the "trip time can only hold or flag, never grow" policy rule from the start, not bolted on as an afterthought once a live-reactive version has already been tried and found to misbehave. Could also surface a genuinely useful player-facing signal on its own — "this line has enough trucks, the road is the real bottleneck" is a diagnosis DD can make that the player currently can't get anywhere else.
 
+## Cargo-Type-Aware Allocation for Shared Multi-Cargo Lines
+
+### Origin
+
+Raised live: a hub feeding a two-input factory (steel needs coal + iron) showed one shared line sitting at 261 waiting cargo -- 226 of one type, only 35 of the other -- with just 1 truck servicing it. The bigger stockpile dominates a truck's limited capacity every time it loads, so the scarcer input keeps getting proportionally squeezed out trip after trip, independent of whether the factory actually needs them in anything like equal amounts. Player's own framing: "the line fills with iron, the coal can't fit, so it's unbalanced."
+
+### The idea
+
+Today's allocation math (`planner.calculateTargetAllocation`/`fleet_allocator`) only ever works from one combined `waiting` total per LINE -- it has no concept that a single stop can produce multiple cargo types competing for the same truck capacity. The player's proposal: investigate the real per-destination timing for each cargo type specifically -- how long it actually takes to gather/deliver a given amount of coal versus iron at this stop -- and use that to work out the right number of trucks to throw at each, rather than treating the line as one undifferentiated demand number.
+
+Worth noting this isn't a data-visibility gap -- `demand.scan`'s per-destination `cargoTypes` breakdown (already used by tonight's new CARGO tab, and by the old panel's own waiting-cargo readout) already reports the exact per-type split live. The gap is that nothing downstream of that data point currently uses the breakdown for an actual allocation DECISION -- it's display-only today.
+
+### Open questions -- nothing here confirmed yet
+
+- Does TF2 expose a factory's *required* input ratio anywhere queryable, or would this have to be inferred indirectly (e.g. from how fast each stockpiled type actually gets consumed once delivered)? This is the load-bearing unknown -- without it, "the right ratio" is a guess dressed up as a formula.
+- How would a truck's per-cargo-type load actually get attributed on a shared multi-cargo line -- `vehicles.getCargoLoad` gives a per-vehicle breakdown already, so the raw mechanism likely exists; what's unproven is turning that into a real allocation signal without adding meaningful per-tick overhead.
+- Same trap this project has already been burned by once (see "Distance/Cycle-Time-Aware Truck Allocation" above): a naive reactive version that keeps chasing whichever cargo type currently looks most starved risks overcorrecting and just flipping the imbalance the other way. Needs the same "baseline vs. recent, hold don't oscillate" discipline, not a first-instinct implementation.
+- Whether splitting the two cargo types onto physically separate dedicated lines (if the real station topology even allows it) solves this more simply than any new allocation math would -- worth ruling out live before building anything.
+
+### If it does pan out
+
+A real, structural refinement to the Planner specifically for hubs with multi-input industries -- distinct from the existing distance/cycle-time idea (which is about a single line's overall throughput) but likely shares infrastructure with it once cycle-time-per-cargo-type measurement exists.
+
 ## Fleet Utilization Display (%)
 
 ### Origin
@@ -344,6 +367,14 @@ Possible information/actions:
 - The network window could eventually show warnings such as excessive waiting cargo, insufficient fleet capacity or terminal congestion.
 
 This would provide one central management screen instead of requiring the player to locate and click individual stations on the map.
+
+### Minimal version worth building first
+
+Raised live: rather than the full network-overview window above, the simplest useful version is just a toolbar icon that opens/toggles the *existing* Truck Distribution panel (or the new tabbed GUI once it's ready) -- no new window content, just a way to reach the panel without needing a station selected first. Natural stepping stone toward the fuller network-overview idea above, not a competing design.
+
+### Implementation note -- UNVERIFIED, needs research before trusting
+
+A pasted external guide claims the mechanism is: a `guiInit`/`guiUpdate`-driven `createToolbarButton()` that calls `api.gui.util.getById("mainToolbar")` to find the toolbar container, builds a button via `api.gui.comp.Button.new(api.gui.comp.ImageView.new("ui/icon.tga"))`, sets an id/tooltip, wires `button:onClick(...)`, and appends it with `toolbar:add(button)`; the icon itself would need to be a 24x24 `.tga` with alpha, under `res/textures/ui/`. None of this -- the `"mainToolbar"` id, the `Button`/`ImageView` component API, whether `toolbar:add` exists -- has been independently confirmed against this game version the way this project's other API claims have been (see `dumpAvailableCommands`'s own precedent for settling exactly this kind of question directly instead of trusting a plausible-sounding guide). Before building on it: confirm `api.gui.util.getById("mainToolbar")` actually resolves to something real and enumerate its real methods, the same evidence-first way `COMMANDS.md`/`TECHNICAL_RESEARCH.md` were built for everything else in this mod.
 
 
 ## Final GUI Research and Cleanup Phase

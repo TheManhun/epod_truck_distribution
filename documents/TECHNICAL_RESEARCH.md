@@ -51,7 +51,7 @@ Researchers should consult the official Transport Fever 2 documentation before a
 - Modding documentation
 - API Reference
 - Game Scripts documentation
-- User Interface documentation
+- User Interface documentation -- https://wiki.transportfever2.com/api/modules/api.gui.html (player-supplied link; treat exactly like every other API claim in this file -- confirm a given `api.gui.*` call actually exists and behaves as documented in this game version before building on it, don't assume the doc page is complete or current)
 - line/vehicle/cargo API modules
 
 Do not invent function names or API behavior unless they have been explicitly checked against the official API reference.

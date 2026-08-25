@@ -1319,6 +1319,124 @@ Factored the existing deselect logic (clear selection state, close the window if
 
 Not yet live-tested. Should confirm: selecting a vehicle no longer opens/refreshes the panel; selecting a real station still works exactly as before; switching directly from a station to a vehicle correctly closes the panel rather than leaving stale content.
 
+## Decision 71 — New GUI gained real action buttons; the reentrancy guard moved into a shared module so both windows can't race each other
+
+### What happened
+
+Before adding any clickable action to the new "DD Central Manager" window, checked how the existing overlap-crash guard (Decision 66, extended in Decision 68) actually worked -- it was a private field (`hubSetupInProgress`) on `epod_truck_distribution.lua`'s own `distributionState` table. The new GUI window is deliberately a second, independent window that can be open and clicked at the same time as the old panel (its own header comment already says so). Adding a mutating action button to it without sharing that guard would have reintroduced the exact same overlap-crash class Decision 66/68 just spent tonight closing -- just via a second door instead of the first.
+
+### Decision
+
+1. **Extracted the guard into `operation_lock.lua`** -- a tiny standalone module (`isRunning()`/`begin()`/`finish()`, in-memory only, same as the field it replaces). Every one of `epod_truck_distribution.lua`'s existing guard checks (Split, Re-Organize Terminals, Assign & Balance, Distribution Hub ON) now goes through this shared module instead of its own private field.
+2. **Gave `gui_manager.lua` a real action-button capability**: a pool of 8 pre-allocated button slots (same "pre-allocate once, refill per tab" reasoning already used for the text-row pool -- native TF2 UI components can't be created on demand). Each slot's `onClick` is wired exactly once, at window-creation time, to call whatever `.handler` function is currently assigned to that slot -- deliberately avoids ever needing to re-call `:onClick` on the same button object, since whether that stacks or replaces handlers has never been tested in this codebase.
+3. **Wired "Re-Organize Terminals" into the OVERVIEW tab** as the first real action, guarded by `operation_lock` exactly like the old panel's copy. Deliberately the ONLY action wired in tonight: it's already a clean, public, single-call module function (`terminal_allocator.spreadLinesAcrossTerminals`) with no orchestration to extract. Split/Assign & Balance/Distribution Hub ON-OFF are still private composed sequences inside `epod_truck_distribution.lua` -- adding those to the new GUI needs them extracted into a shared module first, so two files aren't each maintaining their own copy of the same multi-step chain.
+
+### Reason
+
+Matches this session's dominant theme: two real crashes tonight both came from state that looked locally correct but wasn't actually shared/scoped correctly (the hub-setup race itself, and the cross-save registry contamination). Adding a third window-vs-window race of the same shape, right after fixing the first two, would have been a real regression hiding in plain sight rather than a hypothetical risk.
+
+### Consequence
+
+Not yet live-tested. Should confirm: Re-Organize Terminals from the new GUI actually runs and rebalances terminals; clicking it on the old panel and the new GUI at the same time correctly blocks the second click instead of racing; the old panel's own Split/Assign & Balance/Re-Organize Terminals/Distribution Hub buttons still behave exactly as before now that they read `operation_lock` instead of their own field. Porting Split/Assign & Balance/Distribution Hub ON-OFF into the new GUI is the natural next step, gated on extracting their composed sequences out of `epod_truck_distribution.lua` first.
+
+## Decision 72 — GUI element experiment: does api.gui's wiki-documented Slider/ComboBox/ToggleButton/ImageView actually work in this game version?
+
+### What happened
+
+Player supplied the official wiki page for `api.gui` (https://wiki.transportfever2.com/api/modules/api.gui.html), which documents a `comp.*` class-based surface including `Slider`, `ComboBox`, `ToggleButton`, `ImageView`, `TabWidget`, `Table`, and `List` -- none ever used anywhere in this codebase, which so far only uses `gui.window_create`/`textView_create`/`button_create`/`boxLayout_create` (a separate, undocumented-on-that-wiki, snake_case base-game convenience module).
+
+### Decision
+
+Repurposed the still-placeholder SETTINGS tab as a disposable, low-risk sandbox to test four of these live: Slider, ComboBox (populated with real enabled-hub names), ToggleButton, and ImageView (fed a real, live cargo-type icon path via `demand.getCargoTypeIconPath`, opportunistically grabbed from whatever any enabled hub currently has waiting, rather than a guessed cargo type). Also dumps `require("gui")`'s actual contents once, settling directly whether that convenience module already wraps any of these (same `dumpAvailableCommands`-style evidence-gathering already proven elsewhere in this codebase) instead of guessing a snake_case name.
+
+Every element is built independently, each wrapped in its own `pcall` with clear pass/fail logging, so one failing can't stop the others from being tried or break the rest of the window -- and the whole `gui_tab_settings.M.build()` call is wrapped in a second, outer `pcall` from `gui_manager.lua` as a further safety net. This caution is not reflexive: Decisions 56/57's `alternativeTerminals` saga is the exact lesson this project already paid for once -- a "documented" API call, trusted without an isolated test first, caused two real crashes.
+
+### Reason
+
+The wiki genuinely offers real upgrades over the current button-hack tab system and manual `string.format` tables -- most notably `TabWidget` (a real native tab widget, deliberately avoided so far per this exact codebase's own risk-aversion) and `List` (a much better fit for the still-unbuilt HUBS tab than reusing the generic action-button pool). None of that gets built into the real GUI on the strength of a wiki page alone.
+
+### Consequence
+
+Not yet live-tested -- this is the experiment itself, not its result. Next play session should report: which of Slider/ComboBox/ToggleButton/ImageView actually constructed and rendered, what `require("gui")`'s real dumped contents showed, and whether anything crashed (native crash risk from a bad GUI call has not been ruled out, even though it's a different class of API than `alternativeTerminals`). `TabWidget`/`Table`/`List` deliberately NOT tested yet -- narrower first batch, wider test only once these four show the experimental harness itself is safe. Remove this whole experiment (and build the real Settings tab per `GUI_Plan.md`) once results are in.
+
+## Decision 73 — Decision 72's experiment found a real crash: raw ComboBox construction leaked a native component, asserting at game close. Table/ScrollArea confirmed safe; Slider/ComboBox/ToggleButton confirmed unsafe
+
+### What happened
+
+Ran Decision 72's experiment live. The game itself kept running fine afterward -- Overview, Fleet, other tabs all still worked -- but a **fatal crash fired the moment the player closed the game**: `Assertion 'CComponent::NumInstances() == 0' failed`. The real log (`crash_dump/stdout.txt`, not the stale repo copy of `EPOD-LOG.txt`) had the exact cause: `layout:addItem(comboBox)` threw a genuine engine-level exception (`gui.lua:54: internal error` / "value is not a string") from inside the native `boxLayout_addItem` call, with its own separate minidump. The `ComboBox` object itself had already been constructed and populated with real hub names by that point -- the failure was specifically in attaching it to the layout, leaving a broken, unparented native component alive in memory with nothing owning it. The shutdown-time instance-count assertion is exactly the kind of check that would catch precisely that: a component the engine created but that was never properly torn down because it was never properly parented into a window's ownership tree in the first place.
+
+### Reason
+
+Confirmed directly from the same log capture: dumping `require("gui")`'s real contents live showed this game version's convenience wrapper module (already proven throughout this codebase via `window_create`/`button_create`/`textView_create`/`boxLayout_create`) covers exactly 19 functions -- `window`, `button`, `textView`, `boxLayout`, `absoluteLayout` (get only), `component`, `imageView`, `table`, `scrollArea` -- and nothing else. `Slider`, `ComboBox`, `ToggleButton`, `CheckBox`, `TabWidget`, and `List` (all wiki-documented on `api.gui.comp.*`) have **no wrapped equivalent** in this game version's `gui` module. Reaching for them meant constructing raw `api.gui.comp.*` objects directly and mixing them into a `gui.lua`-managed layout tree -- exactly the combination that broke. `ToggleButton.new(label)` failed the same way for a related reason (passed a `gui.textView_create` return value, which is apparently NOT the raw userdata a native constructor expects -- a wrapped Lua-side object, incompatible with an API expecting genuine native structures). `Slider.new()` failed on argument count alone. Both of those failed cleanly, caught by `pcall`, no leak -- ComboBox is the one that got far enough to actually break something before failing.
+
+### Decision
+
+Stripped Slider/ComboBox/ToggleButton out of `gui_tab_settings.lua` entirely rather than leaving them gated behind any runtime guard -- the experiment's own `experiment.built` flag was session-scoped and would have re-run (and re-crashed) on the very next game launch otherwise. Kept the one confirmed-safe result: `ImageView`, built through the real `gui.imageView_create` wrapper (not the raw fallback that never got exercised for this element, since the wrapped path was tried first and succeeded outright) -- this also incidentally confirms `demand.getCargoTypeIconPath`'s guessed icon-path convention (`ui/hud/cargo_<id>_small.tga`) is correct, live cargo type `COAL` resolved to a real, loadable `ui/hud/cargo_coal_small.tga`.
+
+**Going forward**: `Table` and `ScrollArea` are now confirmed real and safe to build on, through the same proven wrapper pattern as everything else in this codebase -- genuine, low-risk upgrades over the current manual `string.format`-padded text tables and the fixed `MAX_ROWS = 24` ceiling. `Slider`/`ComboBox`/`ToggleButton`/`CheckBox`/`TabWidget`/`List` are not merely "not yet tried" -- they are confirmed to have no safe path in this game version via straightforward construction, and must not be attempted again without a fundamentally different approach (if one even exists) and a far more isolated, disposable test than a live production window.
+
+### Consequence
+
+The current button-based fake-tab system and the generic label-only action-button pool stay exactly as they are -- there is no safe native replacement for them available right now. Real next steps for the GUI: convert SERVICES/FLEET/CARGO's manual string-formatted tables to `gui.table_create`, and wrap the row pool (or at least its content area) in `gui.scrollArea_create` to stop it from silently truncating at 24 rows on larger hubs. HUBS still has no safe way to be a clickable list or dropdown -- it'll need to reuse the existing action-button-pool pattern (one button per hub, same shape as OVERVIEW's action buttons) rather than `List`/`ComboBox`.
+
+## Decision 74 — Read `res/scripts/gui.lua` directly from the TF2 install; found the real mechanism behind Decision 73's crash, and added a zero-risk `game.gui` enumeration
+
+### What happened
+
+Player asked whether the game's own native windows (e.g. the Headquarters/Finance panel) use a different system, and whether that's worth investigating. `res/scripts/gui.lua` turned out to be a real, plain, readable file at the TF2 install directory (not packed) -- read it directly rather than guessing.
+
+### Reason
+
+This is the actual mechanism behind Decision 73's crash, more precisely than "unsafe, not just untested": every `gui.xxx_create` function in that file is a thin wrapper returning a plain Lua table `{ id = "someString" }`, and every method on it (`addItem`, `setText`, etc.) works by passing `self.id`/`child.id` (a STRING) into a lower-level native function (`game.gui.xxx_yyy(id, ...)`). The wiki-documented `api.gui.comp.*` classes are genuine native OOP userdata objects with no `.id` string field at all -- a completely different, incompatible object model that happens to also be reachable from Lua. `layout:addItem(comboBox)` crashed specifically because it tried to read `comboBox.id` off a real native `ComboBox` userdata object, got nil/garbage instead of a real ID string, and the native call failed on it. This isn't "two similar systems, one riskier" -- it's two fundamentally different systems, and mixing an object from one into a call expecting the other is what broke.
+
+This also answers the player's actual question: `gui.lua` only wraps 9 component kinds (window, box/absolute layout, component, textView, imageView, button, table, scrollArea) -- nothing tab-like. The richer `comp.*` classes (TabWidget included) most likely belong to the engine's internal UI system that native windows like Headquarters are built from, not something exposed through the same ID-based path mods get access to.
+
+### Decision
+
+Added a second, purely read-only enumeration (`dumpGameGuiModule`, zero construction/mutation calls, same safety profile as `dumpAvailableCommands` elsewhere in this codebase) to check directly whether `game.gui` -- the real native table underneath `gui.lua`'s wrapper -- exposes more component kinds than the 9 `gui.lua` chose to wrap. If a native `tabWidget_create` or similar exists at that layer, it would use the SAME id-string convention as everything already proven safe, unlike the incompatible `comp.*` mixing that crashed.
+
+### Consequence
+
+Not yet live-tested -- next session's log should show `game.gui`'s real full contents.
+
+## Decision 75 — Corrects Decision 73: Slider/List/CheckBox/ToggleButton are NOT unsafe. Mixing them into a gui.lua-managed layout is. A real, working mod (Move It Enhanced) proves the full raw system safely, including custom styling and a real toolbar icon
+
+### What happened
+
+Player pointed at an installed workshop mod ("Move It Enhanced", Steam Workshop ID `3730920085`) as a real example of a polished TF2 mod GUI. Its `res/scripts/move_it_enhanced/gui.lua` and `gui_util.lua` were read directly. It builds its entire interface -- window, sliders, toggle buttons, toggle button groups, checkboxes, a scrollable list, a real toolbar icon on the base game's own button bar -- using nothing but the raw `api.gui.comp.*`/`api.gui.layout.*` classes Decision 73 had just concluded were "confirmed unsafe." It works. It's shipped, presumably to real players, with no reported instability.
+
+### Reason
+
+Re-reading Decision 73's actual crash evidence in light of this: the crash was never caused by `ComboBox` itself. It was caused by calling `layout:addItem(comboBox)` where `layout` was a `gui.boxLayout_create(...)` object -- one of `gui.lua`'s thin ID-string wrapper tables (Decision 74 already found this: every `gui.lua` method just forwards `self.id`/`child.id`, a plain Lua field, into a `game.gui.*` native call). A raw `api.gui.comp.ComboBox` object has no `.id` field at all, so that call was doomed regardless of which raw component was involved -- `ComboBox` just happened to be the one tried against a real layout attach point; `Slider`/`ToggleButton` failed at construction/type-checking before ever reaching that point.
+
+Move It Enhanced never makes this mistake because it **never touches `gui.lua` at all** -- every layout, window, and component in it is built with the matching raw constructor (`api.gui.layout.BoxLayout.new(...)`, `api.gui.comp.Window.new(...)`, etc.), so every `addItem`/`add` call is passing a real native object to a native method expecting exactly that, consistently, top to bottom. The two systems (`gui.lua`'s ID-registry wrapper vs. the raw OOP class tree) are not "one safer than the other" -- they're two complete, independently self-consistent object models. Decision 73's actual, correct lesson was narrower than it concluded: never pass an object from one system into a method belonging to the other. Used consistently within its own system, the raw API is evidently robust enough to ship in a real, popular mod.
+
+Also confirmed live from the same source, resolving two previously-open questions in `IDEAS.md`:
+- **Native toolbar icon (the pasted external guide from earlier tonight) is real and does exactly what it claimed**: `api.gui.util.getById("mainButtonsLayout"):getItem(2)`, then `layout:addItem(button)` -- a working mod hooks into the base game's own toolbar this exact way.
+- **Custom native-looking styling is real and documented in a shippable form**: `res/config/style_sheet/moveit_stylesheet.lua` defines real selectors (`!MoveITButton`, with `:hover`/`:active`/`:disabled` pseudo-states) using `stylesheetutil.lua`'s `makeAdder`/`makeColor`, setting `backgroundColor`/`borderColor`/`padding`/`margin`/`fontSize`/`color` -- applied via `component:addStyleClass(name)`. This is the actual mechanism behind every "looks like Urban Games shipped it" mod GUI, not a guess.
+
+### Decision
+
+Correcting Decision 73's framing: `Slider`/`ComboBox`/`ToggleButton`/`CheckBox`/`List`/`ToggleButtonGroup` are not confirmed unsafe -- only mixing a raw-constructed object into a `gui.lua`-managed tree (or vice versa) is confirmed unsafe. A real, richer GUI is achievable, but it means building a subtree (or a whole window) entirely on the raw `api.gui.comp.*`/`api.gui.layout.*` system, matching Move It Enhanced's pattern exactly, not patching individual widgets into the existing `gui_manager.lua` tree.
+
+Not done tonight: this is a bigger, separate undertaking than a quick fix, and per this project's own established discipline (`GUI_Plan.md`'s "one tab at a time," never a rewrite), it should be scoped deliberately -- most likely as a genuinely separate, small, isolated raw-system test window first (mirroring how `gui_tab_settings.lua`'s experiment was kept disposable and separate from the proven panel), before either building new tabs on the raw system or migrating existing ones.
+
+### Consequence
+
+Real path now exists for the richer controls raised earlier tonight (a real Slider for "favor this line," a real hub-picker List/ToggleButtonGroup for HUBS, real native styling instead of default TextView look) -- but it requires committing to the raw system for whatever component tree uses them, consistently, not incrementally bolting one raw widget onto the existing `gui.lua` tree. Worth a deliberate design decision on scope (new raw-built tab/window vs. eventual full migration) before more code gets written, not an immediate build.
+
+## Decision 76 — Built a real raw-system experiment window (`gui_experiment.lua`) and a matching style sheet, following Move It Enhanced's proven pattern exactly
+
+### Decision
+
+New `res/scripts/epod_td/gui_experiment.lua`, triggered by a new always-visible "Open Raw UI Experiment (TEST)" button on the existing panel (same treatment as "Open New GUI"). Built entirely on `api.gui.comp.*`/`api.gui.layout.*` -- deliberately requires nothing from `require("gui")`, so there is no way to accidentally repeat Decision 73's mixing mistake. Contains: a styled header with a real, live cargo icon; a real segmented hub-picker built from `ToggleButtonGroup` + real enabled-hub names (the working replacement for the ComboBox that crashed the game); a live hub summary readout; a real `Slider` (the player's "truck bias" idea, demo-only, logs its value); a real `CheckBox` (demo-only); and a styled `Button`. New `res/config/style_sheet/epod_td_stylesheet.lua`, same mechanism as Move It's own style sheet (`stylesheetutil`'s `makeAdder`/`makeColor`, `!ClassName` selectors, `:hover`/`:active`/`:disabled`/`:selected` pseudo-states), applied via `component:addStyleClass(...)`.
+
+### Consequence
+
+**Live-confirmed clean.** The window opened via its own button, showed the real enabled hub ("Goole North") as a working segmented toggle, live hub summary text, a real functioning slider, a checkbox rendering with a genuine native checkmark, and the custom stylesheet actually rendered (dark header background, colored button) -- the first genuinely native-looking element in this entire mod's GUI history. Most importantly: **the game closed cleanly and reloaded with no issue** -- the exact failure mode from Decision 73 (fatal `CComponent::NumInstances() == 0` assertion on close) did not recur. This confirms the root-cause fix: building entirely on the raw `api.gui.comp.*` system, never crossing it with `gui.lua`, is genuinely safe -- not just theoretically, live-proven.
+
+Slider/checkbox/action button are still deliberately demo-only (log-only handlers) -- wiring any of them to a real dispatch decision is a separate, later step now that the rendering/interaction/shutdown safety are all confirmed.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
