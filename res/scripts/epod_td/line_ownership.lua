@@ -154,6 +154,41 @@ local function loadAndValidate()
 
     end
 
+    -- Decision 67 fixed how NEW ownership claims get decided, but only
+    -- corrected the one already-wrong entry a player happened to run
+    -- into by hand -- ownership, once recorded, was never
+    -- re-evaluated, so any other line mis-attributed by the old
+    -- first-touch bug before this fix existed would have sat wrong
+    -- forever. This closes that gap the same way the stale-entry sweep
+    -- above already does: once per session, re-derive each recorded
+    -- line's real dominant stop and correct the record if it disagrees
+    -- with what's on file. Only ever overwrites when a real repeated
+    -- anchor is found (findDominantStationGroup returning non-nil) --
+    -- an already-split plain 2-stop line has no such anchor and is
+    -- deliberately left alone, same fallback rule isOwnedByOther itself
+    -- uses.
+    for lineId, ownerId in pairs(state) do
+
+        local dominantGroup = lines.findDominantStationGroup(lineId)
+
+        if dominantGroup ~= nil and dominantGroup ~= ownerId then
+
+            log.info(
+                "LINE OWNERSHIP: correcting mis-attributed line "
+                    .. tostring(lineId)
+                    .. " -- recorded owner " .. tostring(ownerId)
+                    .. " does not match its real dominant stop "
+                    .. tostring(dominantGroup)
+                    .. " -- reassigning."
+            )
+
+            state[lineId] = dominantGroup
+            changed = true
+
+        end
+
+    end
+
     if changed then
         saveStateToDisk(state)
     end

@@ -1257,6 +1257,68 @@ Added `lines.findDominantStationGroup(lineId)`: counts how many times each stati
 
 New wrong-owner assignments of this shape should no longer happen going forward. Not yet live-tested — needs a reload, then re-running Split/Distribution Hub on Corby North specifically to confirm Line 7 is finally picked up as its own. Worth keeping in mind: this was found because ONE case got surfaced by player frustration -- the same first-touch flaw could theoretically have mis-attributed other lines elsewhere on the map before this fix existed, and there's no bulk re-audit of already-recorded ownership built here, only a fix to how NEW claims get decided plus the one confirmed bad entry corrected by hand.
 
+## Decision 68 — Closed Decision 67's two acknowledged gaps: reentrancy guard now covers manual buttons too, and ownership mis-attribution now self-heals every session instead of needing a one-off manual fix
+
+### What happened
+
+Decision 66's reentrancy guard (`distributionState.hubSetupInProgress`) only ever wrapped the new one-click "Distribution Hub" setup sequence. The three older manual DEBUG-era buttons -- Split, Re-Organize Terminals, Assign & Balance Fleet -- call the exact same underlying line-mutating machinery (`splitAllManagedLines`, `terminal_allocator.spreadLinesAcrossTerminals`, `line_splitter`/`fleet_allocator`) but were never gated, so the identical overlap crash Decision 66 fixed for the ON/OFF toggle was still reachable by clicking one of these buttons at a second hub while a hub setup (or another manual button) was still running elsewhere. Separately, Decision 67 fixed how NEW ownership claims get decided (`lines.findDominantStationGroup`) and hand-corrected the one bad entry a player happened to find, but explicitly flagged that ownership, once recorded, was never re-evaluated -- any other pre-existing mis-attribution from the old first-touch bug would sit wrong forever with no way to notice it short of another player hitting the same "stubborn Line 7" symptom by chance.
+
+### Decision
+
+Both gaps closed:
+
+1. **Reentrancy guard extended.** `handleSplitButtonClick`, `handleReorganizeTerminalsButtonClick`, and `handleAssignAndBalanceButtonClick` now all check and set the same `distributionState.hubSetupInProgress` flag the ON/OFF toggle uses, clearing it in every completion and failure path (verified each function's callback chain reaches exactly one clearing point, same audit already done for Decision 66's original chain). One shared flag now makes any two of these four entry points -- toggle, Split, Re-Organize Terminals, Assign & Balance, at the same hub or different hubs -- mutually exclusive.
+2. **Ownership reconciliation made automatic.** `line_ownership.lua`'s `loadAndValidate()` (already a once-per-session pass, same throttle as its stale-entry cleanup) now also re-derives every recorded line's real dominant stop and corrects the record if it disagrees -- the exact check that manually caught the Corby North/Corby East case, now run automatically against every entry, every session, instead of only when a player happens to notice a stubborn line. Deliberately conservative: only overwrites when `findDominantStationGroup` finds a real repeated anchor (non-nil) that disagrees with the stored owner -- an already-split plain 2-stop line has no such anchor and is left untouched, same fallback rule `isOwnedByOther` itself already uses.
+
+### Reason
+
+Both were explicitly named as known, accepted gaps at the time (Decision 66's "not extended to the manual DEBUG buttons, lower probability since hidden behind Show Debug Tools" and Decision 67's "no bulk re-audit built here, only a fix to how NEW claims get decided"), not oversights discovered later. Closing them now: the manual buttons are still real, reachable code paths regardless of default visibility, and a silent per-session self-heal is strictly better than relying on a player to notice the same symptom Decision 67 needed a screenshot and pointed frustration to diagnose.
+
+### Consequence
+
+Cost is bounded and one-time per session: the reconciliation walk touches each already-recorded line once (same station-group counting `findDominantStationGroup` already does, no new game-wide scan), directly in line with the project's standing "minimal, not a new background poll" constraint. Not yet live-tested -- next play session should confirm no false-corrections fire against legitimately-settled ownership, and that clicking two manual buttons at different hubs back-to-back now correctly queues rather than overlaps.
+
+## Decision 69 — Cross-save contamination confirmed live for real (not just hypothetical): hub_registry now checks the "● " name as ground truth; four shared registry files reset after new-game data was found bleeding into Save 1
+
+### What happened
+
+Loading Save 1 and selecting Corby North -- a hub the player confirmed had never been touched in this save -- showed the "Distribution Hub" toggle already reading ON. Checked `epod_td_enabled_hubs.txt` directly: its 6 entries (`28014, 28029, 28905, 27920, 27437, 15903`) are the exact same stationGroup IDs as the 6 hub owners in last night's completely different "new game" fleet balance report. `epod_td_source_lines.txt` made it concrete: its one entry, `28905:24333`, is literally the exact hub/line pair from Decision 67's Corby East incident -- data that only ever existed because of that separate new-game session. Since none of these files are scoped per savegame (documented since Decision 24, partially addressed by Decision 63's existence-check), and since Save 1 and the new game apparently share the same underlying map/entity-ID layout, the new game's session -- played more recently -- had already overwritten whatever Save 1 itself recorded earlier tonight, before the two crashes.
+
+### Reason
+
+Decision 63's validate-on-load closes the case where a stored ID no longer resolves to anything real (a genuinely unrelated map). It does nothing for this case: the ID resolves fine, in both saves, to a real entity -- just the wrong save's history. This is a materially different, and more dangerous, failure mode than a wrong ON/OFF label: `source_line_registry` feeds its stored line ID directly into `assignVehiclesAndRetireStops`/`redistributeSpareVehiclesByDemand`/`deleteEmptySourceLine` -- exactly Decision 63's original crash mechanism (a resolvable-but-wrong-context ID reaching a mutating command), just not yet triggered because the player checked the label first instead of clicking Assign & Balance blind.
+
+### Decision
+
+Two changes:
+
+1. **`hub_registry.lua`'s `loadAndValidate()` gained a second, independent validity check** alongside the existing "does this ID still resolve" test: does the station's real, current name actually carry the "● " prefix Decision 64 always applies at the exact moment a hub is turned ON? A hub genuinely enabled in the currently-loaded save always has that prefix by the time anyone reads the flag again (the rename happens in the same synchronous click, before any later read). If the flag says enabled but the live name disagrees, the flag is dropped as cross-save noise rather than trusted. This directly generalizes the player's own diagnostic instinct ("check the name has a dot") into the same self-healing validate-on-load shape already proven for stale entries.
+2. **The four shared registry files were reset to empty** (`epod_td_enabled_hubs.txt`, `epod_td_source_lines.txt`, `epod_td_line_ownership.txt`, `epod_td_managed_lines.txt`) rather than hand-picking which entries belonged to which save -- tracing the evidence showed essentially all of it was new-game data already, and `managed_registry.lua`'s existing self-healing re-adopt-by-name pass (Decision 26) means nothing is permanently lost: any real `●`-named line in either save silently re-registers itself the next time it's touched. Real save data (lines, names, vehicles, in either save) was not touched -- only this mod's own external bookkeeping.
+
+A source-line-specific version of the same name-based ground-truth check was considered and deliberately NOT built tonight: unlike a hub, a legitimate in-progress source line is deliberately NOT "●"-renamed (it's the original combined line, mid-retirement), so the same heuristic doesn't transfer cleanly, and a rushed, unproven check risked introducing a new false-drop bug into a registry that feeds real delete commands -- worse than leaving the known gap named. Recorded here as still open, not solved.
+
+### Consequence
+
+Save 1 should now start genuinely clean for tonight's testing (items 2/3 from this session, plus this fix). Re-opening the new game later will show every hub toggle back to OFF -- expected and safe to re-click: Split's own line-detection is always a live scan, not registry-dependent, and already-split lines (realCount < 2) are a guaranteed no-op, confirmed by existing code, not yet re-tested live post-reset. This is the second real, live-observed consequence of the long-deferred "no per-save-scoped path" gap (Decision 24, Decision 63) -- no longer a theoretical caveat, now directly responsible for one wrong-label incident and one live-confirmed near-miss on the exact mechanism that already crashed the game once. Worth prioritizing the real fix (a genuine per-save-scoped persistence path) rather than continuing to patch individual symptoms as they're found.
+
+## Decision 70 — Panel was opening for any selected entity, not just stations
+
+### What happened
+
+Requested live: selecting a vehicle in-game (not a station) was popping the Truck Distribution panel open too.
+
+### Reason
+
+`resolveStationGroup(entityId)` already correctly returned `nil` for a vehicle -- a TRANSPORT_VEHICLE has neither a STATION nor STATION_GROUP component -- but `handleStationSelection` never actually checked that result before unconditionally opening/refreshing the window. `guiUpdate`'s own gate (`selectedEntityId == nil`) didn't help either, since `selectedEntityId` gets set for any resolvable entity, station or not.
+
+### Decision
+
+Factored the existing deselect logic (clear selection state, close the window if open) into a shared `closeDistributionWindowAndClearSelection()`, and call it from `handleStationSelection` whenever `resolveStationGroup` comes back nil -- treating "selected something that isn't a station" exactly like "selected nothing" for this panel's purposes, instead of opening for irrelevant content.
+
+### Consequence
+
+Not yet live-tested. Should confirm: selecting a vehicle no longer opens/refreshes the panel; selecting a real station still works exactly as before; switching directly from a station to a vehicle correctly closes the panel rather than leaving stale content.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

@@ -1028,6 +1028,27 @@ local function handleSplitButtonClick()
 
     end
 
+    -- Decision 66's reentrancy guard originally only covered the
+    -- one-click "Distribution Hub" setup sequence -- but this button
+    -- runs the exact same splitAllManagedLines/line_splitter machinery
+    -- that setup sequence chains, so it carries the identical overlap
+    -- risk (one run deleting/rewriting a line entity another run is
+    -- mid-scan against) if triggered concurrently with a hub setup, or
+    -- with itself at another hub. Now shares the same flag.
+    if distributionState.hubSetupInProgress then
+
+        logUi(
+            "SPLIT: another hub operation is still running -- "
+                .. "wait for it to finish before starting this one."
+        )
+
+        return
+
+    end
+
+    distributionState.hubSetupInProgress =
+        true
+
 
     local stationGroupId =
         distributionState.selectedStationGroupId
@@ -1040,6 +1061,9 @@ local function handleSplitButtonClick()
         )
 
     if not ok or managedLines == nil then
+
+        distributionState.hubSetupInProgress =
+            false
 
         logUi(
             "SPLIT: could not read managed lines: "
@@ -1072,7 +1096,15 @@ local function handleSplitButtonClick()
     splitAllManagedLines(
         stationGroupId,
         managedLines,
-        1
+        1,
+        nil,
+
+        function()
+
+            distributionState.hubSetupInProgress =
+                false
+
+        end
     )
 
 end
@@ -1102,6 +1134,24 @@ local function handleReorganizeTerminalsButtonClick()
 
     end
 
+    -- Same overlap risk as Split (see its own comment above) --
+    -- spreadLinesAcrossTerminals reads every line at the hub, including
+    -- ones a concurrent hub setup could be mid-deleting.
+    if distributionState.hubSetupInProgress then
+
+        logUi(
+            "REORGANIZE TERMINALS: another hub operation is still "
+                .. "running -- wait for it to finish before starting "
+                .. "this one."
+        )
+
+        return
+
+    end
+
+    distributionState.hubSetupInProgress =
+        true
+
 
     local stationGroupId =
         distributionState.selectedStationGroupId
@@ -1127,6 +1177,9 @@ local function handleReorganizeTerminalsButtonClick()
 
             function(processedCount)
 
+                distributionState.hubSetupInProgress =
+                    false
+
                 if distributionState.textViews ~= nil
                     and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
                 then
@@ -1144,6 +1197,9 @@ local function handleReorganizeTerminalsButtonClick()
         )
 
     if not ok then
+
+        distributionState.hubSetupInProgress =
+            false
 
         logUi(
             "REORGANIZE TERMINALS FAILED: "
@@ -1449,6 +1505,22 @@ local function handleAssignAndBalanceButtonClick()
 
     end
 
+    -- Same overlap risk as Split/Reorganize Terminals (see their own
+    -- comments above) -- this walks and mutates lines at the hub too.
+    if distributionState.hubSetupInProgress then
+
+        logUi(
+            "ASSIGN & BALANCE: another hub operation is still running -- "
+                .. "wait for it to finish before starting this one."
+        )
+
+        return
+
+    end
+
+    distributionState.hubSetupInProgress =
+        true
+
 
     if distributionState.textViews ~= nil
         and distributionState.textViews.assignBalanceButtonLabel ~= nil
@@ -1477,6 +1549,9 @@ local function handleAssignAndBalanceButtonClick()
         )
 
     if #sourceLineIds == 0 then
+
+        distributionState.hubSetupInProgress =
+            false
 
         logUi(
             "ASSIGN & BALANCE: no recorded source line for this hub -- "
@@ -1529,6 +1604,9 @@ local function handleAssignAndBalanceButtonClick()
         setDoneLabel,
 
         function()
+
+            distributionState.hubSetupInProgress =
+                false
 
             local keptText =
                 #totals.kept > 0
@@ -4067,61 +4145,72 @@ end
 -- STATION SELECTION
 -- ============================================================
 
+-- Shared by both a real deselect and by selecting something that
+-- isn't a station (a vehicle, a line, anything else) -- in both
+-- cases the panel has nothing to show and should behave exactly like
+-- a deselect, not linger open with stale/irrelevant content.
+local function closeDistributionWindowAndClearSelection()
+
+    distributionState.selectedEntity =
+        nil
+
+    distributionState.selectedEntityId =
+        nil
+
+    distributionState.selectedStationGroupId =
+        nil
+
+    distributionState.dirty =
+        true
+
+    -- Requested live: close our panel when the station is
+    -- deselected, rather than leaving an empty shell open.
+    -- guiHandleEvent already fires this same "deselect" path on
+    -- mainView regardless of what specifically triggered it (the
+    -- player clicking away on the map, or -- most likely, since
+    -- the game's own station-info panel only exists while
+    -- something is selected -- pressing that panel's own X).
+    -- Confirmed live from the base game's own res/scripts/gui.lua:
+    -- window:close() is a real method (game.gui.window_close),
+    -- the same underlying id onClose already uses. Whether the
+    -- vanilla panel's X specifically triggers this path has not
+    -- been independently confirmed -- worth watching for on the
+    -- next test.
+    local existingWindow =
+        api ~= nil
+            and api.gui ~= nil
+            and api.gui.util ~= nil
+            and api.gui.util.getById(WINDOW_ID)
+            or nil
+
+    if existingWindow ~= nil then
+
+        local okClose, closeErr =
+            pcall(function()
+                existingWindow:close()
+            end)
+
+        if not okClose then
+
+            logUi(
+                "Failed closing window on deselect: "
+                    .. tostring(closeErr)
+            )
+
+        end
+
+    end
+
+    updateDistributionWindow()
+
+end
+
+
 local function handleStationSelection(value)
 
     if value == nil then
 
-        distributionState.selectedEntity =
-            nil
-
-        distributionState.selectedEntityId =
-            nil
-
-        distributionState.selectedStationGroupId =
-            nil
-
-        distributionState.dirty =
-            true
-
-        -- Requested live: close our panel when the station is
-        -- deselected, rather than leaving an empty shell open.
-        -- guiHandleEvent already fires this same "deselect" path on
-        -- mainView regardless of what specifically triggered it (the
-        -- player clicking away on the map, or -- most likely, since
-        -- the game's own station-info panel only exists while
-        -- something is selected -- pressing that panel's own X).
-        -- Confirmed live from the base game's own res/scripts/gui.lua:
-        -- window:close() is a real method (game.gui.window_close),
-        -- the same underlying id onClose already uses. Whether the
-        -- vanilla panel's X specifically triggers this path has not
-        -- been independently confirmed -- worth watching for on the
-        -- next test.
-        local existingWindow =
-            api ~= nil
-                and api.gui ~= nil
-                and api.gui.util ~= nil
-                and api.gui.util.getById(WINDOW_ID)
-                or nil
-
-        if existingWindow ~= nil then
-
-            local okClose, closeErr =
-                pcall(function()
-                    existingWindow:close()
-                end)
-
-            if not okClose then
-
-                logUi(
-                    "Failed closing window on deselect: "
-                        .. tostring(closeErr)
-                )
-
-            end
-
-        end
-
-        updateDistributionWindow()
+        closeDistributionWindowAndClearSelection()
 
         return
 
@@ -4168,6 +4257,30 @@ local function handleStationSelection(value)
     end
 
 
+    local stationGroupId =
+        resolveStationGroup(
+            entityId
+        )
+
+    -- Requested live: selecting a vehicle (or a line, or anything
+    -- else that isn't a real station/station group) was popping this
+    -- panel open too, since everything past this point used to run
+    -- unconditionally for any resolvable entity. resolveStationGroup
+    -- already correctly returns nil for a vehicle -- a
+    -- TRANSPORT_VEHICLE has neither a STATION nor STATION_GROUP
+    -- component -- so a nil result here means the player selected
+    -- something this panel has nothing to say about. Treat it exactly
+    -- like a deselect rather than opening/refreshing the window for
+    -- irrelevant content.
+    if stationGroupId == nil then
+
+        closeDistributionWindowAndClearSelection()
+
+        return
+
+    end
+
+
     distributionState.selectedEntity =
         entity
 
@@ -4175,9 +4288,7 @@ local function handleStationSelection(value)
         entityId
 
     distributionState.selectedStationGroupId =
-        resolveStationGroup(
-            entityId
-        )
+        stationGroupId
 
     -- stations.dumpItemHistory used to fire here once per session --
     -- answered "do itemsLoaded/itemsUnloaded's _lastMonth/_lastYear

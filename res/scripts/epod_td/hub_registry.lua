@@ -129,6 +129,35 @@ local function loadAndValidate()
             state[hubId] = nil
             changed = true
 
+        elseif stations.getRawEntityName(hubId):sub(1, 4) ~= "● " then
+
+            -- Live-confirmed real case, not hypothetical: this file's
+            -- own header comment already predicted it -- two saves
+            -- from the same map/lineage genuinely reuse the same
+            -- stationGroup ID, so the plain existence check above
+            -- doesn't catch it (the ID resolves fine in BOTH saves, to
+            -- a real station, just the WRONG one's history). Turning a
+            -- hub ON always renames its real station with the "● "
+            -- prefix in the same click (Decision 64) before this flag
+            -- is ever read again -- so a hub genuinely enabled in the
+            -- CURRENTLY loaded save always has that prefix by the time
+            -- anyone calls isEnabled(). If the flag says enabled but
+            -- the real, live station name doesn't carry the prefix,
+            -- that's this save's own ground truth disagreeing with a
+            -- flag written by a different save -- drop it rather than
+            -- trust a shared file over what the game itself shows.
+            log.info(
+                "HUB REGISTRY: dropping cross-save entry "
+                    .. tostring(hubId)
+                    .. " (recorded ON, but this save's real station "
+                    .. "name has no \"● \" prefix -- almost certainly "
+                    .. "leftover from a different save that happens "
+                    .. "to share this entity ID)"
+            )
+
+            state[hubId] = nil
+            changed = true
+
         end
 
     end
