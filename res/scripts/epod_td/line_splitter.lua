@@ -3,6 +3,8 @@ local lines = require("epod_td.lines")
 local stations = require("epod_td.stations")
 local vehicles = require("epod_td.vehicles")
 local managed_registry = require("epod_td.managed_registry")
+local line_ownership = require("epod_td.line_ownership")
+local source_line_registry = require("epod_td.source_line_registry")
 
 local M = {}
 
@@ -152,15 +154,71 @@ local function processNext(context)
             .. " ↔ "
             .. destination.name
 
-    if lines.findByName(newLineName) ~= nil then
+    local existingLineId = lines.findByName(newLineName)
+
+    if existingLineId ~= nil then
+
+        -- LIVE-CONFIRMED real case (Decision 51): a name match here
+        -- does NOT necessarily mean this exact destination was
+        -- already split -- two different physical stations can share
+        -- a display name (a real map had two separate "Park Lane"
+        -- stationGroups). Blindly skipping on a name match silently
+        -- dropped the second one forever, since it never got its own
+        -- line and so could never be served. Check whether the
+        -- EXISTING same-named line actually goes to THIS destination
+        -- before treating it as a real duplicate.
+        local existingLine = lines.get(existingLineId)
+
+        local existingStops =
+            existingLine ~= nil
+                and lines.safeField(existingLine, "stops")
+                or nil
+
+        local existingStopCount =
+            lines.safeLength(existingStops)
+
+        local sameDestination = false
+
+        for index = 1, existingStopCount do
+
+            local stop = existingStops[index]
+
+            if stop ~= nil then
+
+                local stationGroup =
+                    lines.safeField(stop, "stationGroup")
+
+                if stationGroup == destination.stationGroup then
+                    sameDestination = true
+                    break
+                end
+
+            end
+
+        end
+
+        if sameDestination then
+
+            log.info(
+                "SPLIT SKIPPED (line already exists): "
+                    .. tostring(newLineName)
+            )
+
+            processNext(context)
+            return
+
+        end
+
+        -- Different physical station, same display name --
+        -- disambiguate with the destination's own entity ID rather
+        -- than silently losing a real destination.
+        newLineName =
+            newLineName .. " (" .. tostring(destination.stationGroup) .. ")"
 
         log.info(
-            "SPLIT SKIPPED (line already exists): "
-                .. tostring(newLineName)
+            "SPLIT: name collision with a DIFFERENT station -- "
+                .. "disambiguating as \"" .. newLineName .. "\""
         )
-
-        processNext(context)
-        return
 
     end
 
@@ -273,6 +331,7 @@ local function processNext(context)
 
                             if newLineId ~= nil then
                                 managed_registry.register(newLineId)
+                                line_ownership.claim(newLineId, context.hubStationGroup)
                             end
 
                         end
@@ -347,6 +406,50 @@ function M.splitLineIntoDestinations(
         return {
             success = false,
             reason = "source-line-unreadable"
+        }
+
+    end
+
+
+    -- Decision 59: a line that genuinely touches two enabled hubs at
+    -- once (e.g. hub B is itself one of hub A's stops) would
+    -- otherwise get split independently from BOTH hubs' perspectives
+    -- -- each treating the other as "just a destination" -- producing
+    -- duplicate lines for the same station pair and leaving the
+    -- source line claimed by nobody in particular, never fully
+    -- retired by either side. line_ownership already tracks exactly
+    -- this ("which hub owns this line") for split children and
+    -- adopted lines (Decision 45/48); this is the same check applied
+    -- to the SOURCE line itself, at the one point that's about to
+    -- treat it as "mine to split." isOwnedByOther lazily claims an
+    -- unowned line for hubStationGroup as a side effect, matching
+    -- planner.lua's existing usage.
+    if line_ownership.isOwnedByOther(lineInfo.id, hubStationGroup) then
+
+        log.info(
+            "SKIPPED: line already claimed by a different hub as its "
+                .. "own combined source (owner="
+                .. tostring(line_ownership.getOwner(lineInfo.id))
+                .. "): "
+                .. tostring(lineInfo.name)
+        )
+
+        -- Must still call onComplete: splitAllManagedLines's caller
+        -- chains through this callback to move on to the NEXT
+        -- candidate line -- skipping it here would silently stall
+        -- the whole Split All sequence right at this line, since
+        -- this path (unlike "nothing to split", which the caller
+        -- already pre-filters via its own realCount < 2 check) is
+        -- genuinely reachable in normal use.
+        if onComplete ~= nil then
+            onComplete(0, 0)
+        end
+
+        return {
+            success = true,
+            createdCount = 0,
+            totalCount = 0,
+            reason = "already-owned-by-other-hub"
         }
 
     end
@@ -431,9 +534,25 @@ function M.splitLineIntoDestinations(
     )
 
 
+    -- Decision 46 fix: record which line this actually is FOR this
+    -- hub, the one moment it's genuinely known -- "Assign & Balance
+    -- Fleet" reads this back instead of guessing by a hardcoded name.
+    -- Only when there's genuinely more than one real destination left
+    -- on it: splitAllManagedLines (the button's caller) runs this
+    -- function once per line already touching the hub, including
+    -- lines that are already clean, single-destination children from
+    -- an earlier split -- those would reach this point too (their one
+    -- real destination just gets skipped a few lines down as
+    -- "already exists"), and must never overwrite the real combined
+    -- source's record with themselves.
+    if #realDestinations > 1 then
+        source_line_registry.addSourceLine(hubStationGroup, lineInfo.id)
+    end
+
     processNext({
         sourceLine = sourceLine,
         sourceLineName = lineInfo.name,
+        hubStationGroup = hubStationGroup,
         hubName = stations.getEntityName(hubStationGroup),
         hubStop = hubStop,
         destinations = realDestinations,
@@ -837,7 +956,7 @@ local function processStage2Next(context)
         log.info(
             "STAGE 2 COMPLETE: processed "
                 .. tostring(#context.candidates)
-                .. " empty split line(s)."
+                .. " split line(s)."
         )
 
         log.info("----------------------------------------")
@@ -845,6 +964,35 @@ local function processStage2Next(context)
         if context.onComplete ~= nil then
             context.onComplete(#context.candidates)
         end
+
+        return
+
+    end
+
+    -- Decision 52: a split line that's already staffed (by ongoing
+    -- Auto Redistribute, most likely, or a previous run) doesn't need
+    -- a vehicle FROM the source line -- it just needs its stop
+    -- retired off the source, same end state either way.
+    if candidate.vehicleCount > 0 then
+
+        log.info(
+            "STAGE 2: "
+                .. tostring(candidate.name)
+                .. " already has "
+                .. tostring(candidate.vehicleCount)
+                .. " vehicle(s) -- retiring its stop without assigning "
+                .. "another."
+        )
+
+        removeStopFromSourceLine(
+            context.sourceLineId,
+            candidate.destinationStationGroup,
+            candidate.name,
+
+            function()
+                processStage2Next(context)
+            end
+        )
 
         return
 
@@ -903,30 +1051,56 @@ function M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplet
 
     end
 
+    -- LIVE-CONFIRMED BUG (Decision 52): this used to only consider a
+    -- split line a candidate if it was STILL EMPTY (vehicleCount ==
+    -- 0) -- written back when Stage 2 was the only thing that could
+    -- ever put a vehicle on a freshly-split line. Now that ongoing
+    -- Auto Redistribute runs concurrently and correctly treats every
+    -- registered split line as a normal deficit candidate, it
+    -- routinely staffs a split line with its own floor vehicle
+    -- before the player ever clicks "Assign & Balance Fleet" --
+    -- meaning that split line no longer counted as a "candidate"
+    -- here, so its stop was NEVER retired from the source line. The
+    -- source line's remaining un-retired stops kept showing real
+    -- waiting demand indefinitely, which both the ongoing dispatcher
+    -- AND this same Stage 3 redistribution kept correctly (from their
+    -- own local view) feeding MORE vehicles into -- the source line
+    -- could never reach zero and be deleted, exactly the "it keeps
+    -- getting reassigned a 2nd truck" behavior observed live. Fixed:
+    -- every managed split line touching this hub is now a candidate
+    -- regardless of current vehicle count; a line that's ALREADY
+    -- staffed (by Auto Redistribute or a previous run, doesn't
+    -- matter which) just has its stop retired directly, skipping the
+    -- assign-a-vehicle step it no longer needs.
     local candidates = {}
 
     for _, lineId in ipairs(allLineIds) do
 
         local name = lines.getName(lineId)
 
-        if managed_registry.isManaged(lineId) then
+        -- Harmless but confusing without this: the source line is
+        -- itself "managed" and can itself resolve a
+        -- destinationStationGroup (whatever real stop happens to be
+        -- first in whatever it has left), so without excluding it
+        -- explicitly it shows up as its own candidate and retires one
+        -- more of its own stops via a slightly misleading code path.
+        -- Observed live (harmless -- it just did one more legitimate
+        -- stop removal against itself) but worth excluding cleanly.
+        if lineId ~= sourceLineId
+            and managed_registry.isManaged(lineId)
+        then
 
-            local vehicleCount = #vehicles.getVehiclesForLine(lineId)
+            local destinationStationGroup =
+                findDestinationStationGroupOnSplitLine(lineId, hubStationGroup)
 
-            if vehicleCount == 0 then
+            if destinationStationGroup ~= nil then
 
-                local destinationStationGroup =
-                    findDestinationStationGroupOnSplitLine(lineId, hubStationGroup)
-
-                if destinationStationGroup ~= nil then
-
-                    candidates[#candidates + 1] = {
-                        id = lineId,
-                        name = name,
-                        destinationStationGroup = destinationStationGroup
-                    }
-
-                end
+                candidates[#candidates + 1] = {
+                    id = lineId,
+                    name = name,
+                    destinationStationGroup = destinationStationGroup,
+                    vehicleCount = #vehicles.getVehiclesForLine(lineId)
+                }
 
             end
 
@@ -937,7 +1111,7 @@ function M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplet
     if #candidates == 0 then
 
         log.info(
-            "Nothing to do: no empty mod-created (\"● \") split lines found."
+            "Nothing to do: no mod-created (\"● \") split lines found."
         )
 
         return {
@@ -948,7 +1122,7 @@ function M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplet
     end
 
     log.info(
-        "Empty split lines found: "
+        "Split lines found: "
             .. tostring(#candidates)
     )
 
@@ -1152,6 +1326,268 @@ function M.deleteEmptySourceLine(sourceLineId, hubStationGroup, onComplete)
         success = true,
         pending = true
     }
+
+end
+
+
+-- ============================================================
+-- DEDUPE: TWO MANAGED LINES SERVING THE SAME STATION PAIR
+--
+-- Decision 59: before the line_ownership check above existed (and
+-- for any data already sitting in a save from before this fix), a
+-- source line touching two enabled hubs at once could get split
+-- independently from BOTH hubs' perspectives, producing two separate
+-- 2-stop lines connecting the exact same two stations -- e.g.
+-- "Thatcham Sidings <-> Goole North" and "Goole North <-> Thatcham
+-- Sidings" as two different line entities. This mod treats lines as
+-- direction-agnostic (Decision 18/19), so two lines sharing a
+-- station pair are genuine duplicates, not two different routes.
+--
+-- Only ever deletes a duplicate with 0 vehicles -- same safety
+-- discipline as deleteEmptySourceLine above (deleteLine is proven,
+-- but only ever run against a line confirmed to have nothing left to
+-- lose). If more than one copy in a pair already has vehicles, none
+-- are touched -- resolving that would mean moving real vehicles/
+-- cargo, out of scope here, so it's only logged for a person to
+-- look at. Only ever considers plain 2-stop managed lines -- a
+-- combined source line (more than 2 stops) is a different shape and
+-- never a candidate here.
+-- ============================================================
+
+local function findManagedTwoStopLines()
+
+    local ok, allLineIds =
+        pcall(function()
+            return game.interface.getLines()
+        end)
+
+    local candidates = {}
+
+    if not ok or allLineIds == nil then
+        return candidates
+    end
+
+    for _, lineId in ipairs(allLineIds) do
+
+        if managed_registry.isManaged(lineId) then
+
+            local line = lines.get(lineId)
+            local stops = line ~= nil and lines.safeField(line, "stops") or nil
+            local stopCount = lines.safeLength(stops)
+
+            if stopCount == 2 then
+
+                local stationGroupA = lines.safeField(stops[1], "stationGroup")
+                local stationGroupB = lines.safeField(stops[2], "stationGroup")
+
+                if stationGroupA ~= nil and stationGroupB ~= nil then
+
+                    local key =
+                        stationGroupA < stationGroupB
+                            and (tostring(stationGroupA) .. ":" .. tostring(stationGroupB))
+                            or (tostring(stationGroupB) .. ":" .. tostring(stationGroupA))
+
+                    candidates[#candidates + 1] = {
+                        id = lineId,
+                        name = lines.getName(lineId),
+                        key = key,
+                        vehicleCount = #vehicles.getVehiclesForLine(lineId)
+                    }
+
+                end
+
+            end
+
+        end
+
+    end
+
+    return candidates
+
+end
+
+
+local function deleteDuplicateLine(entry, callback)
+
+    log.info(
+        "DEDUPE: deleting duplicate line (0 vehicles): "
+            .. tostring(entry.name)
+            .. " (id=" .. tostring(entry.id) .. ")"
+    )
+
+    local okCommand, commandOrError =
+        pcall(api.cmd.make.deleteLine, entry.id)
+
+    if not okCommand then
+
+        log.info(
+            "DEDUPE: DELETE LINE COMMAND ERROR ("
+                .. tostring(entry.name)
+                .. "): "
+                .. tostring(commandOrError)
+        )
+
+        callback()
+        return
+
+    end
+
+    local okSend, sendErr =
+        pcall(function()
+
+            api.cmd.sendCommand(commandOrError, function(cmd, success)
+
+                log.info(
+                    "DEDUPE: DELETE RESULT ("
+                        .. tostring(entry.name)
+                        .. "): "
+                        .. tostring(success)
+                )
+
+                callback()
+
+            end)
+
+        end)
+
+    if not okSend then
+
+        log.info(
+            "DEDUPE: DELETE SEND ERROR ("
+                .. tostring(entry.name)
+                .. "): "
+                .. tostring(sendErr)
+        )
+
+        callback()
+
+    end
+
+end
+
+
+local function processDedupeGroupsNext(groupKeys, groups, index, deletedCount, onComplete)
+
+    local key = groupKeys[index]
+
+    if key == nil then
+
+        log.info("----------------------------------------")
+
+        log.info(
+            "DEDUPE COMPLETE: "
+                .. tostring(deletedCount)
+                .. " duplicate line(s) deleted."
+        )
+
+        log.info("----------------------------------------")
+
+        if onComplete ~= nil then
+            onComplete(deletedCount)
+        end
+
+        return
+
+    end
+
+    local group = groups[key]
+
+    if group == nil or #group < 2 then
+        processDedupeGroupsNext(groupKeys, groups, index + 1, deletedCount, onComplete)
+        return
+    end
+
+    local withVehicles = {}
+    local empty = {}
+
+    for _, entry in ipairs(group) do
+
+        if entry.vehicleCount > 0 then
+            withVehicles[#withVehicles + 1] = entry
+        else
+            empty[#empty + 1] = entry
+        end
+
+    end
+
+    if #withVehicles > 1 then
+
+        log.info(
+            "DEDUPE: skipping duplicate pair -- more than one copy already "
+                .. "has vehicles, not safe to auto-resolve: "
+                .. tostring(group[1].name)
+        )
+
+        processDedupeGroupsNext(groupKeys, groups, index + 1, deletedCount, onComplete)
+        return
+
+    end
+
+    -- Keep exactly one: whichever copy has vehicles, if any, else the
+    -- first empty one found. Delete every other empty copy.
+    local keepId = nil
+
+    if #withVehicles == 1 then
+        keepId = withVehicles[1].id
+    elseif #empty > 0 then
+        keepId = empty[1].id
+    end
+
+    local toDelete = {}
+
+    for _, entry in ipairs(empty) do
+        if entry.id ~= keepId then
+            toDelete[#toDelete + 1] = entry
+        end
+    end
+
+    local function deleteNext(deleteIndex, runningDeletedCount)
+
+        local entry = toDelete[deleteIndex]
+
+        if entry == nil then
+            processDedupeGroupsNext(groupKeys, groups, index + 1, runningDeletedCount, onComplete)
+            return
+        end
+
+        deleteDuplicateLine(entry, function()
+            deleteNext(deleteIndex + 1, runningDeletedCount + 1)
+        end)
+
+    end
+
+    deleteNext(1, deletedCount)
+
+end
+
+
+-- Network-wide, not scoped to a single hub -- a duplicate pair can
+-- span two different hubs (that's exactly how Decision 59's case
+-- happened), so there is no single "current hub" to scope this to.
+function M.dedupeSharedRouteLines(onComplete)
+
+    log.info("----------------------------------------")
+    log.info("DEDUPE: SHARED ROUTE LINES")
+    log.info("----------------------------------------")
+
+    local candidates = findManagedTwoStopLines()
+
+    local groups = {}
+    local groupKeys = {}
+
+    for _, entry in ipairs(candidates) do
+
+        if groups[entry.key] == nil then
+            groups[entry.key] = {}
+            groupKeys[#groupKeys + 1] = entry.key
+        end
+
+        local group = groups[entry.key]
+        group[#group + 1] = entry
+
+    end
+
+    processDedupeGroupsNext(groupKeys, groups, 1, 0, onComplete)
 
 end
 

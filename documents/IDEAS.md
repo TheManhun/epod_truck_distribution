@@ -228,7 +228,7 @@ Only relevant once (if) terminal spreading is ever triggered automatically/repea
 
 **Graduated to `DECISIONS.md` Decision 22** (`terminal_allocator.lua`) — built and live-run once, with a real pre-existing-occupancy bug found and fixed (see DECISIONS.md). Left here because the "not yet confirmed" questions below are still genuinely open even though the feature itself now exists.
 
-**SUPERSEDED by Decision 42, not yet live-tested.** The demand-ranked single-dedicated-terminal-per-line model described below (rebuild the whole `Line`, write one `Line.Stop.terminal` value) has been replaced in `terminal_allocator.lua` with a much simpler shared-pool model: every managed line's hub stop gets the SAME full set of terminals via the (previously unused) `Line.Stop.alternativeTerminals` field and `api.cmd.make.setLineStopAlternativeTerminals`, letting TF2's own vehicle terminal-selection balance load per trip instead of the mod computing an assignment. If that command turns out not to exist/work as hoped, this section's original design (and its git history) is the fallback to revert to — kept below for that reason, not as active guidance.
+**ACTIVE AGAIN (Decision 50).** Decision 42 briefly replaced this with a shared-pool model built on `api.cmd.make.setLineStopAlternativeTerminals` — live multi-hub testing confirmed that command doesn't actually exist (every call failed with "attempt to call a nil value"), so `terminal_allocator.lua` was reverted back to exactly this demand-ranked, single-dedicated-terminal-per-line design, now re-confirmed working live on a second hub (Yarm East) alongside everything else fixed that session. This is the real, current implementation again, not a fallback.
 
 ### Origin
 
@@ -1301,5 +1301,127 @@ The player should always be able to say:
 with one click.
 
 `●` = DD has the wheel.
+
+---
+
+## Convert to Distribution Hub — Fast vs. Safe
+
+### Origin
+
+Raised live once "Split → Assign & Balance → Organize Terminals" was finally proven working end to end on a second hub (Decisions 45/46/48/50/51/52). PROGRESS.md #7 already lists folding those three stages into one "Convert to Distribution Hub" button; this refines that with a real choice the player should get, not just a single combined click.
+
+### The idea
+
+Assign & Balance already only ever takes an *empty* vehicle from the source line (`findEmptyVehicle`, the existing Bug A avoidance) — a genuinely gradual, "safe" conversion: the source line keeps earning off whatever's still loaded, and trucks migrate over naturally as they empty out, possibly across more than one click. The idea is to offer a second, faster option that skips that caution on purpose: grab every vehicle immediately regardless of what it's carrying, accept whatever's currently in transit as lost, and finish the conversion in one pass instead of several.
+
+Two plain buttons, not a popup — a TF2 GUI confirmation dialog with multiple choices has never been attempted in this codebase, and buttons are already proven dozens of times over, so there's no reason to take on that unproven API risk for something two buttons already solve cleanly:
+
+- **Convert (Safe)** — today's existing behavior, unchanged.
+- **Convert (Fast)** — same chain, but the vehicle-selection step takes any vehicle, loaded or not.
+
+### What's actually confirmed vs. still a story
+
+**Confirmed**: the "Safe" path end to end (Decisions 45/46/48/50/51/52) — split, retire stops, redistribute spares, delete the source line, all live-tested working on a real second hub.
+
+**Not yet built or tested**: the "Fast" variant itself, and whether reassigning a genuinely loaded vehicle via `setLine` actually loses its cargo outright or TF2 handles it some other way — this mod has always avoided testing that specific case on purpose (Bug A), so there's no live evidence either way yet.
+
+### If it does pan out
+
+Natural fit alongside PROGRESS.md #7's one-click conversion button once that gets built — two labeled variants of the same combined chain, differing only in which vehicles Stage 2 is allowed to take.
+
+---
+
+## Central Fleet Depot — buy trucks with no line, let DD deploy them network-wide
+
+### Origin
+
+Raised live during the 6-hub stress test, watching town cargo demand badly outstrip delivery (`documents/DECISIONS.md`'s Decision 56 session) and joking about just buying a couple hundred more trucks to catch up. The real idea underneath the joke: right now there's no way to buy trucks that AREN'T tied to a specific line from the moment of purchase — every truck goes straight onto whatever line the player buys it into, or (via Stage 3) gets redistributed among one hub's OWN split lines. There's no way to buy a batch of trucks into a neutral pool and have the mod figure out where they're actually needed most.
+
+### The idea
+
+A designated "central" station/depot where the player buys vehicles with no line assignment at all. DD detects these unassigned vehicles, ranks demand across **every enabled hub** (not just one, unlike Stage 3 today), and assigns each vehicle to whichever real destination line currently needs it most — a genuine network-wide version of the demand-ranked logic `fleet_allocator.redistributeSpareVehiclesByDemand` already proves works, just scoped up from "one hub's own split lines" to "the whole managed network."
+
+### What's actually confirmed vs. still a story
+
+**Confirmed**: the underlying demand-ranking mechanism (largest-remainder method, `fleet_allocator.lua`) already works, live-tested, within a single hub.
+
+**Not yet built or tested, and genuinely new territory**: detecting a vehicle that has been bought with no line at all (not yet confirmed this mod can identify "a vehicle sitting unassigned at a station" the same reliable way it identifies vehicles already on a managed line); ranking demand ACROSS multiple hubs simultaneously rather than one at a time; and assigning a brand-new vehicle onto a real line from scratch (previous work always started from a vehicle already on some existing line being reassigned, never a genuinely fresh, lineless purchase).
+
+### If it does pan out
+
+Would turn "buy 200 trucks" from a manual chore (picking which line each one goes to, then hoping it was the right call) into a single purchase decision, with DD handling deployment — a natural escalation of the same "player decides how much, DD decides where" pattern Auto Redistribute already established.
+
+### Refinement: make it a real, visible place, not just an abstract pool
+
+Raised live in the same session: instead of unassigned vehicles being an invisible mod-tracked state, give this a real physical home — one large truck bay/depot the player builds, where any bought-but-unassigned truck physically sits and visibly accumulates until DD deploys it. Two direct benefits over a purely invisible pool:
+
+- **A visual "do I need more trucks" signal.** An empty bay means DD has already deployed everything you bought; a bay full of parked trucks means either demand is genuinely being met everywhere, or deployment is stuck/slow — either way, the player can just look at the bay instead of needing a report to know whether to buy more.
+- **Natural fit with the Fleet Balance Report idea below** — the bay's own vehicle count becomes one more row in that report ("N trucks waiting at the central depot"), rather than a separate thing to track.
+
+### Further refinement: a custom-built model, linked per-hub, actually holding vehicles at rest
+
+Raised live once the physical-bay idea above was on the table: rather than a generic parking lot, a purpose-built depot model (designed via Claude + Blender, a separate asset pipeline from anything touched in this Lua-scripting project so far) that's explicitly linked to a specific distribution hub — so a busy hub can have its own overflow bay rather than one single global depot serving the whole map.
+
+The mechanism this would actually run on: `setVehicleShouldDepart` and `setVehicleManualDeparture`, both real, confirmed-existing entries in `api.cmd.make.*` (seen in the mod's own COMMAND SURFACE DIAGNOSTIC startup log every session, never yet used for anything). These are what would let a truck be genuinely held parked at the bay — not just idle on an empty line — until DD's demand ranking picks it and releases it onto a real destination line. That's a concrete, plausible mechanism, not just a visual idea: hold on arrival, release on assignment.
+
+**Genuinely new territory, not yet touched by this project at all**: building/importing a custom 3D model is a completely separate pipeline from every Lua change made so far — nothing about tonight's work (or any prior session) touches asset creation. This is realistically its own project phase: model first, then the departure-hold mechanism, then wiring it to the network-wide demand ranking from the Central Fleet Depot idea above. Not something to start same-session as a long stress-test night with one real crash already behind it — a fresh-start project when ready.
+
+### Further refinement: wire it up the same way a magic station name already works elsewhere
+
+Raised live: how does the depot actually get linked to a specific hub, in a way that feels natural to the player rather than requiring some separate UI? Proposed mechanism: the player builds an ordinary truck LINE connecting the depot ("Truck Central") to whichever real distribution hub they want it feeding, using nothing but the vanilla line-drawing tool they already know. The mod detects this new line (same detection this mod already does via `line_adopter.lua`'s new-line polling), records the depot↔hub relationship into a new dedicated registry (same proven `io.open` pattern as `hub_registry.lua`/`line_ownership.lua`/`source_line_registry.lua`), and then immediately deletes the actual line via `api.cmd.make.deleteLine` — already proven working, already used for real in `line_splitter.deleteEmptySourceLine`. The line was never meant to carry cargo; it was just the player's way of saying "link this depot to that hub," and gets converted into a persistent mod-level fact instead.
+
+This isn't a new mechanism invented from nothing — it directly reuses a pattern already live in this exact codebase: `config.PARK_NAME = "EPOD-TD Truck Park"` is already a magic station name the mod recognizes and treats specially (filtered out of destination lists in `vehicles.lua`). "Truck Central" would be the same trick — a recognized name, not a new kind of entity — just used to trigger a link-then-delete instead of a filter.
+
+**What's already proven vs. still to confirm**: `deleteLine` working — proven (Decision from the Stage 3.5 auto-delete feature). Detecting a new line touching a hub — proven (`line_adopter.lua`, running every session). **Not yet confirmed**: whether deleting the line immediately after creation, inside the same detection→respond cycle, causes any visible flicker or player confusion (the line existing on-screen for one frame before vanishing) — worth an isolated live test before relying on it, same evidence-first standard as everything else this project has done.
+
+### The actual payoff: this is how cross-hub rebalancing gets solved
+
+Raised live, and this is the piece that ties the whole night together: right now the Fleet Balance Report can *tell* the player Goole North is hoarding 134 trucks while a bridging line two hops away starves at 655 waiting (Decision 56 session, real numbers) — but the only fix is a person manually clicking Assign & Balance and hoping it reaches far enough. Depot↔hub links turn that from a report into an action: a starved hub (or the central depot) sends trucks across its own link, using data straight from the same demand-ranking already proven in `fleet_allocator.lua` and the Fleet Balance Report — real network-wide redistribution, not just the current within-one-hub version. This is the direct answer to the mod's biggest identified gap: "distribution *within* each hub" (proven, working) versus "distribution *across* the whole network" (the missing piece). Depot links plus the Fleet Balance Report's own data are the two halves of an actual solution to that gap, not two separate ideas.
+
+---
+
+## Network Reports as a Real GUI Feature (not just DEBUG file dumps)
+
+### Origin
+
+Raised live right after building the Fleet Balance Report and Dump All Managed Lines DEBUG buttons (Decision 56 session) — both proved genuinely useful for spotting real imbalances (the Corby North 39-truck/0-waiting line, the Goole North 134-truck hoarding line), but both are DEBUG-only, one-shot, and write to a file the player has to go find rather than a live in-game view.
+
+### The idea
+
+The new GUI framework's **Fleet tab** (`gui_tab_fleet.lua`, currently a placeholder) is the natural real home for this — live, always-visible, network-wide (every enabled hub at once, not just whichever one's selected) instead of a manual one-off DEBUG dump. Same underlying data and sort-by-worst-backlog logic already proven in `handleFleetBalanceReportButtonClick`, just rendered as a real panel that refreshes on its own like the Overview tab already does, instead of a button that writes a text file.
+
+### What's actually confirmed vs. still a story
+
+**Confirmed**: the exact data and ranking logic work — live-tested via the DEBUG button across 84 real lines and 486 real vehicles in one session, correctly surfacing every real imbalance found that session.
+
+**Not yet built**: rendering it inside `gui_manager.lua`'s row-pool system instead of as log/file output, and doing it network-wide (today's version takes a single `hubStationGroupId`; the tab version would need to loop every enabled hub, matching how the other polling loops already do this one hub at a time).
+
+### If it does pan out
+
+Turns tonight's one-off diagnostic tools into a permanent, always-available feature — the player could just open the Fleet tab any time to see the whole network's balance at a glance, instead of remembering to click a DEBUG button and go find a text file.
+
+---
+
+---
+
+## Detecting Merged-StationGroup Hubs
+
+### Origin
+
+Raised live (Decision 58): the Fleet Balance Report surfaced a line at Goole North with 14 fully idle vehicles and a suspicious "+"-joined name (`Goole Exchange + Goole Halt + Goole West + Goole East + Upper Goole + Upper Thatcham`). Turned out those six "destinations" are all the same `StationGroup` as the hub itself — TF2 auto-merges physically adjacent same-company stations regardless of individual building names — so the split pipeline's return-trip filter (correctly) treats every one of them as "the hub," and the line can never be split or rebalanced. Decided not to fix the underlying filter (see Decision 58's Reason — there's no reliable way to tell this apart from a genuine return-trip artifact), but the report could still make this visible instead of silent.
+
+### The idea
+
+Fleet Balance Report already flags `vehicleCount > 0 and waiting == 0` as "idle capacity." A cheap additional check: if a line's non-hub stop name contains " + " (TF2's own multi-stop auto-name joiner) alongside that same idle-capacity flag, add a second, more specific flag — something like `<-- possible merged-StationGroup hub (never split-eligible)` — so the player doesn't have to independently rediscover this via the Line Manager next time it happens on a different hub.
+
+### What's already proven vs. still a story
+
+**Confirmed**: the underlying cause (StationGroup merge → filtered out by the return-trip check → permanently unsplit) via live investigation this session. **Not yet built**: the name-pattern check itself — untested whether " + " reliably-only appears in this exact scenario or could false-positive on some other legitimately-named line.
+
+### If it does pan out
+
+Turns a "huh, that's weird, why is this idle" moment (which took a live Line Manager screenshot and a code read-through to explain, this time) into something the report just tells the player directly the first time it happens on any hub.
+
+---
 
 `○` = Player has the wheel.

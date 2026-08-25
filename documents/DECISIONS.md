@@ -750,7 +750,25 @@ Wired into `epod_truck_distribution.lua` as `pollNewLineAdoption()`, called from
 1. `api.cmd.make.setName` is live-confirmed on a VEHICLE entity (`fleet_naming.lua`) but has never been tried against a LINE entity — every line so far got its name baked in at `createLine` time, never renamed afterward. If it fails or no-ops on a LINE, the line still gets registered and managed correctly, just without the cosmetic "●" name matching the rest of the fleet.
 2. `vehicles.getManagedLinesForStation` only returns lines it can classify as ROAD carrier, which requires at least one currently-assigned vehicle (see `classifyLineCarrier`) — a line created with zero vehicles won't be detected until the player assigns at least one. Matches the real workflow observed tonight (both Grain and Hendon East already had a vehicle before being noticed) and the panel display's existing constraint, not a new gap.
 
-**Update — first real test, same session:** the player added a new line ("School Lane") with a truck, and it WAS auto-adopted (line count 7→8, confirmed live) — both open unknowns above are resolved: `setName` DOES work on a LINE entity, and a line with ≥1 vehicle is detected correctly. One real bug surfaced by this first live case: the adopted name came out as "● Hendon East ↔ Hendon East + School Lane" — `vehicles.getManagedLinesForStation`'s `destinations` list deliberately includes the hub's own stop (for return-direction demand display), which `buildAdoptedLineName` was joining in unfiltered. Fixed by filtering out any destination whose `stationGroup` matches the hub before building the name.
+**Update — first real test, same session:** the player added a new line ("School Lane") with a truck, and it WAS auto-adopted (line count 7→8, confirmed live) — both open unknowns above are resolved: `setName` DOES work on a LINE entity, and a line with ≥1 vehicle is detected correctly. One real bug surfaced by this first live case: the adopted name came out as "● Hendon East ↔ Hendon East + School Lane" — `vehicles.getManagedLinesForStation`'s `destinations` list deliberately includes the hub's own stop (for return-direction demand display), which `buildAdoptedLineName` was joining in unfiltered. Fixed by filtering out any destination whose `stationGroup` matches the hub before building the name. Note this fix is not retroactive — the already-registered "School Lane" line keeps its buggy name until manually renamed in TF2's own line editor, since the auto-adopter only ever processes lines not yet in the registry.
+
+## Decision 43 — Destination row wrap bug: waiting count split into its own fixed box
+
+### What happened
+
+Player screenshot, real bug: the Grain line's "-> Barrow-in-Furness Transfer | Waiting: 10" row wrapped ugly onto two lines, while the exact same destination showing "Waiting: 4" a few minutes later (same session, demand had just dropped) rendered fine on one line. Every other managed line's destination name is shorter and never showed this.
+
+### Reason
+
+`renderManagedLineRows` (`epod_truck_distribution.lua`) concatenated the destination name and the "| Waiting: N" suffix into one string rendered in a single fixed-width (`ROW_LABEL_WIDTH = 300`) text box. "Barrow-in-Furness Transfer" is the longest real destination name in the save; adding a 2-digit waiting count pushed the combined string just over the 300px wrap width, while a 1-digit count stayed just under it — a pure text-width bug, not a data bug (see Grain's math, confirmed correct, same conversation).
+
+### Decision
+
+Gave the waiting count its own small fixed-width text box (`WAITING_LABEL_WIDTH = 90`, new `waitingLabel` widget per row, same shared-row-pool pattern as `label`/`cargoIcons`/`cargoCounts`), the same treatment cargo counts already get next to their icons. `ROW_LABEL_WIDTH` reduced to 260 (destination name + arrow only, no longer carrying the suffix); `WINDOW_WIDTH` raised 560→610 to fit the new column. `destRow.label` now gets just `"    <arrow> <name>"`; `destRow.waitingLabel` gets `formatDestinationLabel`'s "Waiting: N" text separately. `clearRow` updated to blank the new widget too so it never leaks stale text onto a reused row.
+
+### Consequence
+
+**Not yet live-tested.** The exact pixel widths (260/90/610) are a first estimate extrapolated from the observed wrap point (~6.4px/char in this font: 300px held 47 characters without wrapping, 48 wrapped), not independently confirmed at these specific values — could still need tuning if a longer destination name than "Barrow-in-Furness Transfer" ever shows up, or if the font's real metrics differ from this estimate.
 
 ## Decision 42 — Stage 4 replaced: shared terminal pool via `alternativeTerminals` instead of a per-line dedicated-terminal lock
 
@@ -775,6 +793,303 @@ Rewrote `terminal_allocator.lua`'s `M.spreadLinesAcrossTerminals`: dropped `setL
 3. Whether `Line.Stop.terminal` needs to already hold a valid in-range value for the alternatives to be considered at all, or whether the default (untouched) value is fine.
 
 If this doesn't pan out, Decision 22's original demand-ranked single-terminal-lock design is the documented fallback (see `IDEAS.md`'s "Demand-Weighted Terminal Sharing" — kept there, marked superseded rather than deleted, specifically for this possibility) and is fully recoverable from git history.
+
+## Decision 44 — Multi-hub support: per-hub enabled set replaces the single global toggle
+
+### What happened
+
+Player decided "playable by many" is the actual next goal for this mod (not just polish for one save), and picked multi-hub support as the first gap to close: every real player's network is likely to have more than one distribution centre, and the mod so far only ever auto-manages one hub game-wide (`settings.lua`'s single `autoRedistribute` boolean + single `autoDispatchHubStationGroupId` value, captured from whichever station happened to be selected the moment the toggle was clicked ON — turning it on while looking at a second hub would silently drop the first hub's automation with no warning).
+
+### Reason
+
+Auditing every hub-touching function first showed this was a narrower fix than it looked: `planner.calculateTargetAllocation`, `dispatcher.applyPlan`, `terminal_allocator.spreadLinesAcrossTerminals`, `line_adopter.detectAndAdopt`, and `fleet_naming.renameFleetToHubIdentity` were ALL already parameterized per hub from when they were first built — none of them assumed a single global hub. The only genuinely single-hub parts were the persistence layer (one stored ID) and dispatcher.lua's reentrancy guard (one shared boolean for every hub's run).
+
+### Decision
+
+New module `hub_registry.lua`, same proven io.open/fresh-read pattern as `managed_registry.lua`: a real SET of hub stationGroup IDs, each independently `enable`d/`disable`d, `isEnabled` checked per hub, `getEnabledHubs()` returning the full list. `settings.lua`'s `autoRedistribute` and `autoDispatchHubStationGroupId` keys are retired (not migrated — a stale leftover key from before this change just sits inert, same tolerance the project already extends to any unused settings data). The Auto Redistribute button now only ever toggles whichever hub is currently selected (`distributionState.selectedStationGroupId`), never rebinding a different hub's state; its label is refreshed both on click and on every `updateDistributionWindow()` panel refresh (keyed by whichever station is selected at the time), so switching between two hubs shows each one's own real ON/OFF state instead of a stale value.
+
+`pollAutoDispatchPending` and `pollNewLineAdoption` (both `epod_truck_distribution.lua`) now walk `hub_registry.getEnabledHubs()` SEQUENTIALLY — one hub's `applyPlan`/`detectAndAdopt` call only starts after the previous hub's callback has actually fired, via the same one-at-a-time async-chain pattern already used everywhere else in this mod (`line_splitter.processNext`, `fleet_naming.processRenameNext`, `line_adopter.processAdoptNext`, `terminal_allocator.processCandidateNext`). Deliberately NOT firing every enabled hub's commands concurrently: dispatcher.lua's reentrancy guard (`applyPlanRunningByHub`, now a table keyed by hub instead of one shared boolean, since the Decision 36 scenario is about the SAME hub re-entering itself, not two disjoint hubs) makes concurrent-but-disjoint hubs LIKELY safe, but nothing has live-confirmed that overlapping command chains across different hubs are actually safe at the engine level — Decisions 37 and 38's incidents both came from exactly this kind of "should be fine" assumption, so this stays conservative for zero added cost (the whole poll already only runs once every `AUTO_ADOPT_POLL_INTERVAL`/`AUTO_DISPATCH_POLL_INTERVAL` frames).
+
+The single-flag reentrancy guards for the two polls themselves (`isLineAdoptionRunning`) did NOT need to become per-hub, since hubs are only ever processed one after another within one poll cycle — the flag correctly means "a poll cycle is still working through its hub list," not anything tied to one specific hub.
+
+### Consequence
+
+**Not yet live-tested with a genuine second hub.** Everything here is designed from correctly reading the existing hub-parameterized functions, not from a live multi-hub run — needs a save with two real distribution hubs, both toggled ON, to confirm: the button correctly shows independent state per hub, both hubs' automation actually runs (sequentially, per poll cycle), and a manual click on one hub's "Apply Fleet Plan" while the other hub's automatic poll is mid-chain is not incorrectly refused (the actual scenario the per-hub reentrancy guard exists for).
+
+## Decision 45 — Critical multi-hub scoping bug: `findDestinationStationGroup` never checked the line actually touches the hub
+
+### What happened
+
+Live multi-hub testing (Yarm East + Hendon East both enabled) showed Yarm's very first automatic dispatch run pull a vehicle off a genuine Yarm line and onto "Hendon East ↔ The Grove" — a line with zero physical connection to Yarm East. The log made it unambiguous: this wasn't the predicted "two hubs sharing one genuine bridging line" scenario, it was Yarm's planner treating a completely unrelated Hendon-only line as its own.
+
+### Reason
+
+`planner.lua`'s `findDestinationStationGroup(lineId, hubStationGroup)` returned the FIRST stop on a line whose stationGroup simply wasn't equal to `hubStationGroup` — it never checked that the line has a stop AT `hubStationGroup` in the first place. Checking "Hendon East ↔ The Grove" against Yarm's ID: the first stop, "Hendon East", already satisfies "not equal to Yarm's ID", so it got returned immediately as if it were a legitimate Yarm destination. Under a single hub this was invisible: every managed line touched that one hub by construction (either split from it or adopted because it touched it), so "the first non-matching stop" always happened to be the real destination — the function was never actually doing hub-scoping work, it just looked like it was. The instant a second hub existed, `collectManagedLineCandidates(yarmHub)` silently included every single managed line in the entire game, not just lines touching Yarm.
+
+### Decision
+
+Fixed: the function now walks every stop, requires finding one that actually EQUALS `hubStationGroup` (`touchesHub = true`) before returning any destination at all, and returns `nil` (correctly excluding the line as a candidate) if the hub is never found on the line's stop list.
+
+### Consequence
+
+**Live-confirmed as the fix, not yet re-tested end to end** — the player reloaded from a save just before this test to re-run it cleanly once the fix landed. This resets the earlier "hubs fighting over trucks" concern (Decision 44's open question) to genuinely unknown again: most of what looked like cross-hub conflict in the first test run was actually this bug, not real contention over an actual shared line. Worth re-observing with the fix in place before deciding whether the shared-bridging-line design question needs solving at all.
+
+## Decision 46 — Second bug found same session: `SOURCE_LINE_NAME` hardcoded to Hendon East's original line name
+
+### What happened
+
+"Assign & Balance Fleet (DEBUG)" failed immediately on Yarm East with "FAILED: source line not found."
+
+### Reason
+
+`config.lua`'s `M.SOURCE_LINE_NAME = "Truck - CD - Hendon"` is a single hardcoded literal string — the name of Hendon East's own original combined line from early in this project. `fleet_allocator.redistributeSpareVehiclesByDemand`'s caller looks up the source line via `lines.findByName(config.SOURCE_LINE_NAME)`, which can only ever find that one specific name. Yarm East's original combined line was named "Line 6," so the lookup always returns nil for it (or for any hub that isn't Hendon East). This predates multi-hub entirely — a single-hub hardcoding assumption that simply never got exercised until a second hub existed to expose it.
+
+### Decision
+
+Fixed, same session. New module `source_line_registry.lua`, same file-I/O pattern as the others: `line_splitter.lua`'s `M.splitLineIntoDestinations` records `hubStationGroup -> lineInfo.id` at the moment it actually splits a genuine combined line (guarded by `#realDestinations > 1`, so an already-split single-destination child passing back through this same function on a re-run of the split button never overwrites the real record with itself). `handleAssignAndBalanceButtonClick` (`epod_truck_distribution.lua`) now reads this per-hub record instead of `lines.findByName(config.SOURCE_LINE_NAME)`. If no source line is recorded yet for a hub, it now fails with a clear message ("run Split Into Lines... first") instead of a silent "source line not found" that reads like the feature is just broken -- the player's own reasoning for prioritizing this fix ("the end user sees it do nothing, they would delete it at this stage").
+
+Reasoning for automating this stage too, deliberately NOT done yet: this is the riskiest stage (real vehicle moves + deleting the original line), and per PROGRESS.md's "Bug A/B" it still carries an acknowledged open risk. Same staged discipline as everything else built successfully tonight -- prove it manually across more than one hub first, then consider folding it into the automatic chain adoption/terminal-pooling already use.
+
+## Decision 47 — Auto-adoption now also re-applies the shared terminal pool
+
+### What happened
+
+Player asked directly: does Auto Redistribute organize terminals for a newly adopted line, or only reassign vehicles? Checked: `pollNewLineAdoption`/`pollAutoDispatchPending` never called `terminal_allocator.spreadLinesAcrossTerminals` — that only ever ran from the manual "Split Into Lines & Organize Terminals" button. A hands-off hub was still leaving newly-adopted lines on whatever terminal they already had.
+
+### Decision
+
+`processHubAdoptionNext` (`epod_truck_distribution.lua`) now calls `terminal_allocator.spreadLinesAcrossTerminals(hubStationGroupId, {}, ...)` immediately after a successful adoption, but ONLY when `adoptedCount > 0` for that hub this cycle — `spreadLinesAcrossTerminals` re-writes every managed line's `alternativeTerminals` unconditionally each time it's called, so gating it behind "something actually changed" avoids re-sending identical commands to every line, every poll cycle, for no reason. Same sequential one-hub-at-a-time chain as the rest of Decision 44's design (the terminal step completes before moving to the next hub).
+
+### Consequence
+
+**Not yet live-tested.**
+
+## Decision 48 — Shared-line ownership: a line belongs to exactly one hub
+
+### What happened
+
+After Decision 45's fix, a re-test with three enabled hubs (Yarm East, Hendon East, Hendon Annex) showed the log clearly: a genuine bridging line touching all three of them ("Line 7", the real Yarm↔Hendon East↔Hendon Annex route) had its vehicle count pulled in different directions across nine consecutive automatic runs -- drained by Hendon East, drained further by Hendon Annex, blocked from being refilled by Yarm (the existing per-line direction cooldown correctly stopped an immediate reversal), drained again by Hendon Annex, partially given back, then refilled by Yarm. Three independent, locally-"correct" dispatchers competing for the same vehicles, never settling. This confirmed live exactly what had been flagged as an open design question a few exchanges earlier (Decision 44) -- not hypothetical anymore.
+
+### Reason
+
+Decision 45 fixed the bug where a hub's planner saw lines it had NO connection to at all. It deliberately did not address the separate, legitimate case: a line that genuinely touches more than one enabled hub is a real, valid candidate in EVERY one of those hubs' independent plans, and nothing coordinated between them. The direction-cooldown (Decision 33) only ever protects one line from reversing itself too fast -- it has no concept of "a DIFFERENT hub already decided something about this line moments ago."
+
+### Decision
+
+New module `line_ownership.lua`, same proven file-I/O pattern as `managed_registry.lua`/`hub_registry.lua`: every managed line belongs to exactly one hub. Ownership is set deterministically at the two moments it's actually known -- `line_splitter.lua` claims it for whichever hub a line was just split FOR, `line_adopter.lua` claims it for whichever hub's poll adopted it. For lines that predate this module entirely (Grain, School Lane, Line 6/7, anything managed before tonight) and so have no recorded owner: `line_ownership.isOwnedByOther` lazily claims it for whichever hub's planner run touches it first -- same self-healing-on-first-contact convention already used by `managed_registry.migrateAndValidate`.
+
+`planner.lua`'s `collectManagedLineCandidates` now excludes a line if it's owned by a DIFFERENT hub, even though `findDestinationStationGroup` confirms it structurally touches this hub too. This is the actual fix for the tug-of-war: only the owning hub's plan will ever include the line as a dispatch candidate going forward.
+
+### Consequence
+
+**Not yet live-tested.** The lazy-claim fallback means which hub ends up owning a pre-existing shared line (like Line 7) is effectively whichever hub's automatic poll happens to run first after this fix lands -- not a deliberate choice, just first-come-first-served, same as every other "first touch wins" convention in this mod. A deliberate player-facing way to reassign a line's owner (or see which hub currently owns it) is a real follow-up, not built here -- this only stops the fighting, it doesn't yet expose the decision to the player.
+
+## Decision 49 — "Dump All Managed Lines (DEBUG)" button
+
+### What happened
+
+Screenshots kept failing to upload during multi-hub testing (repeatedly too large). Player asked directly for a way to see the full network state straight from the log instead.
+
+### Decision
+
+New DEBUG button, same style as "Show Fleet Plan": logs every managed line game-wide (not scoped to the selected hub) with its current vehicle count, every real stop, which single hub owns it (Decision 48's `line_ownership.getOwner`), and which enabled hubs it structurally touches even if it isn't owned by them — the exact information needed to verify the ownership fix without a screenshot at all. Read-only, moves nothing.
+
+### Consequence
+
+**Not yet live-tested.**
+
+## Decision 50 — Shared terminal pool reverted: `setLineStopAlternativeTerminals` confirmed not to exist
+
+### What happened
+
+Live multi-hub test: "Split Into Lines & Organize Terminals" on Yarm East ran Stage 4 against all 9 candidate lines and every single one failed identically: `STAGE 4 COMMAND ERROR (...): attempt to call a nil value`.
+
+### Reason
+
+"attempt to call a nil value" is Lua's error for calling something that isn't actually a function. `api.cmd.make.setLineStopAlternativeTerminals` -- the command Decision 42 was built around, sourced from a pasted snippet and explicitly flagged at the time as NOT YET LIVE-CONFIRMED -- does not exist in this TF2 version under this name. The flag turned out to matter: this is exactly the scenario Decision 42's own writeup called out as the fallback case ("If that command turns out not to exist/work as hoped, this section's original design... is the fallback to revert to").
+
+### Decision
+
+Reverted `terminal_allocator.lua` to the exact pre-Decision-42 version: the demand-ranked, `api.cmd.make.updateLine`-based single-terminal-lock design, including both of its own hard-won live fixes (the line-count-before-load tiebreak, the stock-take exclusion of the just-split source line). `IDEAS.md`'s "Demand-Weighted Terminal Sharing" section is once again the active design, not a superseded fallback.
+
+### Consequence
+
+Not yet re-tested on Yarm East specifically post-revert, but this exact code is the same code already proven working on Hendon East many times over, so confidence is high. The shared-pool idea itself isn't necessarily dead -- if a real alternative-terminals command surfaces under a different name later, it's worth trying again -- but it needs independent live confirmation before being trusted with anything, not a pasted snippet's word for it.
+
+## Decision 51 — Split line naming: a name collision no longer silently drops a real destination
+
+### What happened
+
+Splitting Yarm East's combined line: `SPLIT SKIPPED (line already exists): ● Yarm East ↔ Park Lane`, and `SPLIT COMPLETE: 5 of 6 new lines created` -- one real destination never got split.
+
+### Reason
+
+The map has two genuinely different physical stations both named "Park Lane" (confirmed via the "Dump All Managed Lines" button, Decision 49: the combined line's stop list showed two different stationGroup IDs, both displaying as "Park Lane"). `line_splitter.lua` decided whether to skip a destination purely by whether a line with the intended name (`"● " .. hubName .. " ↔ " .. destination.name`) already existed -- it never checked whether that EXISTING line actually went to the SAME destination. The second "Park Lane" collided with the first's name and was silently skipped, meaning that whole real destination could never be served by the automated system at all, not a cosmetic issue.
+
+### Decision
+
+Before skipping on a name match, `line_splitter.lua` now reads the existing same-named line's own stops and checks whether `destination.stationGroup` is actually among them. Only skip if it genuinely is the same destination already split. If it's a different station that happens to share a display name, disambiguate by appending the destination's own stationGroup entity ID to the line name (e.g. "● Yarm East ↔ Park Lane (148559)") instead of dropping it.
+
+### Consequence
+
+**Not yet live-tested.** Also surfaced, not addressed here: splitting Line 7 (the real Yarm↔Hendon East↔Hendon Annex bridging line) from Yarm's own side created two brand-new lines ("● Yarm East ↔ Hendon East", "● Yarm East ↔ Hendon Annex") duplicating a connection Line 7 already provided. Not broken, just redundant capacity -- worth knowing about, not fixed tonight.
+
+## Decision 52 — Assign & Balance Fleet fixed: it was racing against Auto Redistribute and losing
+
+### What happened
+
+Player observed Line 6 (Yarm's original combined line) get stuck: drained down toward empty by the ongoing dispatcher, then handed a vehicle right back, repeatedly, never reaching zero even after "Assign & Balance Fleet" ran. Log traced it exactly: Stage 2 logged `Empty split lines found: 1` and only ever retired ONE stop (Victoria Road) off Line 6, even though six other split lines existed. Stage 3 then logged `candidate: Line 6 | waiting=14 | currentVehicles=20` and `PLAN: Line 6 -> +1 vehicle(s)` -- followed by `REFUSED: source line still has 1 vehicle(s) -- not deleting a line that's still doing work.`
+
+### Reason
+
+`line_splitter.M.assignVehiclesAndRetireStops` (Stage 2) only ever considered a split line a candidate for stop-retirement if it was CURRENTLY EMPTY (`vehicleCount == 0`) -- written back when Stage 2 was the only mechanism that could ever put a vehicle on a freshly-split line, so "still empty" and "hasn't been handled yet" meant the same thing. That assumption broke the moment ongoing Auto Redistribute started running concurrently (the entire point of tonight's multi-hub work): it correctly treats every registered split line as a normal deficit candidate and routinely staffs it with its own floor vehicle before the player ever gets to click "Assign & Balance Fleet." By the time Stage 2 ran, six of Yarm's seven split lines already had 1-2 vehicles each (from ordinary automatic dispatch, not Stage 2) -- so Stage 2 saw them as "not empty" and never retired their stops from Line 6. Those un-retired stops kept generating real waiting demand, which BOTH the ongoing dispatcher and Stage 3's own redistribution correctly (from their own local view) kept feeding vehicles into. Line 6 could structurally never reach zero.
+
+### Decision
+
+Stage 2 now collects EVERY managed split line touching the hub as a candidate, regardless of current vehicle count. A line that already has vehicles (staffed by Auto Redistribute or a prior run, doesn't matter which) has its stop retired from the source line directly, skipping the now-unnecessary "assign a vehicle from the source" step; a genuinely empty line still gets the original assign-then-retire treatment. `removeStopFromSourceLine` was already idempotent (logs "nothing removed" and moves on if the stop is already gone), so calling it more broadly across repeated runs is safe.
+
+### Consequence
+
+**Not yet live-tested.** Re-running "Assign & Balance Fleet" on Yarm East now should retire ALL of Line 6's remaining real stops in one pass rather than just whichever happened to still be empty, letting its vehicle count actually drain toward zero and `deleteEmptySourceLine` finally succeed.
+
+## Decision 53 — Assign & Balance Fleet now handles a hub with more than one source line
+
+### What happened
+
+Player noticed, correctly, that Line 7 never got retired the way Line 6 did, despite also being split at Yarm East and having a full fleet still sitting on it. Log confirmed: `Source line: Line 7 (id=171559)` split first, then `Source line: Line 6 (id=87762)` split second, both in the same "Split Into Lines" click.
+
+### Reason
+
+`source_line_registry.lua` (Decision 46) stored a single line ID per hub, overwritten on every split -- correct for the case it was built to fix (Hendon East's one hardcoded source line), but wrong the moment a hub genuinely has more than one original combined line touching it. Line 7 legitimately touches Yarm East (it's a real inter-hub route, not a mistake), so splitting Yarm East split it too -- but as the second split call's record overwrote the first, "Assign & Balance Fleet" only ever knew about whichever line was split last (Line 6). Line 7's split was real and correct; its retirement pass simply never had a chance to run.
+
+### Decision
+
+`source_line_registry.lua` now stores a SET of line IDs per hub (`M.addSourceLine` adds to the set, `M.getSourceLines` returns the whole array) instead of a single overwritten value. `handleAssignAndBalanceButtonClick` (`epod_truck_distribution.lua`) now runs the full assign → redistribute → delete chain against EVERY recorded source line for the hub, one at a time via a new `processSourceLineNext` recursive chain (same one-at-a-time discipline as every other multi-item async loop in this mod), accumulating combined totals for the final button label.
+
+### Consequence
+
+**Live-confirmed, Decision 53 update**: re-tested in the 6-hub stress test session below — Assign & Balance Fleet correctly processed multiple recorded source lines per hub, one at a time, exactly as designed.
+
+## Decision 54 — `source_line_registry` now removes an entry once its source line is actually deleted
+
+### What happened
+
+During the 6-hub stress test (Corby North, Corby East, Hemel Hempstead East, Stow-on-the-Wold North, Stow-on-the-Wold Transfer, Goole North — 84 managed lines total), a "Dump All Managed Lines" check turned up 84 identical `STAGE 2 STOP REMOVAL FAILED building route (...): Could not re-read source line.` entries in one sweep — every single managed line across every hub, all in the same button click.
+
+### Reason
+
+`source_line_registry.lua` (Decisions 46/53) had `M.addSourceLine` but no removal counterpart. Once a hub's original combined line was fully drained and deleted by a prior successful "Assign & Balance Fleet" run, its ID stayed recorded in `epod_td_source_lines.txt` forever. Every later click on that hub re-ran `assignVehiclesAndRetireStops` against that now-dead ID too, alongside whatever real work remained — `lines.get(deadId)` correctly returned nil, so every candidate line at that hub logged this exact failure once per click. Confirmed harmless (the failure path still calls its callback, so the chain continued and real work was never blocked — `line_splitter.lua` line 664), but genuine, permanent, ever-growing log noise on any hub that had ever completed one successful retirement.
+
+### Decision
+
+Added `M.removeSourceLine(hubStationGroupId, lineId)` to `source_line_registry.lua`. Wired into `epod_truck_distribution.lua`'s `processSourceLineNext`, called the moment `line_splitter.deleteEmptySourceLine`'s callback confirms `deleted == true`.
+
+### Consequence
+
+**Live-confirmed after a save reload**: fresh session log showed zero "Could not re-read source line" entries and zero FAILED entries at all, across two separate "Dump All Managed Lines" checks (84 lines, steady). Note: Lua game scripts load once per session, so this fix could not take effect until the save was reloaded — the stale entries already written before the fix kept generating noise for the rest of that same session, as expected.
+
+## Decision 55 — Added a dedicated "Re-Organize Terminals" button, independent of Split
+
+### What happened
+
+Player added more physical terminals to already-settled hubs mid-test (Goole North grew from 6 to 15 terminals; Stow-on-the-Wold Transfer grew further still, to 21) and asked whether DD could take advantage of them without re-running the whole Split flow.
+
+### Reason
+
+`terminal_allocator.spreadLinesAcrossTerminals` only ever ran from two places: the end of "Split Into Lines & Organize Terminals" (which also re-walks every managed line's split-candidacy logic, wasted work on an already-fully-split hub), or automatically after a genuinely new line is adopted (Decision 46/47). Neither path exists for "the player just built more terminals, nothing about the lines changed." This exact gap was raised live and logged in `IDEAS.md` ("Re-Spread Terminals When Terminal Count Changes") shortly before the player asked for it directly.
+
+### Decision
+
+Added a new always-visible button, "Re-Organize Terminals" (`handleReorganizeTerminalsButtonClick` in `epod_truck_distribution.lua`), sitting right under Split on every hub's panel. Calls `terminal_allocator.spreadLinesAcrossTerminals` directly for the selected hub with `excludeList = {}` — the same call shape already proven at the adoption call site. Not DEBUG-gated: same reasoning as folding the original "Spread Lines Across Terminals" step into Split originally — it never touches vehicle cargo, so it carries none of the Bug A/B risk the DEBUG-only buttons are gated for.
+
+### Consequence
+
+**Live-confirmed after the same save reload**: clicked on Stow-on-the-Wold Transfer with its newly-expanded 21 physical terminals. Log showed `Terminal count at hub: 21`, 28 managed lines planned and spread, all 28 STAGE 4 RESULTs reporting `true`. Removed from `IDEAS.md` as implemented and tested.
+
+## Decision 56 — `alternativeTerminals` research: real engine crash found and fixed; investigation paused
+
+### What happened
+
+Player wanted a line with a huge fleet (e.g. 20 trucks on one dedicated terminal) to be able to use every terminal at a hub instead of one, to relieve real road congestion observed at Goole North. Player independently found TF2's own native UI for this — the line-stop editor's second (fork-icon) terminal picker — confirming the underlying feature is real and player-facing. A disposable research function (`terminal_allocator.testAlternativeTerminals`) was built to determine whether the same `api.cmd.make.updateLine` command already proven throughout this mod could write this field programmatically, avoiding Decision 42's mistake of calling a separate command that didn't exist.
+
+Three shapes were tried in sequence, each informed by the previous result:
+1. **Bare integer** (matching how `.terminal` itself is written) — every append attempt returned `false`. Confirmed via the official API docs (`wiki.transportfever2.com/api/modules/api.type.html#StationTerminal`): `alternativeTerminals` requires a list of `type.StationTerminal`, a genuine native type, not a bare integer.
+2. **Plain `{station=, terminal=}` Lua table** — also failed outright for the same reason.
+3. **Proper `api.type.StationTerminal.new()` construction**, then setting `.terminal` (succeeded) and `.stationGroup` (failed on all 20 attempts) before appending anyway. This is where it went wrong: the code appended the object regardless of whether the station-identifying field write had succeeded, so 20 incomplete `StationTerminal` objects (valid terminal index, no valid station identity) were appended to a real, live line with 20 real vehicles and sent through `updateLine`, which accepted the command with no deeper validation. The game **fatally crashed** shortly after: `Assertion Failure: Assertion 'stIdx0 >= 0' failed`, consistent with the engine later trying to pathfind using one of the incomplete entries and computing a garbage/negative stop index.
+
+### Reason
+
+`pcall` succeeding on a field write only proves the write didn't throw a Lua-level error — it says nothing about whether the resulting native object is semantically valid, and `updateLine`/`sendCommand` do not appear to validate a line's `alternativeTerminals` contents before accepting it. The failure was silent and deferred: the command reported success, and the crash only happened later when the engine actually tried to use the malformed data during real pathfinding, not at write time. The official API docs also turned out to be a dead end for exact field names — `StationTerminal`'s own definition is just "Identifies a Terminal inside a StationGroup," with no field list published anywhere on the wiki.
+
+### Decision
+
+Fixed `testAlternativeTerminals` to never append a `StationTerminal` object unless BOTH the terminal index write and some station-identifying field write are confirmed successful first (tries `stationGroup` then falls back to `station`); if neither identity field can be set, that terminal index is now skipped and logged, never appended. **Investigation paused** rather than continued guessing against the field name live: the wiki has no further detail to try, and guessing further risks repeating the same crash on real production lines. If this is revisited, it should be tested against a disposable throwaway line (this codebase already has a proven create/test/delete pattern from earlier research) rather than a real line carrying real vehicles and cargo.
+
+### Consequence
+
+**Live-confirmed the fix prevents recurrence in principle** (an incomplete object can no longer be appended), but the underlying question — what field(s) `StationTerminal` actually needs — remains unanswered. **The save itself was confirmed NOT corrupted**: reloading afterward (into "TD-Test-Set-Up-2") loaded and ran cleanly, dump still showing a healthy 84 managed lines with zero errors. The one crash was real but self-contained to that single moment; it did not persist or recur on reload.
+
+## Decision 57 — Second real crash from the same research button; button removed entirely
+
+### What happened
+
+After reloading with Decision 56's fix in place, "Test Alt Terminals (DEBUG)" was clicked again (the player was aiming for a nearby report button — all the DEBUG buttons sit stacked together in the panel, an easy mis-click). This time the `.station` fallback field (the second candidate Decision 56's fix tries after `.stationGroup`) **succeeded** where `.stationGroup` had failed before, so the safety check passed and the object was appended. The game crashed again shortly after with a recoverable "Internal error: An error just occurred" dialog (softer than Decision 56's fatal engine assertion, but a real crash regardless) — same underlying cause: `pcall` succeeding on `stationTerminal.station = hubStationGroup` only proves the assignment didn't throw, not that a stationGroup ID is actually valid in a field meant for an individual station entity. The engine accepted the write, then failed later using the semantically-wrong value.
+
+### Reason
+
+Decision 56's fix addressed "never append an object where the write silently failed" but not the deeper problem: a *successful* write can still be semantically wrong, and there is no way to validate that from Lua before the engine actually uses the data. Guessing field names on an undocumented native type (`StationTerminal`) is inherently unsafe on a real production line — the second guess succeeding just meant the crash moved to a different candidate, not that it stopped happening. Compounding this: the button's placement, stacked directly among the report buttons the player actually uses, made an accidental click likely.
+
+### Decision
+
+Removed the "Test Alt Terminals" button and its handler entirely from `epod_truck_distribution.lua` — not fixed further, removed. Two real crashes from the same experimental feature is the threshold for "this doesn't stay clickable," regardless of further safety checks, until the actual field names are confirmed through a genuinely safe channel (e.g. official documentation with a full field list, or testing exclusively against a disposable throwaway line with no real cargo/vehicles at stake). The underlying research function (`terminal_allocator.testAlternativeTerminals`) remains in the codebase, callable manually if ever revisited — same pattern as other disposable research functions in this project — but nothing in the UI can trigger it anymore.
+
+### Consequence
+
+The `alternativeTerminals` investigation is now fully paused with no live path to accidentally re-trigger it. Confirmed (again) the crash is self-contained and recoverable — this one was a soft script-level "Internal error," the game kept running afterward and "Dump All Managed Lines" ran successfully moments later in the same session. If this feature is ever revisited, it needs a fundamentally different approach: either real documentation of `StationTerminal`'s fields, or exclusively testing against a disposable line, never a real one carrying real vehicles again.
+
+## Decision 58 — Merged-StationGroup hubs are an invisible dead zone for the split pipeline (discovered, not fixed)
+
+### What happened
+
+The new Fleet Balance Report (Decision 56 session's feature) surfaced a line — `Goole North ↔ Goole Exchange + Goole Halt + Goole West + Goole East + Upper Goole + Upper Thatcham` — sitting at 14 vehicles, 0 waiting, 0% in-transit utilization: fully idle. The player pulled it up in TF2's own Line Manager and found something odd: all 6 stops on that line display as "Goole North," just on different terminals (14, 1, 4, 5, 6, 8), not as 6 separate stations.
+
+Reading `line_splitter.lua` confirmed this line was never something the mod created — Stage 1 (`splitLineIntoDestinations`) only ever builds 2-stop (hub + one destination) lines, so a 6-stop line is structurally outside anything the split pipeline outputs. The actual cause: TF2 auto-merges physically adjacent/connected stations of the same company into one shared `StationGroup` entity regardless of individually-chosen building names. Goole Exchange, Goole Halt, Goole West, Goole East, Upper Goole, and Upper Thatcham are all, at the engine level, the *same* `StationGroup` as Goole North itself — just different terminals within one merged complex. TF2's own auto-naming for an unnamed multi-stop line joins the individual terminal labels with "+", which is exactly the name the report displayed.
+
+`splitLineIntoDestinations` explicitly filters out any "destination" whose `stationGroup` equals the hub's own (`line_splitter.lua:441`, the "(return)" filter) — real, intentional logic for skipping demand-scan artifacts about the source line's own hub stop. But because all 6 of these named terminals resolve to the *same* `stationGroup` as the hub, every one of them gets caught by that same filter and silently dropped. The line is never split, never touched by Stage 2/3/4, and its vehicles can never be rebalanced by anything this mod does.
+
+### Reason
+
+The mod's entire hub/destination model assumes one `StationGroup` = one physical place. That assumption breaks when the player (knowingly or not) lets TF2 merge several differently-named stations into a single `StationGroup` — from the mod's perspective, "the hub" and "six real destinations" become indistinguishable, because they genuinely are the same entity at the API level. This isn't a bug in the split/filter logic; the filter is doing exactly what it's supposed to do (skip return-trip artifacts). It's a real gap in the mod's underlying model of what a "hub" can be.
+
+### Decision
+
+Not fixing this in code. There is no reliable way to tell "a real return-trip stop" apart from "a real destination that happens to share the hub's `StationGroup` because of an in-game merge" — both look identical (`stationGroup == hubStationGroup`) from the API's point of view, so any change here risks breaking the return-trip filter this same logic correctly relies on everywhere else. The practical fix, if the player wants those trucks freed up, is entirely on the TF2 side: physically separate those stations in-game so they register as distinct `StationGroup`s again. Documenting this as a known, understood edge case rather than chasing a code fix for it.
+
+### Consequence
+
+Any hub built from multiple TF2-merged stations will have some fraction of its lines/vehicles permanently invisible to Stage 1-4, sitting at whatever state they were in when the merge happened — not a crash, not corrupted data, just silently outside the mod's reach. Worth checking for on any hub whose Fleet Balance Report shows a suspiciously idle line with a "+"-joined name; see IDEAS.md's "Detecting Merged-StationGroup Hubs" for a possible future report-side flag (surfacing it, not fixing it).
+
+## Decision 59 — A shared line touching two enabled hubs gets split twice; fixed with ownership + a dedupe sweep
+
+### What happened
+
+The player deliberately built a test line touching two enabled hubs at once (Goole North and Thatcham Sidings, since Thatcham Sidings is itself one of the line's stops), then split it and found the result confusing: `Goole North ↔ Goole Annex + Thatcham Sidings + Goole Sidings` (the original combined line) never shrank, and the raw log showed it had been split **twice**, independently, from each hub's own perspective. Goole North's split treated Thatcham Sidings as "just a destination" and vice versa, producing 5 overlapping child lines (`Thatcham Sidings ↔ Goole North`, `Thatcham Sidings ↔ Goole Annex`, `Thatcham Sidings ↔ Goole Sidings`, `Goole North ↔ Goole Annex`, `Goole North ↔ Thatcham Sidings`) for what was really 3 real destinations — and, since this mod treats lines as direction-agnostic (Decision 18/19), `Thatcham Sidings ↔ Goole North` and `Goole North ↔ Thatcham Sidings` are genuinely the same route created twice.
+
+### Reason
+
+`line_ownership.lua` (Decision 45/48) already exists specifically to give a shared line exactly one owning hub — but it was only ever consulted for split *children* and adopted lines (`planner.lua`'s dispatch candidate scan), never for the *source* combined line at the moment `line_splitter.splitLineIntoDestinations` decides to treat it as "mine to split." So nothing stopped a second hub from independently re-splitting a line the first hub had already claimed.
+
+### Decision
+
+Two changes, addressing prevention and cleanup separately (the player's own framing: "maybe if there's a double up the system just deletes it" covers cleanup, but not the underlying race that keeps producing new doubles):
+
+1. **Prevention**: `splitLineIntoDestinations` now checks `line_ownership.isOwnedByOther(lineInfo.id, hubStationGroup)` immediately after re-reading the source line, before doing anything else. If another hub already owns it, the split is skipped entirely and logged. Reuses the exact registry already proven for this purpose elsewhere — no new state file. (Caught in review before this shipped: every early-return path in this function, including the new one, must still call `onComplete`, since `splitAllManagedLines`'s caller chains through it to move on to the next candidate line in the list — missing this would have silently stalled the whole Split All sequence the first time this path fired for real, unlike the pre-existing early-return paths which the caller's own `realCount < 2` pre-filter mostly keeps it from ever reaching.)
+
+2. **Cleanup**: new `line_splitter.dedupeSharedRouteLines`, wired to a new "Dedupe Shared Route Lines (DEBUG)" button, network-wide (a duplicate pair can span two different hubs, so there's no single hub to scope it to). Groups every managed 2-stop line by its station pair (direction-agnostic, so A↔B and B↔A group together); for any pair with more than one line, keeps exactly one (preferring whichever copy already has vehicles) and deletes the rest, **only if they have 0 vehicles** — same safety discipline as `deleteEmptySourceLine`. If more than one copy in a pair already has vehicles, none are touched and it's only logged, since resolving that would mean moving real vehicles/cargo, out of scope here.
+
+### Consequence
+
+New duplicates of this kind can no longer form (fix #1). Existing ones, including the mess already sitting in the current save from before this fix, can be cleaned up on demand via the new DEBUG button (fix #2) rather than by hand in the Line Manager. Not yet live-tested — needs a reload to confirm both the ownership skip and the dedupe sweep behave as designed against the real 45120 mess.
 
 ## Appendix — open runtime-verification items
 

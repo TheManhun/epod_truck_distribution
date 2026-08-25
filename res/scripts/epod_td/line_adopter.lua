@@ -3,6 +3,7 @@ local lines = require("epod_td.lines")
 local stations = require("epod_td.stations")
 local vehicles = require("epod_td.vehicles")
 local managed_registry = require("epod_td.managed_registry")
+local line_ownership = require("epod_td.line_ownership")
 
 local M = {}
 
@@ -119,6 +120,7 @@ local function processAdoptNext(candidates, hubStationGroup, hubName, index, ado
 
     local function finishThisCandidate()
         managed_registry.register(candidate.id)
+        line_ownership.claim(candidate.id, hubStationGroup)
         processAdoptNext(candidates, hubStationGroup, hubName, index + 1, adoptedCount + 1, onComplete)
     end
 

@@ -8,6 +8,10 @@
 -- (Decisions 19-23) whenever the player presses a button:
 --   * Split Into Lines & Organize Terminals -- always visible,
 --     purely additive, never touches the source line.
+--   * Re-Organize Terminals -- always visible, re-runs just the
+--     terminal-spread step on demand (e.g. after the player builds
+--     more physical terminals at an already-settled hub) without
+--     re-walking Split's line detection.
 --   * Assign & Balance Fleet -- DEBUG-gated, moves real vehicles.
 --   * Auto Redistribute (toggle) / Rename Fleet to Hub Identity /
 --     Show Fleet Plan / Apply Fleet Plan -- DEBUG-gated, real
@@ -51,6 +55,10 @@ local fleet_naming = require("epod_td.fleet_naming")
 local planner = require("epod_td.planner")
 local dispatcher = require("epod_td.dispatcher")
 local line_adopter = require("epod_td.line_adopter")
+local hub_registry = require("epod_td.hub_registry")
+local line_ownership = require("epod_td.line_ownership")
+local source_line_registry = require("epod_td.source_line_registry")
+local gui_manager = require("epod_td.gui_manager")
 local gui = require("gui")
 
 
@@ -69,15 +77,34 @@ local WINDOW_ID =
 -- is no longer the thing that causes clipping, so it's safe to go
 -- wider again to cut down the vertical "skyscraper" shape.
 local WINDOW_WIDTH =
-    560
+    610
 
--- Width of the label portion of a row now that label + cargo icons
--- share one horizontal row instead of two separate vertical rows.
--- Must match what rows are created with in ensureDistributionWindow
--- (setText's width argument does not retroactively resize a widget
--- created narrower).
+-- Width of the label portion of a destination row -- the direction
+-- arrow + station name ONLY as of the WAITING_LABEL_WIDTH split
+-- below, no longer carrying the "| Waiting: N" suffix. Must match
+-- what rows are created with in ensureDistributionWindow (setText's
+-- width argument does not retroactively resize a widget created
+-- narrower).
 local ROW_LABEL_WIDTH =
-    300
+    260
+
+-- LIVE-CONFIRMED BUG, real screenshot: with the destination name and
+-- "| Waiting: N" sharing one 300px label box, "Barrow-in-Furness
+-- Transfer" (the longest real destination name in play) plus a
+-- 2-digit waiting count ("Waiting: 10") wrapped ugly onto a second
+-- line -- a 1-digit count ("Waiting: 4") on the exact same
+-- destination fit fine, confirming it's a width/wrap issue, not a
+-- data bug (see DECISIONS.md). Every other destination has a shorter
+-- name with enough spare room that it never showed. Fix: give the
+-- waiting count its own small fixed box, same pattern already used
+-- for cargo counts, instead of concatenating it into text that has
+-- to wrap around however long the name happens to be -- so no future
+-- long station name can push a number into an awkward wrap again.
+-- Pixel widths above/below are a first estimate extrapolated from
+-- the observed wrap point (~6.4px/char in this font), not yet
+-- independently live-confirmed at these exact values.
+local WAITING_LABEL_WIDTH =
+    90
 
 -- These three are pre-allocation ceilings, not real limits: every
 -- slot up to the max is created once at window-creation time (TF2
@@ -218,6 +245,19 @@ local distributionState = {
     windowClosedByUser =
         false,
 
+    -- Requested live: too many DEBUG/test buttons cluttering the
+    -- main panel. Rather than move them into the new gui_manager.lua
+    -- framework (deliberately built read-only, no buttons -- see its
+    -- own header comment), this just collapses the genuinely
+    -- diagnostic/one-off buttons behind a toggle on the SAME proven
+    -- panel. Auto Redistribute and Open New GUI stay always visible
+    -- (real operational controls, not diagnostics) -- see the
+    -- "SHOW/HIDE DEBUG TOOLS" section below for which buttons this
+    -- actually gates. Session-only (not persisted): purely a display
+    -- preference, not gameplay state worth a settings.lua entry.
+    debugToolsVisible =
+        false,
+
     dirty =
         false,
 
@@ -240,6 +280,12 @@ local distributionState = {
     -- dump in updateDistributionWindow): fires at most once per
     -- session. Remove alongside that dump once answered.
     hasRunLineEntityDump =
+        false,
+
+    -- One-off research question (see the TOWN FIELD RESEARCH dump in
+    -- updateDistributionWindow): fires at most once per session.
+    -- Remove alongside that dump once answered.
+    hasRunTownFieldDump =
         false
 
 }
@@ -255,6 +301,52 @@ local function logUi(message)
         "[TD-UI] "
         .. tostring(message)
     )
+
+end
+
+
+-- ============================================================
+-- WRITE REPORT TO FILE (fresh overwrite each time)
+--
+-- Requested live: the two DEBUG report buttons (Dump All Managed
+-- Lines, Fleet Balance Report) were dumping their full content into
+-- the same ever-growing shared game log every click, on top of
+-- everything else the engine logs -- reading the latest one meant
+-- scrolling through megabytes of unrelated noise each time. Same
+-- proven io.open pattern as hub_registry.lua/settings.lua/etc.: a
+-- plain "w" mode write replaces the whole file's content every call,
+-- no append, no cache -- so each report file always holds only its
+-- own most recent run.
+-- ============================================================
+
+local function writeReportFile(fileName, lines)
+
+    local ok, err =
+        pcall(function()
+
+            local file = io.open(fileName, "w")
+
+            if file == nil then
+                return
+            end
+
+            file:write(table.concat(lines, "\n"))
+            file:write("\n")
+
+            file:close()
+
+        end)
+
+    if not ok then
+
+        logUi(
+            "WRITE REPORT FILE FAILED ("
+                .. tostring(fileName)
+                .. "): "
+                .. tostring(err)
+        )
+
+    end
 
 end
 
@@ -805,7 +897,7 @@ local function splitAllManagedLines(
                         distributionState.textViews.splitButtonLabel:setText(
                             "[ Split & Organize Terminals (done: "
                                 .. tostring(processedCount)
-                                .. " terminal(s) -- see log) ]",
+                                .. " line(s) -- see log) ]",
                             WINDOW_WIDTH
                         )
 
@@ -960,6 +1052,94 @@ local function handleSplitButtonClick()
 end
 
 
+-- Raised live: a player adding MORE physical terminals to a hub
+-- that's already fully split and settled has no way to make DD use
+-- them -- spreadLinesAcrossTerminals only ever runs from Split (which
+-- would needlessly re-walk every line's split logic just to force a
+-- re-spread) or from a fresh line adoption. This calls the same
+-- terminal step directly, on demand, for whatever's currently
+-- selected -- same excludeList = {} already proven at the other call
+-- site (processHubAdoptionNext) that has no "just split" line to
+-- exclude. Always visible, not DEBUG-gated: same reasoning as folding
+-- the original "Spread Lines Across Terminals" button into Split --
+-- it never touches vehicle cargo, so it carries none of the Bug A/B
+-- risk the DEBUG-only buttons below are gated for.
+local function handleReorganizeTerminalsButtonClick()
+
+    if distributionState.selectedStationGroupId == nil then
+
+        logUi(
+            "REORGANIZE TERMINALS: no station selected."
+        )
+
+        return
+
+    end
+
+
+    local stationGroupId =
+        distributionState.selectedStationGroupId
+
+
+    if distributionState.textViews ~= nil
+        and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
+    then
+
+        distributionState.textViews.reorganizeTerminalsButtonLabel:setText(
+            "[ Reorganizing... (see log) ]",
+            WINDOW_WIDTH
+        )
+
+    end
+
+
+    local ok, err =
+        pcall(
+            terminal_allocator.spreadLinesAcrossTerminals,
+            stationGroupId,
+            {},
+
+            function(processedCount)
+
+                if distributionState.textViews ~= nil
+                    and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
+                then
+
+                    distributionState.textViews.reorganizeTerminalsButtonLabel:setText(
+                        "[ Re-Organize Terminals (done: "
+                            .. tostring(processedCount)
+                            .. " line(s) -- see log) ]",
+                        WINDOW_WIDTH
+                    )
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "REORGANIZE TERMINALS FAILED: "
+                .. tostring(err)
+        )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
+        then
+
+            distributionState.textViews.reorganizeTerminalsButtonLabel:setText(
+                "[ Re-Organize Terminals (crashed -- see log) ]",
+                WINDOW_WIDTH
+            )
+
+        end
+
+    end
+
+end
+
+
 -- ============================================================
 -- ASSIGN & BALANCE FLEET (config.DEBUG only)
 --
@@ -986,6 +1166,140 @@ end
 -- what is and is not yet proven about this.
 -- ============================================================
 
+-- Decision 53 fix: a hub can legitimately have split more than one
+-- original combined line (live-confirmed real case: Yarm East had
+-- BOTH "Line 6" and "Line 7" split in the same click, since Line 7
+-- genuinely touches Yarm East too as part of its real inter-hub
+-- route). source_line_registry now records a SET per hub, not a
+-- single value, so every recorded source line gets its own full
+-- assign+balance+delete pass here, one at a time -- not just
+-- whichever one happened to be split last.
+local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, totals, setDoneLabel, onAllDone)
+
+    local sourceLineId = sourceLineIds[index]
+
+    if sourceLineId == nil then
+        onAllDone()
+        return
+    end
+
+    local ok, err =
+        pcall(
+            line_splitter.assignVehiclesAndRetireStops,
+            sourceLineId,
+            hubStationGroupId,
+
+            function(assignedCount)
+
+                totals.assigned = totals.assigned + assignedCount
+
+                local ok2, err2 =
+                    pcall(
+                        fleet_allocator.redistributeSpareVehiclesByDemand,
+                        sourceLineId,
+                        hubStationGroupId,
+
+                        function(redistributedCount)
+
+                            totals.redistributed =
+                                totals.redistributed + redistributedCount
+
+                            -- Third step: if assign+balance left this
+                            -- source line with 0 vehicles and 0 real
+                            -- destinations, delete it -- it is now a
+                            -- degenerate hub-only loop serving
+                            -- nothing. deleteEmptySourceLine refuses
+                            -- to delete anything that still has
+                            -- either, so this is safe to always
+                            -- attempt rather than needing a separate
+                            -- confirmation click.
+                            local ok3, err3 =
+                                pcall(
+                                    line_splitter.deleteEmptySourceLine,
+                                    sourceLineId,
+                                    hubStationGroupId,
+
+                                    function(deleted, reason)
+
+                                        if deleted then
+
+                                            totals.deleted = totals.deleted + 1
+
+                                            source_line_registry.removeSourceLine(
+                                                hubStationGroupId,
+                                                sourceLineId
+                                            )
+
+                                        else
+
+                                            totals.kept[#totals.kept + 1] =
+                                                tostring(sourceLineId)
+                                                    .. " (" .. tostring(reason) .. ")"
+
+                                        end
+
+                                        processSourceLineNext(
+                                            sourceLineIds,
+                                            index + 1,
+                                            hubStationGroupId,
+                                            totals,
+                                            setDoneLabel,
+                                            onAllDone
+                                        )
+
+                                    end
+                                )
+
+                            if not ok3 then
+
+                                logUi(
+                                    "ASSIGN & BALANCE (delete step) FAILED for line "
+                                        .. tostring(sourceLineId) .. ": "
+                                        .. tostring(err3)
+                                )
+
+                                setDoneLabel(
+                                    "[ Assign & Balance Fleet (crashed -- see log) ]"
+                                )
+
+                            end
+
+                        end
+                    )
+
+                if not ok2 then
+
+                    logUi(
+                        "ASSIGN & BALANCE (balance step) FAILED for line "
+                            .. tostring(sourceLineId) .. ": "
+                            .. tostring(err2)
+                    )
+
+                    setDoneLabel(
+                        "[ Assign & Balance Fleet (crashed -- see log) ]"
+                    )
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "ASSIGN & BALANCE (assign step) FAILED for line "
+                .. tostring(sourceLineId) .. ": "
+                .. tostring(err)
+        )
+
+        setDoneLabel(
+            "[ Assign & Balance Fleet (crashed -- see log) ]"
+        )
+
+    end
+
+end
+
 local function handleAssignAndBalanceButtonClick()
 
     if distributionState.selectedStationGroupId == nil then
@@ -1011,13 +1325,42 @@ local function handleAssignAndBalanceButtonClick()
     end
 
 
-    local sourceLineId =
-        lines.findByName(
-            config.SOURCE_LINE_NAME
-        )
-
     local hubStationGroupId =
         distributionState.selectedStationGroupId
+
+    -- Decision 46/53 fix: this used to look up config.SOURCE_LINE_NAME,
+    -- a single hardcoded line name ("Truck - CD - Hendon") that only
+    -- ever matched Hendon East's own original line, then a single
+    -- per-hub record that a second split at the same hub could
+    -- silently overwrite. Now reads every source line
+    -- line_splitter.lua has ever recorded for this hub.
+    local sourceLineIds =
+        source_line_registry.getSourceLines(
+            hubStationGroupId
+        )
+
+    if #sourceLineIds == 0 then
+
+        logUi(
+            "ASSIGN & BALANCE: no recorded source line for this hub -- "
+                .. "run \"Split Into Lines & Organize Terminals\" here "
+                .. "first."
+        )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.assignBalanceButtonLabel ~= nil
+        then
+
+            distributionState.textViews.assignBalanceButtonLabel:setText(
+                "[ Assign & Balance Fleet (no source line -- see log) ]",
+                WINDOW_WIDTH
+            )
+
+        end
+
+        return
+
+    end
 
     local function setDoneLabel(text)
 
@@ -1034,104 +1377,38 @@ local function handleAssignAndBalanceButtonClick()
 
     end
 
-    local ok, err =
-        pcall(
-            line_splitter.assignVehiclesAndRetireStops,
-            sourceLineId,
-            hubStationGroupId,
+    local totals = {
+        assigned = 0,
+        redistributed = 0,
+        deleted = 0,
+        kept = {}
+    }
 
-            function(assignedCount)
+    processSourceLineNext(
+        sourceLineIds,
+        1,
+        hubStationGroupId,
+        totals,
+        setDoneLabel,
 
-                local ok2, err2 =
-                    pcall(
-                        fleet_allocator.redistributeSpareVehiclesByDemand,
-                        sourceLineId,
-                        hubStationGroupId,
+        function()
 
-                        function(redistributedCount)
+            local keptText =
+                #totals.kept > 0
+                    and (" | kept: " .. table.concat(totals.kept, ", "))
+                    or ""
 
-                            -- Third step: if assign+balance left the
-                            -- source line with 0 vehicles and 0 real
-                            -- destinations, delete it -- it is now a
-                            -- degenerate hub-only loop serving
-                            -- nothing. deleteEmptySourceLine refuses
-                            -- to delete anything that still has
-                            -- either, so this is safe to always
-                            -- attempt rather than needing a separate
-                            -- confirmation click.
-                            local ok3, err3 =
-                                pcall(
-                                    line_splitter.deleteEmptySourceLine,
-                                    sourceLineId,
-                                    hubStationGroupId,
+            setDoneLabel(
+                "[ Assign & Balance Fleet (done: "
+                    .. tostring(totals.assigned) .. " assigned, "
+                    .. tostring(totals.redistributed) .. " balanced, "
+                    .. tostring(totals.deleted) .. " source line(s) deleted"
+                    .. keptText
+                    .. " -- see log) ]"
+            )
 
-                                    function(deleted, reason)
-
-                                        local sourceLineText =
-                                            deleted
-                                                and "source line deleted"
-                                                or (
-                                                    "source line kept: "
-                                                        .. tostring(reason)
-                                                )
-
-                                        setDoneLabel(
-                                            "[ Assign & Balance Fleet (done: "
-                                                .. tostring(assignedCount)
-                                                .. " assigned, "
-                                                .. tostring(redistributedCount)
-                                                .. " balanced, "
-                                                .. sourceLineText
-                                                .. " -- see log) ]"
-                                        )
-
-                                    end
-                                )
-
-                            if not ok3 then
-
-                                logUi(
-                                    "ASSIGN & BALANCE (delete step) FAILED: "
-                                        .. tostring(err3)
-                                )
-
-                                setDoneLabel(
-                                    "[ Assign & Balance Fleet (crashed -- see log) ]"
-                                )
-
-                            end
-
-                        end
-                    )
-
-                if not ok2 then
-
-                    logUi(
-                        "ASSIGN & BALANCE (balance step) FAILED: "
-                            .. tostring(err2)
-                    )
-
-                    setDoneLabel(
-                        "[ Assign & Balance Fleet (crashed -- see log) ]"
-                    )
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        logUi(
-            "ASSIGN & BALANCE (assign step) FAILED: "
-                .. tostring(err)
-        )
-
-        setDoneLabel(
-            "[ Assign & Balance Fleet (crashed -- see log) ]"
-        )
-
-    end
+        end
+    )
 
 end
 
@@ -1272,6 +1549,462 @@ end
 
 
 -- ============================================================
+-- DUMP ALL MANAGED LINES (config.DEBUG only)
+--
+-- Requested live as a direct alternative to screenshots, which kept
+-- failing to upload during multi-hub testing: a full, game-wide dump
+-- of every managed line -- every stop, current vehicle count, and
+-- (Decision 48) which single hub actually OWNS it versus every
+-- enabled hub it merely happens to touch. Read-only, same as Show
+-- Fleet Plan -- moves nothing, just reports what's really there so
+-- the ownership fix (or anything else) can be checked straight from
+-- the log instead of a picture.
+-- ============================================================
+
+local function handleDumpAllManagedLinesButtonClick()
+
+    local output = {}
+
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "DUMP ALL MANAGED LINES"
+    output[#output + 1] = "========================================"
+
+    local ok, allLineIds =
+        pcall(function()
+            return game.interface.getLines()
+        end)
+
+    if not ok or allLineIds == nil then
+
+        logUi("DUMP ALL MANAGED LINES: could not read the line list.")
+
+        return
+
+    end
+
+    local enabledHubs = hub_registry.getEnabledHubs()
+    local enabledHubNames = {}
+
+    for _, hubId in ipairs(enabledHubs) do
+        enabledHubNames[hubId] = getEntityName(hubId)
+    end
+
+    local dumpedCount = 0
+    local totalVehicleCount = 0
+
+    for _, lineId in ipairs(allLineIds) do
+
+        if managed_registry.isManaged(lineId) then
+
+            dumpedCount = dumpedCount + 1
+
+            local lineName = lines.getName(lineId)
+            local vehicleCount = #vehicles.getVehiclesForLine(lineId)
+
+            totalVehicleCount = totalVehicleCount + vehicleCount
+            local ownerHubId = line_ownership.getOwner(lineId)
+
+            local ownerText = "unclaimed (no hub has run a plan against it yet)"
+
+            if ownerHubId ~= nil then
+
+                ownerText =
+                    tostring(enabledHubNames[ownerHubId] or getEntityName(ownerHubId))
+                        .. " (" .. tostring(ownerHubId) .. ")"
+
+            end
+
+            output[#output + 1] = "----------------------------------------"
+
+            output[#output + 1] =
+                "Line: " .. tostring(lineName)
+                    .. " (id=" .. tostring(lineId) .. ")"
+
+            output[#output + 1] = "  owner hub: " .. ownerText
+            output[#output + 1] = "  vehicles: " .. tostring(vehicleCount)
+            output[#output + 1] = "  stops:"
+
+            local line = lines.get(lineId)
+            local stops = line ~= nil and lines.safeField(line, "stops") or nil
+            local stopCount = lines.safeLength(stops)
+
+            local touchingHubs = {}
+
+            for index = 1, stopCount do
+
+                local stop = stops[index]
+
+                if stop ~= nil then
+
+                    local stationGroup = lines.safeField(stop, "stationGroup")
+                    local stopName = stations.getEntityName(stationGroup)
+
+                    output[#output + 1] =
+                        "    [" .. tostring(index - 1) .. "] "
+                            .. tostring(stopName)
+                            .. " (stationGroup=" .. tostring(stationGroup) .. ")"
+
+                    if stationGroup ~= nil and enabledHubNames[stationGroup] ~= nil then
+
+                        touchingHubs[#touchingHubs + 1] =
+                            tostring(enabledHubNames[stationGroup])
+                                .. " (" .. tostring(stationGroup) .. ")"
+
+                    end
+
+                end
+
+            end
+
+            if #touchingHubs > 0 then
+                output[#output + 1] =
+                    "  touches enabled hub(s): " .. table.concat(touchingHubs, ", ")
+            end
+
+        end
+
+    end
+
+    output[#output + 1] = "----------------------------------------"
+
+    output[#output + 1] =
+        "DUMP ALL MANAGED LINES COMPLETE: "
+            .. tostring(dumpedCount) .. " managed line(s), "
+            .. tostring(totalVehicleCount) .. " total vehicle(s)."
+
+    output[#output + 1] = "========================================"
+
+    writeReportFile("epod_td_dump_managed_lines.txt", output)
+
+    logUi(
+        "DUMP ALL MANAGED LINES: wrote "
+            .. tostring(dumpedCount) .. " managed line(s), "
+            .. tostring(totalVehicleCount) .. " total vehicle(s) to "
+            .. "epod_td_dump_managed_lines.txt (in the game install folder)."
+    )
+
+end
+
+
+-- ============================================================
+-- FLEET BALANCE REPORT (config.DEBUG only)
+--
+-- Requested live: "Dump All Managed Lines" already shows vehicle
+-- count per line but not waiting cargo, so spotting an imbalance --
+-- like a manually-forced 39-vehicle line sitting at 0 waiting right
+-- next to an 8-vehicle sibling backlogged at 126 -- meant eyeballing
+-- two separate screens. This is a compact, one-row-per-line report
+-- instead of the full stop-by-stop detail dump: name, owner hub,
+-- vehicle count, waiting total. Sorted highest-waiting-first so the
+-- worst backlogs surface immediately, with a plain-language flag on
+-- any line carrying vehicles but 0 waiting -- the same "sitting on
+-- idle capacity" signature spotted live. Read-only, moves nothing,
+-- same as Dump All Managed Lines and Show Fleet Plan.
+-- ============================================================
+
+-- Sums current cargo load and per-vehicle capacity across every
+-- vehicle on a line -- requested live to fill a real gap in the
+-- report: "waiting" only counts cargo still sitting at the stop, not
+-- cargo already picked up and in transit, so a line could look worse
+-- than it really is. Capacity uses the MAX single value found in
+-- each vehicle's allCapacities (matching the single number TF2's own
+-- UI shows per vehicle, e.g. "Cargo: 0/77") rather than summing
+-- every compatible cargo type together, which would overstate a
+-- vehicle that can carry several types but never all at once. One
+-- pcall per vehicle so a single bad read can't lose the whole line's
+-- total, same discipline as every other native-data loop in this
+-- mod.
+local function sumLineCargo(vehicleIds)
+
+    local totalCarrying = 0
+    local totalCapacity = 0
+
+    for _, vehicleId in ipairs(vehicleIds) do
+
+        pcall(function()
+
+            local cargoLoad = vehicles.getCargoLoad(vehicleId)
+
+            if cargoLoad ~= nil then
+
+                for _, amount in pairs(cargoLoad) do
+                    totalCarrying = totalCarrying + (amount or 0)
+                end
+
+            end
+
+            local allCapacities = vehicles.getAllCapacities(vehicleId)
+
+            if allCapacities ~= nil then
+
+                local vehicleCapacity = 0
+
+                for _, amount in pairs(allCapacities) do
+
+                    if (amount or 0) > vehicleCapacity then
+                        vehicleCapacity = amount
+                    end
+
+                end
+
+                totalCapacity = totalCapacity + vehicleCapacity
+
+            end
+
+        end)
+
+    end
+
+    return totalCarrying, totalCapacity
+
+end
+
+
+local function handleFleetBalanceReportButtonClick()
+
+    local output = {}
+
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "FLEET BALANCE REPORT"
+    output[#output + 1] = "========================================"
+
+    local ok, allLineIds =
+        pcall(function()
+            return game.interface.getLines()
+        end)
+
+    if not ok or allLineIds == nil then
+
+        logUi("FLEET BALANCE REPORT: could not read the line list.")
+
+        return
+
+    end
+
+    local rows = {}
+
+    for _, lineId in ipairs(allLineIds) do
+
+        if managed_registry.isManaged(lineId) then
+
+            local ownerHubId = line_ownership.getOwner(lineId)
+
+            local vehicleIds = vehicles.getVehiclesForLine(lineId)
+            local vehicleCount = #vehicleIds
+
+            local waiting = 0
+
+            if ownerHubId ~= nil then
+
+                local okScan, scanResult =
+                    pcall(demand.scan, lineId, ownerHubId)
+
+                if okScan and scanResult ~= nil then
+                    waiting = scanResult.totalWaiting or 0
+                end
+
+            end
+
+            local carrying, capacity = sumLineCargo(vehicleIds)
+
+            rows[#rows + 1] = {
+                name = lines.getName(lineId),
+                ownerHubId = ownerHubId,
+                vehicleCount = vehicleCount,
+                waiting = waiting,
+                carrying = carrying,
+                capacity = capacity
+            }
+
+        end
+
+    end
+
+    table.sort(rows, function(a, b)
+        return a.waiting > b.waiting
+    end)
+
+    local totalVehicles = 0
+    local totalWaiting = 0
+    local totalCarrying = 0
+    local totalCapacity = 0
+
+    for _, row in ipairs(rows) do
+
+        totalVehicles = totalVehicles + row.vehicleCount
+        totalWaiting = totalWaiting + row.waiting
+        totalCarrying = totalCarrying + row.carrying
+        totalCapacity = totalCapacity + row.capacity
+
+        local ownerText =
+            row.ownerHubId ~= nil
+                and getEntityName(row.ownerHubId)
+                or "unclaimed"
+
+        local flag = ""
+
+        if row.vehicleCount > 0 and row.waiting == 0 then
+            flag = "  <-- idle capacity (0 waiting)"
+        end
+
+        local utilizationPercent =
+            row.capacity > 0
+                and math.floor((row.carrying / row.capacity) * 100)
+                or 0
+
+        output[#output + 1] =
+            tostring(row.name)
+                .. "  |  owner=" .. tostring(ownerText)
+                .. "  |  vehicles=" .. tostring(row.vehicleCount)
+                .. "  |  waiting=" .. tostring(row.waiting)
+                .. "  |  in-transit=" .. tostring(row.carrying)
+                    .. "/" .. tostring(row.capacity)
+                    .. " (" .. tostring(utilizationPercent) .. "%)"
+                .. flag
+
+    end
+
+    output[#output + 1] = "----------------------------------------"
+
+    local totalUtilizationPercent =
+        totalCapacity > 0
+            and math.floor((totalCarrying / totalCapacity) * 100)
+            or 0
+
+    output[#output + 1] =
+        "FLEET BALANCE REPORT COMPLETE: "
+            .. tostring(#rows) .. " line(s), "
+            .. tostring(totalVehicles) .. " total vehicle(s), "
+            .. tostring(totalWaiting) .. " total waiting, "
+            .. tostring(totalCarrying) .. "/" .. tostring(totalCapacity)
+            .. " in-transit (" .. tostring(totalUtilizationPercent) .. "% fleet utilization)."
+
+    output[#output + 1] = "========================================"
+
+    writeReportFile("epod_td_fleet_balance_report.txt", output)
+
+    logUi(
+        "FLEET BALANCE REPORT: wrote "
+            .. tostring(#rows) .. " line(s), "
+            .. tostring(totalVehicles) .. " total vehicle(s), "
+            .. tostring(totalWaiting) .. " total waiting, "
+            .. tostring(totalCarrying) .. "/" .. tostring(totalCapacity)
+            .. " in-transit (" .. tostring(totalUtilizationPercent) .. "%) to "
+            .. "epod_td_fleet_balance_report.txt (in the game install folder)."
+    )
+
+end
+
+
+-- ============================================================
+-- DEDUPE SHARED ROUTE LINES (config.DEBUG only)
+--
+-- Decision 59: a line touching two enabled hubs at once could get
+-- split independently from both hubs' perspectives before the
+-- line_ownership check in line_splitter.splitLineIntoDestinations
+-- existed (or from a save that already has the leftover duplicates
+-- from before this fix), leaving two separate managed lines
+-- connecting the exact same two stations. Runs
+-- line_splitter.dedupeSharedRouteLines network-wide -- only ever
+-- deletes a duplicate with 0 vehicles, same safety discipline as
+-- every other delete in this codebase.
+-- ============================================================
+local function handleDedupeSharedRouteLinesButtonClick()
+
+    if distributionState.textViews ~= nil
+        and distributionState.textViews.dedupeSharedRouteLinesButtonLabel ~= nil
+    then
+
+        distributionState.textViews.dedupeSharedRouteLinesButtonLabel:setText(
+            "[ Deduping... (see log) ]",
+            WINDOW_WIDTH
+        )
+
+    end
+
+    local ok, err =
+        pcall(
+            line_splitter.dedupeSharedRouteLines,
+
+            function(deletedCount)
+
+                if distributionState.textViews ~= nil
+                    and distributionState.textViews.dedupeSharedRouteLinesButtonLabel ~= nil
+                then
+
+                    distributionState.textViews.dedupeSharedRouteLinesButtonLabel:setText(
+                        "[ Dedupe Shared Route Lines (done: "
+                            .. tostring(deletedCount)
+                            .. " deleted -- see log) ]",
+                        WINDOW_WIDTH
+                    )
+
+                end
+
+                logUi(
+                    "DEDUPE SHARED ROUTE LINES: deleted "
+                        .. tostring(deletedCount)
+                        .. " duplicate line(s)."
+                )
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "DEDUPE SHARED ROUTE LINES FAILED: "
+                .. tostring(err)
+        )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.dedupeSharedRouteLinesButtonLabel ~= nil
+        then
+
+            distributionState.textViews.dedupeSharedRouteLinesButtonLabel:setText(
+                "[ Dedupe Shared Route Lines (crashed -- see log) ]",
+                WINDOW_WIDTH
+            )
+
+        end
+
+    end
+
+end
+
+
+-- ============================================================
+-- OPEN NEW GUI (config.DEBUG only, TEMPORARY)
+--
+-- Toggles the new gui_manager.lua "DD Central Manager" framework
+-- window -- see documents/GUI_Plan.md. Deliberately a separate,
+-- additive window: this button and gui_manager.lua are the ONLY
+-- things that know it exists. Nothing about the existing "Truck
+-- Distribution" window/logic changes. Remove this button once the
+-- new GUI is far enough along to replace the old panel outright, not
+-- before.
+-- ============================================================
+
+local function handleOpenNewGuiButtonClick()
+
+    local ok, err =
+        pcall(
+            gui_manager.toggleVisibility,
+            distributionState.selectedStationGroupId
+        )
+
+    if not ok then
+
+        logUi(
+            "OPEN NEW GUI FAILED: " .. tostring(err)
+        )
+
+    end
+
+end
+
+
+-- ============================================================
 -- APPLY FLEET PLAN (config.DEBUG only)
 --
 -- First real piece of the Opportunistic Dispatcher (dispatcher.lua,
@@ -1367,72 +2100,74 @@ end
 -- at all (the Planner always runs, gating happens one layer up).
 -- Turning this off means "ask me first," not "stop thinking."
 --
--- REAL, AND FIXED FOR THE MULTI-INSTANCE PROBLEM (Decision 35):
--- attemptAutoDispatch runs from handleEvent, which live testing
--- proved runs on a DIFFERENT script instance than guiUpdate -- the
--- same class of bug that broke data()'s save/load (Decision 24).
--- That instance's own distributionState.selectedStationGroupId never
--- saw what the panel had selected, so auto-dispatch silently never
--- fired even with the toggle on. Fix: persist WHICH hub is being
--- auto-managed (settings.lua's autoDispatchHubStationGroupId) at the
--- moment the toggle is turned ON, rather than depending on whatever
--- happens to be selected right now -- file I/O is the one thing
--- already confirmed to cross the instance boundary reliably. This is
--- also better behavior, not just a workaround: auto-dispatch now
--- keeps running for that hub even while the player is looking at
--- something else on the map, instead of requiring the panel to stay
--- focused on it.
+-- MULTI-HUB (Decision 44): this used to persist ONE globally-captured
+-- hub ID (settings.lua's autoDispatchHubStationGroupId), rebound to
+-- whatever station happened to be selected the moment the toggle was
+-- clicked ON -- meaning turning it on while looking at a second hub
+-- silently dropped the first hub's automation with no warning. Now
+-- backed by hub_registry.lua's actual set of enabled hub IDs: this
+-- button always acts on whichever hub is CURRENTLY SELECTED only,
+-- toggling that one hub's membership in the set without touching any
+-- other hub already enabled. The label is refreshed both here and in
+-- updateDistributionWindow() (on every panel refresh, keyed by
+-- whichever station is selected at the time) so switching between two
+-- hubs shows each one's own real state rather than a stale value left
+-- over from whichever hub was last clicked.
+--
+-- Still relies on the Decision 35 file-I/O-crosses-instances fix:
+-- attemptAutoDispatch/pollAutoDispatchPending run from a different
+-- script instance than the GUI click handler, so hub_registry.lua
+-- reads fresh from disk every call, same as every other registry in
+-- this mod.
 -- ============================================================
 
-local function autoRedistributeLabelText()
+local function autoRedistributeLabelText(hubStationGroupId)
 
-    if settings.get("autoRedistribute") then
-
-        local hubId =
-            settings.get("autoDispatchHubStationGroupId")
-
-        if hubId == nil then
-            return "[ Auto Redistribute: ON (no hub captured yet) ]"
-        end
-
-        return "[ Auto Redistribute: ON (hub " .. tostring(hubId) .. ") ]"
-
+    if hubStationGroupId == nil then
+        return "[ Auto Redistribute: select a hub first ]"
     end
 
-    return "[ Auto Redistribute: OFF ]"
+    if hub_registry.isEnabled(hubStationGroupId) then
+        return "[ Auto Redistribute: ON for this hub ]"
+    end
+
+    return "[ Auto Redistribute: OFF for this hub ]"
 
 end
 
 local function handleAutoRedistributeToggleButtonClick()
 
-    local newValue =
-        not settings.get("autoRedistribute")
+    local hubStationGroupId =
+        distributionState.selectedStationGroupId
 
-    settings.set("autoRedistribute", newValue)
+    if hubStationGroupId == nil then
 
-    if newValue then
+        logUi(
+            "AUTO REDISTRIBUTE: no hub is currently selected -- "
+                .. "select one first."
+        )
 
-        if distributionState.selectedStationGroupId ~= nil then
+        return
 
-            settings.set(
-                "autoDispatchHubStationGroupId",
-                distributionState.selectedStationGroupId
-            )
+    end
 
-            logUi(
-                "AUTO REDISTRIBUTE: now managing hub "
-                    .. tostring(distributionState.selectedStationGroupId)
-            )
+    if hub_registry.isEnabled(hubStationGroupId) then
 
-        else
+        hub_registry.disable(hubStationGroupId)
 
-            logUi(
-                "AUTO REDISTRIBUTE: turned ON, but no hub is currently "
-                    .. "selected -- select one and toggle again to "
-                    .. "capture it."
-            )
+        logUi(
+            "AUTO REDISTRIBUTE: turned OFF for hub "
+                .. tostring(hubStationGroupId)
+        )
 
-        end
+    else
+
+        hub_registry.enable(hubStationGroupId)
+
+        logUi(
+            "AUTO REDISTRIBUTE: turned ON for hub "
+                .. tostring(hubStationGroupId)
+        )
 
     end
 
@@ -1441,16 +2176,72 @@ local function handleAutoRedistributeToggleButtonClick()
     then
 
         distributionState.textViews.autoRedistributeButtonLabel:setText(
-            autoRedistributeLabelText(),
+            autoRedistributeLabelText(hubStationGroupId),
             WINDOW_WIDTH
         )
 
     end
 
-    logUi(
-        "AUTO REDISTRIBUTE setting: "
-            .. tostring(newValue)
-    )
+end
+
+
+-- ============================================================
+-- SHOW/HIDE DEBUG TOOLS (config.DEBUG only)
+--
+-- Requested live: gates the genuinely diagnostic/one-off buttons
+-- (Assign & Balance Fleet, Rename Fleet, Show Fleet Plan, Dump All
+-- Managed Lines, Fleet Balance Report, Dedupe Shared Route Lines,
+-- Apply Fleet Plan) behind a toggle so the main panel stays short by
+-- default. Auto Redistribute and Open New GUI are deliberately left
+-- OUTSIDE this gate -- real operational controls the player reaches
+-- for regularly, not diagnostics.
+--
+-- No native "hide this one widget" API has ever been proven in this
+-- codebase (the only proven visibility control is the whole native
+-- window's own close(), used below), so this works the same way the
+-- station-deselect handler already does: close the native window
+-- entirely and let it rebuild fresh next tick, this time with (or
+-- without) the gated buttons included. windowClosedByUser must be
+-- reset straight after -- close() fires the same window:onClose()
+-- callback either way, and leaving that flag set would make
+-- ensureDistributionWindow() refuse to rebuild at all until the
+-- player reselects a station.
+-- ============================================================
+local function handleToggleDebugToolsButtonClick()
+
+    distributionState.debugToolsVisible =
+        not distributionState.debugToolsVisible
+
+    local existingWindow =
+        api ~= nil
+            and api.gui ~= nil
+            and api.gui.util ~= nil
+            and api.gui.util.getById(WINDOW_ID)
+            or nil
+
+    if existingWindow ~= nil then
+
+        local okClose, closeErr =
+            pcall(function()
+                existingWindow:close()
+            end)
+
+        if not okClose then
+
+            logUi(
+                "Failed closing window for debug-tools toggle: "
+                    .. tostring(closeErr)
+            )
+
+        end
+
+    end
+
+    distributionState.windowClosedByUser =
+        false
+
+    distributionState.dirty =
+        true
 
 end
 
@@ -1612,10 +2403,33 @@ local function ensureDistributionWindow()
         splitButton
 
 
+    distributionState.textViews.reorganizeTerminalsButtonLabel =
+        gui.textView_create(
+            WINDOW_ID .. ".reorganizeTerminalsButtonLabel",
+            "[ Re-Organize Terminals ]",
+            WINDOW_WIDTH,
+            false
+        )
+
+    local reorganizeTerminalsButton =
+        gui.button_create(
+            WINDOW_ID .. ".reorganizeTerminalsButton",
+            distributionState.textViews.reorganizeTerminalsButtonLabel
+        )
+
+    reorganizeTerminalsButton:onClick(
+        handleReorganizeTerminalsButtonClick
+    )
+
+    distributionState.reorganizeTerminalsButton =
+        reorganizeTerminalsButton
+
+
     local fixedViews = {
 
         distributionState.textViews.summary,
-        splitButton
+        splitButton,
+        reorganizeTerminalsButton
 
     }
 
@@ -1630,6 +2444,35 @@ local function ensureDistributionWindow()
     -- since it doesn't touch vehicle cargo and carries none of this
     -- block's risk.
     if config.DEBUG then
+
+        distributionState.textViews.toggleDebugToolsButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".toggleDebugToolsButtonLabel",
+                distributionState.debugToolsVisible
+                    and "[ Hide Debug Tools ]"
+                    or "[ Show Debug Tools ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local toggleDebugToolsButton =
+            gui.button_create(
+                WINDOW_ID .. ".toggleDebugToolsButton",
+                distributionState.textViews.toggleDebugToolsButtonLabel
+            )
+
+        toggleDebugToolsButton:onClick(
+            handleToggleDebugToolsButtonClick
+        )
+
+        distributionState.toggleDebugToolsButton =
+            toggleDebugToolsButton
+
+        fixedViews[#fixedViews + 1] =
+            toggleDebugToolsButton
+
+
+        if distributionState.debugToolsVisible then
 
         distributionState.textViews.assignBalanceButtonLabel =
             gui.textView_create(
@@ -1655,6 +2498,8 @@ local function ensureDistributionWindow()
         fixedViews[#fixedViews + 1] =
             assignBalanceButton
 
+        end
+
 
         -- Test Bug B / Park-Stop button removed here -- its question
         -- (does a bare setLine reassignment fail to pick up cargo at
@@ -1664,6 +2509,10 @@ local function ensureDistributionWindow()
         -- original dedicated single-run test. route_injector.
         -- runBugBTestStep remains callable manually if ever needed.
 
+        -- Auto Redistribute stays always visible (outside the debug-
+        -- tools gate above) -- a real operational per-hub toggle, not
+        -- a diagnostic.
+
         -- Initial label reflects whatever was actually persisted
         -- (settings.lua), not a hardcoded "OFF" -- the toggle should
         -- show its real state immediately on window creation,
@@ -1671,7 +2520,7 @@ local function ensureDistributionWindow()
         distributionState.textViews.autoRedistributeButtonLabel =
             gui.textView_create(
                 WINDOW_ID .. ".autoRedistributeButtonLabel",
-                autoRedistributeLabelText(),
+                autoRedistributeLabelText(distributionState.selectedStationGroupId),
                 WINDOW_WIDTH,
                 false
             )
@@ -1699,6 +2548,8 @@ local function ensureDistributionWindow()
         -- Fleet to Hub Identity" feature below. route_injector.
         -- testVehicleRenameAndColor remains callable manually if
         -- ever needed.
+
+        if distributionState.debugToolsVisible then
 
         distributionState.textViews.renameFleetButtonLabel =
             gui.textView_create(
@@ -1750,6 +2601,112 @@ local function ensureDistributionWindow()
             showFleetPlanButton
 
 
+        distributionState.textViews.dumpAllManagedLinesButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".dumpAllManagedLinesButtonLabel",
+                "[ Dump All Managed Lines (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local dumpAllManagedLinesButton =
+            gui.button_create(
+                WINDOW_ID .. ".dumpAllManagedLinesButton",
+                distributionState.textViews.dumpAllManagedLinesButtonLabel
+            )
+
+        dumpAllManagedLinesButton:onClick(
+            handleDumpAllManagedLinesButtonClick
+        )
+
+        distributionState.dumpAllManagedLinesButton =
+            dumpAllManagedLinesButton
+
+        fixedViews[#fixedViews + 1] =
+            dumpAllManagedLinesButton
+
+
+        distributionState.textViews.fleetBalanceReportButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".fleetBalanceReportButtonLabel",
+                "[ Fleet Balance Report (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local fleetBalanceReportButton =
+            gui.button_create(
+                WINDOW_ID .. ".fleetBalanceReportButton",
+                distributionState.textViews.fleetBalanceReportButtonLabel
+            )
+
+        fleetBalanceReportButton:onClick(
+            handleFleetBalanceReportButtonClick
+        )
+
+        distributionState.fleetBalanceReportButton =
+            fleetBalanceReportButton
+
+        fixedViews[#fixedViews + 1] =
+            fleetBalanceReportButton
+
+
+        distributionState.textViews.dedupeSharedRouteLinesButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".dedupeSharedRouteLinesButtonLabel",
+                "[ Dedupe Shared Route Lines (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local dedupeSharedRouteLinesButton =
+            gui.button_create(
+                WINDOW_ID .. ".dedupeSharedRouteLinesButton",
+                distributionState.textViews.dedupeSharedRouteLinesButtonLabel
+            )
+
+        dedupeSharedRouteLinesButton:onClick(
+            handleDedupeSharedRouteLinesButtonClick
+        )
+
+        distributionState.dedupeSharedRouteLinesButton =
+            dedupeSharedRouteLinesButton
+
+        fixedViews[#fixedViews + 1] =
+            dedupeSharedRouteLinesButton
+
+        end
+
+
+        -- Open New GUI stays always visible (outside the debug-tools
+        -- gate above) -- per the player's own explicit request.
+        distributionState.textViews.openNewGuiButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".openNewGuiButtonLabel",
+                "[ Open New GUI (TEST) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local openNewGuiButton =
+            gui.button_create(
+                WINDOW_ID .. ".openNewGuiButton",
+                distributionState.textViews.openNewGuiButtonLabel
+            )
+
+        openNewGuiButton:onClick(
+            handleOpenNewGuiButtonClick
+        )
+
+        distributionState.openNewGuiButton =
+            openNewGuiButton
+
+        fixedViews[#fixedViews + 1] =
+            openNewGuiButton
+
+
+        if distributionState.debugToolsVisible then
+
         distributionState.textViews.applyFleetPlanButtonLabel =
             gui.textView_create(
                 WINDOW_ID .. ".applyFleetPlanButtonLabel",
@@ -1773,6 +2730,8 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             applyFleetPlanButton
+
+        end
 
     end
 
@@ -1838,6 +2797,24 @@ local function ensureDistributionWindow()
         )
 
 
+        -- Destination rows only (line header rows leave this blank
+        -- -- see clearRow/renderManagedLineRows). Its own fixed box
+        -- so a long destination name in labelView can never push
+        -- this number into a wrap the way concatenating them into
+        -- one string used to.
+        local waitingView =
+            gui.textView_create(
+                rowPrefix .. ".waiting",
+                "",
+                WAITING_LABEL_WIDTH,
+                false
+            )
+
+        rowLayout:addItem(
+            waitingView
+        )
+
+
         local cargoIcons = {}
         local cargoCounts = {}
 
@@ -1888,6 +2865,9 @@ local function ensureDistributionWindow()
             label =
                 labelView,
 
+            waitingLabel =
+                waitingView,
+
             cargoIcons =
                 cargoIcons,
 
@@ -1927,6 +2907,11 @@ local function clearRow(row)
     row.label:setText(
         "",
         ROW_LABEL_WIDTH
+    )
+
+    row.waitingLabel:setText(
+        "",
+        WAITING_LABEL_WIDTH
     )
 
     for cargoSlotIndex = 1,
@@ -2046,6 +3031,24 @@ local function updateDistributionWindow()
         stationGroupId
 
 
+    -- MULTI-HUB (Decision 44): re-evaluate for whichever hub is
+    -- selected right now, every refresh -- otherwise switching from
+    -- an enabled hub to a disabled one (or vice versa) would leave
+    -- the button showing the PREVIOUS hub's state until the next
+    -- click, since this label is only otherwise touched at window
+    -- creation and inside the click handler itself.
+    if distributionState.textViews ~= nil
+        and distributionState.textViews.autoRedistributeButtonLabel ~= nil
+    then
+
+        distributionState.textViews.autoRedistributeButtonLabel:setText(
+            autoRedistributeLabelText(stationGroupId),
+            WINDOW_WIDTH
+        )
+
+    end
+
+
     local managedLines =
         {}
 
@@ -2138,6 +3141,53 @@ local function updateDistributionWindow()
                     lineInfo.id,
                     "LINE CYCLE-TIME RESEARCH: " .. tostring(lineInfo.name)
                 )
+
+            end
+
+        end
+
+
+        -- ONE-OFF, DISPOSABLE: research question raised live -- does
+        -- a STATION entity expose which town/district it belongs to?
+        -- If so, a duplicate-named destination (real case tonight:
+        -- two different physical "Park Lane" stations) could be
+        -- disambiguated with something player-readable ("Park Lane,
+        -- Oldham") instead of line_splitter.lua's current fallback
+        -- (the raw stationGroup entity ID appended in parentheses).
+        -- Dumps every real destination stationGroup currently shown
+        -- in the panel via vehicles.dumpEntityInfo (already proven
+        -- entity-agnostic). Fires once per session. Remove once
+        -- answered.
+        if config.DEBUG
+            and not distributionState.hasRunTownFieldDump
+            and #managedLines > 0
+        then
+
+            distributionState.hasRunTownFieldDump =
+                true
+
+            local dumpedStationGroups = {}
+
+            for _, lineInfo in ipairs(managedLines) do
+
+                for _, destinationInfo in ipairs(lineInfo.destinations or {}) do
+
+                    local destinationStationGroupId = destinationInfo.stationGroup
+
+                    if destinationStationGroupId ~= nil
+                        and not dumpedStationGroups[destinationStationGroupId]
+                    then
+
+                        dumpedStationGroups[destinationStationGroupId] = true
+
+                        vehicles.dumpEntityInfo(
+                            destinationStationGroupId,
+                            "TOWN FIELD RESEARCH: " .. tostring(destinationInfo.name)
+                        )
+
+                    end
+
+                end
 
             end
 
@@ -2451,12 +3501,16 @@ local function updateDistributionWindow()
                         .. " "
                         .. tostring(
                             destination.name
-                        )
-                        .. " | "
-                        .. labelText,
+                        ),
 
                         ROW_LABEL_WIDTH
 
+                    )
+
+
+                    destRow.waitingLabel:setText(
+                        labelText,
+                        WAITING_LABEL_WIDTH
                     )
 
 
@@ -2985,12 +4039,18 @@ local DELIVERY_EVENT_MILESTONE_INTERVAL = 100
 -- right answer once Decision 29's targetEntity scoping is resolved)
 -- is still the right long-term direction, this is a stopgap.
 --
--- Reads settings.get("autoDispatchHubStationGroupId") rather than
+-- Reads hub_registry.getEnabledHubs() rather than
 -- distributionState.selectedStationGroupId -- live testing proved
 -- handleEvent runs on a different script instance than guiUpdate
 -- (Decision 35), so this function's own copy of distributionState
 -- never sees what the panel has selected. File I/O is the one thing
 -- already confirmed to cross that boundary reliably.
+--
+-- MULTI-HUB (Decision 44): this only ever checks whether AT LEAST ONE
+-- hub is enabled -- the trigger itself is still a single game-wide
+-- delivery count (see above), not scoped per hub, so there's exactly
+-- one "pending" flag for the whole mod. pollAutoDispatchPending below
+-- is what actually walks every enabled hub once the flag fires.
 --
 -- DOES NOT CALL dispatcher.applyPlan DIRECTLY (Decision 39, after a
 -- conclusively-diagnosed live incident): a controlled comparison
@@ -3018,11 +4078,7 @@ local AUTO_DISPATCH_DELIVERY_THRESHOLD = 5000
 
 local function attemptAutoDispatch()
 
-    if not settings.get("autoRedistribute") then
-        return
-    end
-
-    if settings.get("autoDispatchHubStationGroupId") == nil then
+    if #hub_registry.getEnabledHubs() == 0 then
         return
     end
 
@@ -3106,24 +4162,25 @@ end
 -- ordinary per-frame poll -- never from inside handleEvent, which is
 -- what caused every automatic attempt to fail (see attemptAutoDispatch's
 -- comment above). Throttled independently of station selection.
-local function pollAutoDispatchPending()
+--
+-- MULTI-HUB (Decision 44): walks every enabled hub SEQUENTIALLY, one
+-- at a time, only starting the next hub's applyPlan once the previous
+-- one's callback has actually fired -- deliberately not firing all
+-- enabled hubs' applyPlan calls at once. dispatcher.lua's reentrancy
+-- guard is now per-hub, so two disjoint hubs running concurrently
+-- would likely be fine (they never touch the same vehicle or line),
+-- but nothing has live-confirmed that overlapping command chains
+-- across hubs are actually safe at the engine level -- Decisions 37
+-- and 38's incidents came from exactly this class of "should be fine"
+-- assumption. Sequential processing here costs nothing (this whole
+-- poll already only runs once every AUTO_DISPATCH_POLL_INTERVAL
+-- frames) and matches the same one-at-a-time async chain pattern used
+-- everywhere else in this mod (line_splitter.processNext,
+-- fleet_naming.processRenameNext, line_adopter.processAdoptNext,
+-- terminal_allocator.processCandidateNext).
+local function processHubDispatchNext(hubIds, index)
 
-    autoDispatchPollCounter = autoDispatchPollCounter + 1
-
-    if autoDispatchPollCounter < AUTO_DISPATCH_POLL_INTERVAL then
-        return
-    end
-
-    autoDispatchPollCounter = 0
-
-    if not settings.get("autoDispatchPending") then
-        return
-    end
-
-    settings.set("autoDispatchPending", false)
-
-    local hubStationGroupId =
-        settings.get("autoDispatchHubStationGroupId")
+    local hubStationGroupId = hubIds[index]
 
     if hubStationGroupId == nil then
         return
@@ -3145,8 +4202,12 @@ local function pollAutoDispatchPending()
                 logUi(
                     "AUTO DISPATCH: "
                         .. tostring(movesMade)
-                        .. " vehicle(s) moved."
+                        .. " vehicle(s) moved for hub "
+                        .. tostring(hubStationGroupId)
+                        .. "."
                 )
+
+                processHubDispatchNext(hubIds, index + 1)
 
             end
         )
@@ -3154,11 +4215,41 @@ local function pollAutoDispatchPending()
     if not ok then
 
         logUi(
-            "AUTO DISPATCH FAILED: "
+            "AUTO DISPATCH FAILED for hub "
+                .. tostring(hubStationGroupId)
+                .. ": "
                 .. tostring(err)
         )
 
+        processHubDispatchNext(hubIds, index + 1)
+
     end
+
+end
+
+local function pollAutoDispatchPending()
+
+    autoDispatchPollCounter = autoDispatchPollCounter + 1
+
+    if autoDispatchPollCounter < AUTO_DISPATCH_POLL_INTERVAL then
+        return
+    end
+
+    autoDispatchPollCounter = 0
+
+    if not settings.get("autoDispatchPending") then
+        return
+    end
+
+    settings.set("autoDispatchPending", false)
+
+    local enabledHubs = hub_registry.getEnabledHubs()
+
+    if #enabledHubs == 0 then
+        return
+    end
+
+    processHubDispatchNext(enabledHubs, 1)
 
 end
 
@@ -3166,15 +4257,115 @@ end
 -- Runs line_adopter.detectAndAdopt from an ordinary per-frame poll,
 -- same call context as pollAutoDispatchPending above and for the same
 -- reason (Decision 39): setName/register issue real commands, so this
--- must never run from inside handleEvent. Gated on the same
--- autoRedistribute toggle and hub designation as auto-dispatch --
--- adoption without a hub to adopt INTO would be meaningless, and a
--- player with the feature off should see no automatic renaming at
--- all. Reentrancy-guarded the same way dispatcher.applyPlan is: the
+-- must never run from inside handleEvent. Gated on hub_registry's
+-- enabled-hub set, same as auto-dispatch -- adoption without a hub to
+-- adopt INTO would be meaningless, and a hub the player never enabled
+-- should see no automatic renaming at all. Reentrancy-guarded the
+-- same way dispatcher.applyPlan is: the
 -- adoption chain in line_adopter.lua is itself asynchronous
 -- (setName -> sendCommand -> register, one candidate at a time), so a
 -- second poll firing mid-chain would double up exactly like the
 -- Decision 36 incident this is modeled after avoiding.
+--
+-- MULTI-HUB (Decision 44): walks every enabled hub sequentially, same
+-- one-at-a-time reasoning as processHubDispatchNext above. A single
+-- isLineAdoptionRunning flag still correctly guards the WHOLE
+-- multi-hub sequence (not per-hub) because hubs are only ever
+-- processed one after another here -- the flag just means "a poll
+-- cycle is still working through its hub list", which remains true
+-- until every enabled hub has been checked.
+--
+-- ALSO RE-APPLIES THE SHARED TERMINAL POOL (Decision 46): adoption
+-- alone used to leave a newly-adopted line's terminal wherever it
+-- already was -- only a manual "Split Into Lines & Organize
+-- Terminals" click ever called terminal_allocator.
+-- spreadLinesAcrossTerminals. Requested live: a hands-off hub should
+-- organize a new line's terminal the same way it dispatches vehicles
+-- to it, with no separate manual step. Only runs when adoptedCount >
+-- 0 -- spreadLinesAcrossTerminals re-writes EVERY managed line's
+-- alternativeTerminals every time it's called, so gating it behind
+-- "something actually changed" avoids re-sending identical commands
+-- to every line on every poll cycle for no reason.
+local function processHubAdoptionNext(hubIds, index)
+
+    local hubStationGroupId = hubIds[index]
+
+    if hubStationGroupId == nil then
+        isLineAdoptionRunning = false
+        return
+    end
+
+    local ok, err =
+        pcall(
+            line_adopter.detectAndAdopt,
+            hubStationGroupId,
+
+            function(adoptedCount)
+
+                if adoptedCount == 0 then
+                    processHubAdoptionNext(hubIds, index + 1)
+                    return
+                end
+
+                logUi(
+                    "AUTO ADOPT: " .. tostring(adoptedCount)
+                        .. " new line(s) adopted into management "
+                        .. "for hub " .. tostring(hubStationGroupId)
+                        .. "."
+                )
+
+                distributionState.dirty = true
+
+                local okTerminals, errTerminals =
+                    pcall(
+                        terminal_allocator.spreadLinesAcrossTerminals,
+                        hubStationGroupId,
+                        {},
+
+                        function(processedCount)
+
+                            logUi(
+                                "AUTO ADOPT: shared terminal pool "
+                                    .. "re-applied to "
+                                    .. tostring(processedCount)
+                                    .. " line(s) for hub "
+                                    .. tostring(hubStationGroupId)
+                                    .. "."
+                            )
+
+                            processHubAdoptionNext(hubIds, index + 1)
+
+                        end
+                    )
+
+                if not okTerminals then
+
+                    logUi(
+                        "AUTO ADOPT: terminal pool re-apply FAILED "
+                            .. "for hub " .. tostring(hubStationGroupId)
+                            .. ": " .. tostring(errTerminals)
+                    )
+
+                    processHubAdoptionNext(hubIds, index + 1)
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        logUi(
+            "AUTO ADOPT FAILED for hub " .. tostring(hubStationGroupId)
+                .. ": " .. tostring(err)
+        )
+
+        processHubAdoptionNext(hubIds, index + 1)
+
+    end
+
+end
+
 local function pollNewLineAdoption()
 
     autoAdoptPollCounter = autoAdoptPollCounter + 1
@@ -3185,55 +4376,19 @@ local function pollNewLineAdoption()
 
     autoAdoptPollCounter = 0
 
-    if not settings.get("autoRedistribute") then
-        return
-    end
-
     if isLineAdoptionRunning then
         return
     end
 
-    local hubStationGroupId =
-        settings.get("autoDispatchHubStationGroupId")
+    local enabledHubs = hub_registry.getEnabledHubs()
 
-    if hubStationGroupId == nil then
+    if #enabledHubs == 0 then
         return
     end
 
     isLineAdoptionRunning = true
 
-    local ok, err =
-        pcall(
-            line_adopter.detectAndAdopt,
-            hubStationGroupId,
-
-            function(adoptedCount)
-
-                isLineAdoptionRunning = false
-
-                if adoptedCount > 0 then
-
-                    logUi(
-                        "AUTO ADOPT: " .. tostring(adoptedCount)
-                            .. " new line(s) adopted into management."
-                    )
-
-                    distributionState.dirty = true
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        isLineAdoptionRunning = false
-
-        logUi(
-            "AUTO ADOPT FAILED: " .. tostring(err)
-        )
-
-    end
+    processHubAdoptionNext(enabledHubs, 1)
 
 end
 
@@ -3244,6 +4399,13 @@ local function guiUpdate()
 
     pollAutoDispatchPending()
     pollNewLineAdoption()
+
+    -- New GUI framework (gui_manager.lua) is a separate window, not
+    -- gated on station selection the way the existing panel is --
+    -- refreshed here regardless, before the early return below, so it
+    -- keeps working even with nothing selected (its Overview tab
+    -- handles hubStationGroupId == nil gracefully).
+    pcall(gui_manager.refresh, distributionState.selectedStationGroupId)
 
 
     if distributionState.selectedEntityId == nil then

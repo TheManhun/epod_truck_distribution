@@ -506,7 +506,15 @@ end
 -- one run is ever actually in flight at a time; a call arriving
 -- while one is already running is refused outright rather than
 -- queued or interleaved.
-local isApplyPlanRunning = false
+--
+-- KEYED BY HUB (Decision 44, multi-hub): a bare boolean would refuse
+-- hub B's run just because hub A's is still in flight, even though
+-- they touch completely disjoint lines and vehicles and have no
+-- reason to block each other -- e.g. the automatic poll working
+-- through hub A while the player manually clicks "Apply Fleet Plan"
+-- for hub B. Only the SAME hub being re-entered (the actual Decision
+-- 36 scenario) is still refused.
+local applyPlanRunningByHub = {}
 
 
 -- Applies planner.lua's current target allocation for `hubStationGroup`
@@ -514,14 +522,17 @@ local isApplyPlanRunning = false
 -- up to MAX_MOVES_PER_RUN. Manually triggered or called from
 -- attemptAutoDispatch -- see file header. onComplete(movesMade)
 -- fires once no more moves are possible, the cap is reached, or this
--- call was refused because another run is already in flight.
+-- call was refused because another run for this same hub is already
+-- in flight.
 function M.applyPlan(hubStationGroup, onComplete)
 
-    if isApplyPlanRunning then
+    if applyPlanRunningByHub[hubStationGroup] then
 
         log.info(
-            "APPLY FLEET PLAN: a previous run is still in flight -- "
-                .. "refusing this call rather than overlapping it."
+            "APPLY FLEET PLAN: a previous run for hub "
+                .. tostring(hubStationGroup)
+                .. " is still in flight -- refusing this call rather "
+                .. "than overlapping it."
         )
 
         if onComplete ~= nil then
@@ -532,11 +543,11 @@ function M.applyPlan(hubStationGroup, onComplete)
 
     end
 
-    isApplyPlanRunning = true
+    applyPlanRunningByHub[hubStationGroup] = true
 
     local function finish(movesMade)
 
-        isApplyPlanRunning = false
+        applyPlanRunningByHub[hubStationGroup] = nil
 
         if onComplete ~= nil then
             onComplete(movesMade)

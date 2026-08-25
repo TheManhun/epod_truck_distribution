@@ -52,6 +52,7 @@ local vehicles = require("epod_td.vehicles")
 local demand = require("epod_td.demand")
 local managed_registry = require("epod_td.managed_registry")
 local stations = require("epod_td.stations")
+local line_ownership = require("epod_td.line_ownership")
 
 local M = {}
 
@@ -87,6 +88,23 @@ local ACTIVITY_TIER_PRIORITY = {
 }
 
 
+-- LIVE-CONFIRMED CRITICAL BUG (Decision 45, multi-hub testing): this
+-- used to return the FIRST stop whose stationGroup wasn't
+-- hubStationGroup, without ever checking that the line actually has a
+-- stop AT hubStationGroup in the first place. Under a single hub this
+-- was harmless -- every managed line touched that one hub by
+-- construction, so "the first non-matching stop" always happened to
+-- be the real destination. The instant a second hub existed, this
+-- became a real bug: checking a pure-Hendon line like "Hendon East
+-- <-> The Grove" against Yarm East's ID found "Hendon East" wasn't
+-- Yarm East and returned it as if that line belonged to Yarm --
+-- meaning Yarm's planner treated EVERY managed line in the entire
+-- game as one of its own candidates, not just lines actually touching
+-- Yarm. Live-confirmed via the log: Yarm's very first automatic
+-- dispatch run moved a vehicle from a real Yarm line straight onto
+-- "Hendon East <-> The Grove", a line with zero connection to Yarm.
+-- Fixed by requiring an actual stop AT hubStationGroup to exist
+-- before returning any destination at all.
 local function findDestinationStationGroup(lineId, hubStationGroup)
 
     local line = lines.get(lineId)
@@ -98,6 +116,9 @@ local function findDestinationStationGroup(lineId, hubStationGroup)
     local stops = lines.safeField(line, "stops")
     local stopCount = lines.safeLength(stops)
 
+    local touchesHub = false
+    local destinationStationGroup = nil
+
     for index = 1, stopCount do
 
         local stop = stops[index]
@@ -106,15 +127,25 @@ local function findDestinationStationGroup(lineId, hubStationGroup)
 
             local stationGroup = lines.safeField(stop, "stationGroup")
 
-            if stationGroup ~= nil and stationGroup ~= hubStationGroup then
-                return stationGroup
+            if stationGroup == hubStationGroup then
+
+                touchesHub = true
+
+            elseif stationGroup ~= nil and destinationStationGroup == nil then
+
+                destinationStationGroup = stationGroup
+
             end
 
         end
 
     end
 
-    return nil
+    if not touchesHub then
+        return nil
+    end
+
+    return destinationStationGroup
 
 end
 
@@ -159,7 +190,10 @@ end
 -- demand, current vehicle count, and cargo-profile activity tier.
 -- Deliberately hub-scoped the same way fleet_naming.lua's
 -- lineTouchesHub is -- a managed line belonging to a DIFFERENT hub
--- must never leak into this hub's plan.
+-- must never leak into this hub's plan (Decision 45 fixed
+-- findDestinationStationGroup itself for lines that don't touch this
+-- hub AT ALL; this ownership check below handles the separate case of
+-- a line that genuinely touches MULTIPLE hubs -- Decision 48).
 local function collectManagedLineCandidates(hubStationGroup)
 
     local ok, allLineIds =
@@ -180,7 +214,9 @@ local function collectManagedLineCandidates(hubStationGroup)
             local destinationStationGroup =
                 findDestinationStationGroup(lineId, hubStationGroup)
 
-            if destinationStationGroup ~= nil then
+            if destinationStationGroup ~= nil
+                and not line_ownership.isOwnedByOther(lineId, hubStationGroup)
+            then
 
                 local scanResult =
                     demand.scan(lineId, hubStationGroup)

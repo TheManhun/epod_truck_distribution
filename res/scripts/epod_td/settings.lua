@@ -17,15 +17,22 @@ local M = {}
 -- needs one (stale entity IDs from a different save) -- a plain
 -- boolean preference has no entity to go stale.
 --
--- Values can be boolean or numeric (added for autoDispatchHub-
--- StationGroupId, Decision 35 -- a persisted entity ID, not a
--- boolean). A numeric value CAN go stale across a different save the
--- same way managed_registry.lua's entity IDs can; unlike that
--- module, this one does not validate it against live game state --
--- callers (dispatcher.applyPlan via attemptAutoDispatch) already
+-- Values can be boolean or numeric. A numeric value CAN go stale
+-- across a different save; unlike managed_registry.lua, this one
+-- does not validate it against live game state -- callers already
 -- degrade harmlessly to "nothing to do" against an invalid/stale
 -- entity rather than erroring, so a dedicated validation pass here
 -- would be solving a problem that doesn't actually bite.
+--
+-- Decision 44 (multi-hub): the single "autoRedistribute" boolean and
+-- single "autoDispatchHubStationGroupId" value that used to live here
+-- are RETIRED -- replaced by hub_registry.lua's actual set of
+-- independently enabled hub IDs, since a single global value could
+-- only ever auto-manage one hub game-wide. "autoDispatchPending"
+-- below stays here: the trigger that sets it (the delivery-count
+-- threshold, Decision 40) is still game-wide, not per-hub, so it
+-- correctly means "run a dispatch pass for every enabled hub", not
+-- anything tied to one specific hub.
 --
 -- NO MODULE-LEVEL CACHE (Decision 35, fixed after a real live bug):
 -- this used to load once, lazily, and cache in a local `state` table
@@ -44,9 +51,7 @@ local M = {}
 
 local STATE_FILE_PATH = "epod_td_settings.txt"
 
-local DEFAULTS = {
-    autoRedistribute = false
-}
+local DEFAULTS = {}
 
 
 local function loadStateFromDisk()
