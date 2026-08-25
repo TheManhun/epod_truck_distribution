@@ -359,6 +359,21 @@ function M.redistributeSpareVehiclesByDemand(sourceLineId, hubStationGroup, onCo
 
         log.info("FAILED: source line not found.")
 
+        -- Decision 61: every early-return path here must call
+        -- onComplete -- processSourceLineNext (epod_truck_
+        -- distribution.lua) chains through it to run the delete step
+        -- and move on to the NEXT recorded source line for this hub.
+        -- Missing this silently killed the whole Assign & Balance
+        -- run the moment it hit a stale/unreadable source line ID:
+        -- live-observed a real hub with a dead entry in its
+        -- source_line_registry set (left over from before Decision 54
+        -- existed) that caused this exact "no spare vehicles" branch
+        -- to fire and the button to hang forever, never reaching the
+        -- hub's OTHER, genuinely live source line.
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
         return {
             success = false,
             reason = "source-line-not-found"
@@ -372,6 +387,10 @@ function M.redistributeSpareVehiclesByDemand(sourceLineId, hubStationGroup, onCo
 
         log.info("Nothing to do: no managed (\"● \") split lines found.")
 
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
         return {
             success = true,
             processedCount = 0
@@ -384,6 +403,10 @@ function M.redistributeSpareVehiclesByDemand(sourceLineId, hubStationGroup, onCo
     if #spareVehicleIds == 0 then
 
         log.info("Nothing to do: source line has no spare vehicles.")
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
 
         return {
             success = true,
@@ -420,6 +443,10 @@ function M.redistributeSpareVehiclesByDemand(sourceLineId, hubStationGroup, onCo
                 .. "line rather than assigned anywhere blind."
         )
 
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
         return {
             success = true,
             processedCount = 0
@@ -451,6 +478,204 @@ function M.redistributeSpareVehiclesByDemand(sourceLineId, hubStationGroup, onCo
         success = true,
         pending = true
     }
+
+end
+
+
+-- ============================================================
+-- FORCE-DISTRIBUTE REMAINING CONFIRMED-EMPTY SPARES (Decision 65)
+--
+-- redistributeSpareVehiclesByDemand (above) deliberately caps
+-- allocation at each candidate's fair share of CURRENT demand --
+-- correct for normal rebalancing, but it means a source line already
+-- stripped down to 0 real destinations (Stage 2 fully finished) can
+-- still be left with 1-3 spare vehicles nobody currently "needs",
+-- permanently blocking deleteEmptySourceLine and leaving trucks
+-- visibly looping a dead hub-only line forever. Live-confirmed: two
+-- real hubs each left with a handful of confirmed-empty trucks
+-- circling a fully-degenerate line with nowhere to go.
+--
+-- Only ever called as a mop-up AFTER the normal demand-weighted pass
+-- already ran and deleteEmptySourceLine reported "still-has-vehicles"
+-- specifically (0 real destinations left -- see
+-- epod_truck_distribution.lua's processSourceLineNext) -- never in
+-- place of the demand-weighted pass. Only ever touches a vehicle
+-- confirmed empty (vehicles.isVehicleEmpty == true) -- same Bug A
+-- safety net as every other reassignment in this codebase; anything
+-- not confirmed empty is skipped and left alone. Spreads round-robin
+-- onto whichever candidate currently has the fewest vehicles -- no
+-- demand weighting needed here, since the point is just clearing a
+-- dead line, not optimizing allocation.
+-- ============================================================
+
+local function processForceDistributeNext(vehicleIds, index, candidates, distributedCount, onComplete)
+
+    local vehicleId = vehicleIds[index]
+
+    if vehicleId == nil then
+
+        log.info("----------------------------------------")
+
+        log.info(
+            "FORCE DISTRIBUTE COMPLETE: "
+                .. tostring(distributedCount)
+                .. " vehicle(s) moved."
+        )
+
+        log.info("----------------------------------------")
+
+        if onComplete ~= nil then
+            onComplete(distributedCount)
+        end
+
+        return
+
+    end
+
+    if #candidates == 0 then
+
+        log.info(
+            "FORCE DISTRIBUTE: no candidates to give remaining spares "
+                .. "to -- stopping."
+        )
+
+        if onComplete ~= nil then
+            onComplete(distributedCount)
+        end
+
+        return
+
+    end
+
+    if vehicles.isVehicleEmpty(vehicleId) ~= true then
+
+        log.info(
+            "FORCE DISTRIBUTE: skipping vehicle "
+                .. tostring(vehicleId)
+                .. " (not confirmed empty)"
+        )
+
+        -- Decision 65 follow-up: this same vehicle (29412) has now
+        -- been skipped as "not confirmed empty" across multiple
+        -- separate runs, despite the player confirming 0/4 cargo in
+        -- its own in-game panel every time -- not a one-off timing
+        -- fluke. Dumping the raw entity so the next run shows exactly
+        -- what cargoLoad actually contains for it, instead of
+        -- guessing at another fix.
+        vehicles.dumpEntityInfo(
+            vehicleId,
+            "FORCE DISTRIBUTE: raw entity for skipped vehicle"
+        )
+
+        processForceDistributeNext(vehicleIds, index + 1, candidates, distributedCount, onComplete)
+        return
+
+    end
+
+    -- Whichever candidate currently has the fewest vehicles.
+    local target = candidates[1]
+
+    for _, candidate in ipairs(candidates) do
+        if candidate.vehicleCount < target.vehicleCount then
+            target = candidate
+        end
+    end
+
+    log.info(
+        "FORCE DISTRIBUTE: giving vehicle "
+            .. tostring(vehicleId)
+            .. " to "
+            .. tostring(target.name)
+            .. " (currently "
+            .. tostring(target.vehicleCount)
+            .. " vehicle(s))"
+    )
+
+    vehicles.setManualDeparture(vehicleId, true, function(holdSuccess)
+
+        if not holdSuccess then
+
+            log.info(
+                "FORCE DISTRIBUTE FAILED (could not hold vehicle "
+                    .. tostring(vehicleId)
+                    .. ")"
+            )
+
+            processForceDistributeNext(vehicleIds, index + 1, candidates, distributedCount, onComplete)
+            return
+
+        end
+
+        vehicles.setLine(vehicleId, target.id, 0, function(setLineSuccess)
+
+            if setLineSuccess then
+                target.vehicleCount = target.vehicleCount + 1
+            end
+
+            vehicles.setManualDeparture(vehicleId, false, function(releaseSuccess)
+
+                log.info(
+                    "FORCE DISTRIBUTE: vehicle "
+                        .. tostring(vehicleId)
+                        .. " -> "
+                        .. tostring(target.name)
+                        .. ": "
+                        .. tostring(setLineSuccess)
+                        .. " (release: "
+                        .. tostring(releaseSuccess)
+                        .. ")"
+                )
+
+                processForceDistributeNext(
+                    vehicleIds,
+                    index + 1,
+                    candidates,
+                    setLineSuccess and (distributedCount + 1) or distributedCount,
+                    onComplete
+                )
+
+            end)
+
+        end)
+
+    end)
+
+end
+
+
+function M.forceDistributeRemainingSpares(sourceLineId, hubStationGroup, onComplete)
+
+    log.info("----------------------------------------")
+    log.info("FORCE DISTRIBUTE REMAINING SPARES")
+    log.info("----------------------------------------")
+
+    if sourceLineId == nil then
+
+        log.info("FAILED: source line not found.")
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
+        return
+    end
+
+    local vehicleIds = vehicles.getVehiclesForLine(sourceLineId)
+
+    if #vehicleIds == 0 then
+
+        log.info("Nothing to do: no vehicles left on source line.")
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
+        return
+    end
+
+    local candidates = findManagedSplitLines(hubStationGroup)
+
+    processForceDistributeNext(vehicleIds, 1, candidates, 0, onComplete)
 
 end
 

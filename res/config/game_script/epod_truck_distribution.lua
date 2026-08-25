@@ -258,6 +258,21 @@ local distributionState = {
     debugToolsVisible =
         false,
 
+    -- Decision 66, live-confirmed real crash: a native engine
+    -- assertion ("it != components.end()") fired against a line
+    -- entity mid-deletion when a SECOND hub's Distribution Hub setup
+    -- was started while an EARLIER hub's setup chain (Split -> Rename
+    -- -> Assign & Balance, all long chains of async sendCommand
+    -- round-trips) was still running and deleted a fully-degenerate
+    -- source line at the same moment the second hub's own scan was
+    -- iterating every managed line. Not something a pcall or a safer
+    -- read can fully prevent -- a native assertion crashes the whole
+    -- process regardless. Refusing to start a second hub setup while
+    -- one is already running removes the race entirely rather than
+    -- trying to defend against it after the fact.
+    hubSetupInProgress =
+        false,
+
     dirty =
         false,
 
@@ -835,7 +850,8 @@ local function splitAllManagedLines(
     stationGroupId,
     managedLines,
     index,
-    sourceLineIds
+    sourceLineIds,
+    onAllDone
 )
 
     sourceLineIds =
@@ -903,6 +919,10 @@ local function splitAllManagedLines(
 
                     end
 
+                    if onAllDone ~= nil then
+                        onAllDone()
+                    end
+
                 end
             )
 
@@ -922,6 +942,10 @@ local function splitAllManagedLines(
                     WINDOW_WIDTH
                 )
 
+            end
+
+            if onAllDone ~= nil then
+                onAllDone()
             end
 
         end
@@ -959,7 +983,8 @@ local function splitAllManagedLines(
             stationGroupId,
             managedLines,
             index + 1,
-            sourceLineIds
+            sourceLineIds,
+            onAllDone
         )
 
         return
@@ -981,7 +1006,8 @@ local function splitAllManagedLines(
                 stationGroupId,
                 managedLines,
                 index + 1,
-                sourceLineIds
+                sourceLineIds,
+                onAllDone
             )
 
         end
@@ -1213,6 +1239,59 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                             -- either, so this is safe to always
                             -- attempt rather than needing a separate
                             -- confirmation click.
+                            local function finishSourceLine(deleted, reason)
+
+                                if deleted then
+
+                                    totals.deleted = totals.deleted + 1
+
+                                    source_line_registry.removeSourceLine(
+                                        hubStationGroupId,
+                                        sourceLineId
+                                    )
+
+                                elseif reason == "source-line-unreadable" then
+
+                                    -- Decision 61: this ID doesn't
+                                    -- correspond to a real line
+                                    -- anymore at all -- unlike
+                                    -- "still-has-vehicles"/
+                                    -- "still-has-destinations"
+                                    -- (a real line just not ready
+                                    -- yet), there's nothing left to
+                                    -- ever finish here. Forget it
+                                    -- now rather than burning a
+                                    -- full Stage 2/3 pass against
+                                    -- it, uselessly, every future
+                                    -- Assign & Balance click.
+                                    source_line_registry.removeSourceLine(
+                                        hubStationGroupId,
+                                        sourceLineId
+                                    )
+
+                                    totals.kept[#totals.kept + 1] =
+                                        tostring(sourceLineId)
+                                            .. " (stale registry entry -- forgotten)"
+
+                                else
+
+                                    totals.kept[#totals.kept + 1] =
+                                        tostring(sourceLineId)
+                                            .. " (" .. tostring(reason) .. ")"
+
+                                end
+
+                                processSourceLineNext(
+                                    sourceLineIds,
+                                    index + 1,
+                                    hubStationGroupId,
+                                    totals,
+                                    setDoneLabel,
+                                    onAllDone
+                                )
+
+                            end
+
                             local ok3, err3 =
                                 pcall(
                                     line_splitter.deleteEmptySourceLine,
@@ -1221,37 +1300,89 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
 
                                     function(deleted, reason)
 
-                                        if deleted then
+                                        -- Decision 65: "still-has-vehicles"
+                                        -- specifically means 0 real
+                                        -- destinations are left (the ONLY
+                                        -- other refusal reason,
+                                        -- "still-has-destinations", is a
+                                        -- different situation and is not
+                                        -- retried here) -- so any vehicle
+                                        -- still on this line has nowhere
+                                        -- left to legitimately go via the
+                                        -- normal demand-weighted pass.
+                                        -- Mop up any CONFIRMED-EMPTY
+                                        -- leftovers once, then retry the
+                                        -- delete, rather than leaving 1-3
+                                        -- trucks stuck looping a dead line
+                                        -- forever.
+                                        if not deleted and reason == "still-has-vehicles" then
 
-                                            totals.deleted = totals.deleted + 1
+                                            local ok4, err4 =
+                                                pcall(
+                                                    fleet_allocator.forceDistributeRemainingSpares,
+                                                    sourceLineId,
+                                                    hubStationGroupId,
 
-                                            source_line_registry.removeSourceLine(
-                                                hubStationGroupId,
-                                                sourceLineId
-                                            )
+                                                    function(distributedCount)
 
-                                        else
+                                                        totals.redistributed =
+                                                            totals.redistributed + distributedCount
 
-                                            totals.kept[#totals.kept + 1] =
-                                                tostring(sourceLineId)
-                                                    .. " (" .. tostring(reason) .. ")"
+                                                        local ok5, err5 =
+                                                            pcall(
+                                                                line_splitter.deleteEmptySourceLine,
+                                                                sourceLineId,
+                                                                hubStationGroupId,
+                                                                finishSourceLine
+                                                            )
+
+                                                        if not ok5 then
+
+                                                            logUi(
+                                                                "ASSIGN & BALANCE (retry delete step) FAILED for line "
+                                                                    .. tostring(sourceLineId) .. ": "
+                                                                    .. tostring(err5)
+                                                            )
+
+                                                            finishSourceLine(false, "retry-delete-crashed")
+
+                                                        end
+
+                                                    end
+                                                )
+
+                                            if not ok4 then
+
+                                                logUi(
+                                                    "ASSIGN & BALANCE (force-distribute step) FAILED for line "
+                                                        .. tostring(sourceLineId) .. ": "
+                                                        .. tostring(err4)
+                                                )
+
+                                                finishSourceLine(false, reason)
+
+                                            end
+
+                                            return
 
                                         end
 
-                                        processSourceLineNext(
-                                            sourceLineIds,
-                                            index + 1,
-                                            hubStationGroupId,
-                                            totals,
-                                            setDoneLabel,
-                                            onAllDone
-                                        )
+                                        finishSourceLine(deleted, reason)
 
                                     end
                                 )
 
                             if not ok3 then
 
+                                -- Decision 66: must still call onAllDone
+                                -- (not just log+setDoneLabel) -- otherwise
+                                -- a synchronous crash here would leave the
+                                -- caller's hubSetupInProgress guard stuck
+                                -- true forever, permanently disabling hub
+                                -- setup for the rest of the session.
+                                -- Stops processing further source lines
+                                -- for this hub, but still finishes the
+                                -- overall sequence.
                                 logUi(
                                     "ASSIGN & BALANCE (delete step) FAILED for line "
                                         .. tostring(sourceLineId) .. ": "
@@ -1261,6 +1392,8 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                                 setDoneLabel(
                                     "[ Assign & Balance Fleet (crashed -- see log) ]"
                                 )
+
+                                onAllDone()
 
                             end
 
@@ -1279,6 +1412,8 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                         "[ Assign & Balance Fleet (crashed -- see log) ]"
                     )
 
+                    onAllDone()
+
                 end
 
             end
@@ -1295,6 +1430,8 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
         setDoneLabel(
             "[ Assign & Balance Fleet (crashed -- see log) ]"
         )
+
+        onAllDone()
 
     end
 
@@ -2124,16 +2261,161 @@ end
 local function autoRedistributeLabelText(hubStationGroupId)
 
     if hubStationGroupId == nil then
-        return "[ Auto Redistribute: select a hub first ]"
+        return "[ Distribution Hub: select a hub first ]"
     end
 
     if hub_registry.isEnabled(hubStationGroupId) then
-        return "[ Auto Redistribute: ON for this hub ]"
+        return "[ Distribution Hub: ON for this hub ]"
     end
 
-    return "[ Auto Redistribute: OFF for this hub ]"
+    return "[ Distribution Hub: OFF for this hub ]"
 
 end
+
+
+-- ============================================================
+-- NEW HUB SETUP SEQUENCE (Decision 62)
+--
+-- Player's idea: turning a hub's Distribution Hub toggle ON for the
+-- very first time shouldn't require then separately remembering to
+-- click Split, Rename Fleet, and Assign & Balance in the right order
+-- -- just chain the three existing, already-proven steps together.
+-- No new logic: this calls the exact same module functions those
+-- three buttons already call, just threaded through real callbacks
+-- instead of each one updating its own separate button label.
+--
+-- Deliberately NOT a background/polling feature (raised live: not
+-- everyone runs this mod on a bare vanilla setup, keep it minimal) --
+-- this runs once, synchronously-chained, on the single moment the
+-- player clicks ON, then reports a plain final status and stops.
+-- Anything it can't finish immediately (e.g. a vehicle still
+-- mid-delivery, same as Decision 61's loaded-vehicle safety check)
+-- is just named in that final status -- the player can click Assign
+-- & Balance again later if they want to chase it, exactly as before
+-- this feature existed.
+-- ============================================================
+
+local function runNewHubSetupSequence(hubStationGroupId, onAllDone)
+
+    local ok, managedLines =
+        pcall(
+            vehicles.getManagedLinesForStation,
+            hubStationGroupId
+        )
+
+    if not ok or managedLines == nil then
+
+        logUi(
+            "DISTRIBUTION HUB SETUP FAILED: could not read managed lines: "
+                .. tostring(managedLines)
+        )
+
+        if onAllDone ~= nil then
+            onAllDone()
+        end
+
+        return
+
+    end
+
+    splitAllManagedLines(
+        hubStationGroupId,
+        managedLines,
+        1,
+        nil,
+
+        function()
+
+            local okRename, errRename =
+                pcall(
+                    fleet_naming.renameFleetToHubIdentity,
+                    hubStationGroupId,
+
+                    function(renamedCount)
+
+                        logUi(
+                            "DISTRIBUTION HUB SETUP: renamed "
+                                .. tostring(renamedCount)
+                                .. " vehicle(s)."
+                        )
+
+                        local sourceLineIds =
+                            source_line_registry.getSourceLines(hubStationGroupId)
+
+                        if #sourceLineIds == 0 then
+
+                            logUi(
+                                "DISTRIBUTION HUB SETUP COMPLETE for hub "
+                                    .. tostring(hubStationGroupId)
+                                    .. " (nothing needed splitting)."
+                            )
+
+                            if onAllDone ~= nil then
+                                onAllDone()
+                            end
+
+                            return
+
+                        end
+
+                        local totals = {
+                            assigned = 0,
+                            redistributed = 0,
+                            deleted = 0,
+                            kept = {}
+                        }
+
+                        processSourceLineNext(
+                            sourceLineIds,
+                            1,
+                            hubStationGroupId,
+                            totals,
+                            function() end,
+
+                            function()
+
+                                local keptText =
+                                    #totals.kept > 0
+                                        and (" -- still settling: " .. table.concat(totals.kept, ", "))
+                                        or ""
+
+                                logUi(
+                                    "DISTRIBUTION HUB SETUP COMPLETE: "
+                                        .. tostring(totals.assigned) .. " assigned, "
+                                        .. tostring(totals.redistributed) .. " balanced, "
+                                        .. tostring(totals.deleted) .. " source line(s) cleaned up"
+                                        .. keptText
+                                        .. "."
+                                )
+
+                                if onAllDone ~= nil then
+                                    onAllDone()
+                                end
+
+                            end
+                        )
+
+                    end
+                )
+
+            if not okRename then
+
+                logUi(
+                    "DISTRIBUTION HUB SETUP (rename step) FAILED: "
+                        .. tostring(errRename)
+                )
+
+                if onAllDone ~= nil then
+                    onAllDone()
+                end
+
+            end
+
+        end
+    )
+
+end
+
 
 local function handleAutoRedistributeToggleButtonClick()
 
@@ -2143,7 +2425,7 @@ local function handleAutoRedistributeToggleButtonClick()
     if hubStationGroupId == nil then
 
         logUi(
-            "AUTO REDISTRIBUTE: no hub is currently selected -- "
+            "DISTRIBUTION HUB: no hub is currently selected -- "
                 .. "select one first."
         )
 
@@ -2156,29 +2438,183 @@ local function handleAutoRedistributeToggleButtonClick()
         hub_registry.disable(hubStationGroupId)
 
         logUi(
-            "AUTO REDISTRIBUTE: turned OFF for hub "
+            "DISTRIBUTION HUB: turned OFF for hub "
                 .. tostring(hubStationGroupId)
         )
 
-    else
+        -- Decision 64: strip the "● " prefix back off the station
+        -- name, mirroring the ON branch below. Only touches it if the
+        -- prefix is actually there, so this is safe to run even on a
+        -- hub whose name was never changed by this mod.
+        do
 
-        hub_registry.enable(hubStationGroupId)
+            local currentName =
+                stations.getRawEntityName(hubStationGroupId)
 
-        logUi(
-            "AUTO REDISTRIBUTE: turned ON for hub "
-                .. tostring(hubStationGroupId)
+            if currentName ~= nil
+                and currentName:sub(1, 4) == "● "
+            then
+
+                pcall(
+                    stations.setEntityName,
+                    hubStationGroupId,
+                    currentName:sub(5)
+                )
+
+            end
+
+        end
+
+        -- Decision 60: clean up empty lines this hub claimed while it
+        -- was enabled -- otherwise they just sit there forever as
+        -- orphaned clutter (exactly what happened with Thatcham
+        -- Sidings). Only ever deletes lines with 0 vehicles.
+        pcall(
+            line_splitter.deleteEmptyOwnedLines,
+            hubStationGroupId,
+
+            function(deletedCount)
+
+                if deletedCount > 0 then
+
+                    logUi(
+                        "DISTRIBUTION HUB: cleaned up "
+                            .. tostring(deletedCount)
+                            .. " empty line(s) this hub left behind."
+                    )
+
+                end
+
+            end
         )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.autoRedistributeButtonLabel ~= nil
+        then
+
+            distributionState.textViews.autoRedistributeButtonLabel:setText(
+                autoRedistributeLabelText(hubStationGroupId),
+                WINDOW_WIDTH
+            )
+
+        end
+
+        return
 
     end
+
+    -- Decision 66: refuse to start a second hub's setup while an
+    -- earlier one is still running -- live-confirmed real crash
+    -- (native engine assertion) when two setup chains overlapped and
+    -- one deleted a line entity the other was mid-scan against.
+    if distributionState.hubSetupInProgress then
+
+        logUi(
+            "DISTRIBUTION HUB: another hub's setup is still running -- "
+                .. "wait for it to finish before starting this one."
+        )
+
+        return
+
+    end
+
+    distributionState.hubSetupInProgress =
+        true
+
+    -- Decision 62: turning ON now also runs the full first-time setup
+    -- sequence (Split -> Rename Fleet -> Assign & Balance) rather than
+    -- just flipping the flag and leaving the player to click each of
+    -- those three separately.
+    hub_registry.enable(hubStationGroupId)
+
+    -- Decision 64: mark the station itself as a converted hub, same
+    -- "● " convention already used for managed lines -- requested
+    -- live so a converted hub is visible at a glance (station list,
+    -- map) without opening this panel. setName is documented
+    -- entity-agnostic and already proven on vehicles/lines elsewhere
+    -- in this codebase; this is the first use on a station. Only
+    -- renames if not already prefixed, so re-enabling an
+    -- already-renamed hub doesn't double up the bullet.
+    do
+
+        local currentName =
+            stations.getRawEntityName(hubStationGroupId)
+
+        if currentName ~= nil
+            and currentName:sub(1, 4) ~= "● "
+        then
+
+            pcall(
+                stations.setEntityName,
+                hubStationGroupId,
+                "● " .. currentName
+            )
+
+        end
+
+    end
+
+    logUi(
+        "DISTRIBUTION HUB: turned ON for hub "
+            .. tostring(hubStationGroupId)
+            .. " -- setting it up now."
+    )
 
     if distributionState.textViews ~= nil
         and distributionState.textViews.autoRedistributeButtonLabel ~= nil
     then
 
         distributionState.textViews.autoRedistributeButtonLabel:setText(
-            autoRedistributeLabelText(hubStationGroupId),
+            "[ Setting up Distribution Hub... (see log) ]",
             WINDOW_WIDTH
         )
+
+    end
+
+    local ok, err =
+        pcall(
+            runNewHubSetupSequence,
+            hubStationGroupId,
+
+            function()
+
+                distributionState.hubSetupInProgress =
+                    false
+
+                if distributionState.textViews ~= nil
+                    and distributionState.textViews.autoRedistributeButtonLabel ~= nil
+                then
+
+                    distributionState.textViews.autoRedistributeButtonLabel:setText(
+                        autoRedistributeLabelText(hubStationGroupId),
+                        WINDOW_WIDTH
+                    )
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        distributionState.hubSetupInProgress =
+            false
+
+        logUi(
+            "DISTRIBUTION HUB SETUP FAILED: "
+                .. tostring(err)
+        )
+
+        if distributionState.textViews ~= nil
+            and distributionState.textViews.autoRedistributeButtonLabel ~= nil
+        then
+
+            distributionState.textViews.autoRedistributeButtonLabel:setText(
+                "[ Distribution Hub (setup crashed -- see log) ]",
+                WINDOW_WIDTH
+            )
+
+        end
 
     end
 

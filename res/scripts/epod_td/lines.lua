@@ -83,6 +83,61 @@ function M.getStopCount(lineId)
 end
 
 
+-- Decision 67, live-confirmed real bug: a combined line's real HUB is
+-- the stationGroup that repeats in its stops (the hub-destination-
+-- hub-destination pattern this whole split pipeline assumes) -- every
+-- ordinary destination normally appears exactly once. Ownership used
+-- to be decided by "whichever enabled hub's scan happens to notice
+-- this line first," with no regard for which stationGroup actually
+-- IS the repeated anchor -- live case: "Corby North" appeared 7 times
+-- on a real combined line, "Corby East" (also an enabled hub) only
+-- ONCE, as an ordinary destination -- yet Corby East's scan happened
+-- to touch the line first and got credited as its owner, permanently
+-- hiding it from Corby North (its real hub) no matter how many times
+-- Corby North's own setup ran. Returns the stationGroup with the
+-- highest occurrence count (must appear more than once to count as a
+-- real anchor, distinguishing it from a plain destination) or nil if
+-- there is no such repeated stop (e.g. an already-split 2-stop line).
+function M.findDominantStationGroup(lineId)
+
+    local stops = M.getStops(lineId)
+    local stopCount = M.safeLength(stops)
+
+    local counts = {}
+
+    for index = 1, stopCount do
+
+        local stop = stops[index]
+
+        if stop ~= nil then
+
+            local stationGroup = M.safeField(stop, "stationGroup")
+
+            if stationGroup ~= nil then
+                counts[stationGroup] = (counts[stationGroup] or 0) + 1
+            end
+
+        end
+
+    end
+
+    local bestGroup = nil
+    local bestCount = 1
+
+    for stationGroup, count in pairs(counts) do
+
+        if count > bestCount then
+            bestCount = count
+            bestGroup = stationGroup
+        end
+
+    end
+
+    return bestGroup
+
+end
+
+
 function M.getName(lineId)
     if lineId == nil or lineId < 0 then
         return "NO LINE"

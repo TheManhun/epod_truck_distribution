@@ -1805,16 +1805,34 @@ function M.isVehicleEmpty(vehicleId)
         return nil
     end
 
-    local ok, isEmpty =
+    -- Decision 61 fix: this used to check next(cargoLoad) == nil --
+    -- an empty TABLE -- but cargoLoad is a cargo-type -> amount map
+    -- that can retain a key for a compatible cargo type at value 0
+    -- even when nothing is actually loaded (same shape already
+    -- accounted for by the Fleet Balance Report's sumLineCargo
+    -- helper). That made a genuinely empty vehicle (confirmed 0/12
+    -- in its own in-game panel) read as "still carrying" forever,
+    -- permanently hiding it from Stage 3's spare-vehicle
+    -- redistribution. Sum the actual amounts instead of counting
+    -- keys.
+    local ok, totalCarrying =
         pcall(function()
-            return next(cargoLoad) == nil
+
+            local total = 0
+
+            for _, amount in pairs(cargoLoad) do
+                total = total + (amount or 0)
+            end
+
+            return total
+
         end)
 
     if not ok then
         return nil
     end
 
-    return isEmpty
+    return totalCarrying == 0
 
 end
 

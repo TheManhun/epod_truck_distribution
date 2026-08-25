@@ -1028,6 +1028,16 @@ function M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplet
 
         log.info("FAILED: source line not found.")
 
+        -- Decision 61: every early-return path here must call
+        -- onComplete -- processSourceLineNext chains through it to
+        -- run Stage 3 + the delete step and move on to the NEXT
+        -- recorded source line for this hub. Missing this on any
+        -- branch silently kills the whole Assign & Balance run the
+        -- moment it hits a stale/unreadable source line ID.
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
         return {
             success = false,
             reason = "source-line-not-found"
@@ -1043,6 +1053,10 @@ function M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplet
     if not ok or allLineIds == nil then
 
         log.info("FAILED: could not read line list.")
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
 
         return {
             success = false,
@@ -1113,6 +1127,10 @@ function M.assignVehiclesAndRetireStops(sourceLineId, hubStationGroup, onComplet
         log.info(
             "Nothing to do: no mod-created (\"● \") split lines found."
         )
+
+        if onComplete ~= nil then
+            onComplete(0)
+        end
 
         return {
             success = true,
@@ -1407,10 +1425,46 @@ local function findManagedTwoStopLines()
 end
 
 
-local function deleteDuplicateLine(entry, callback)
+-- Shared by dedupeSharedRouteLines and deleteEmptyOwnedLines below --
+-- both only ever call this once they've already confirmed 0 vehicles,
+-- so no extra safety check is repeated here. logTag identifies which
+-- feature triggered the delete in the log, since both features can
+-- fire independently.
+local function deleteEmptyManagedLine(entry, logTag, callback)
+
+    -- LIVE-CONFIRMED CRASH (Decision 63): api.cmd.make.deleteLine on
+    -- an ID that doesn't correspond to a real, currently-readable
+    -- line is a native engine crash ("Internal error"), not a Lua
+    -- error -- pcall around the command below does NOT catch it,
+    -- same lesson as Decision 56/57's alternativeTerminals crashes.
+    -- deleteEmptySourceLine has always re-read the line right before
+    -- deleting it for exactly this reason; this shared helper never
+    -- did. Bit live: source_line_registry/line_ownership/hub_registry
+    -- all write to the game install folder rather than per-save
+    -- (a long-documented gap, PROGRESS.md), so loading a DIFFERENT
+    -- save that happens to share entity IDs with a previous session
+    -- (as save-1 and save-2 do here, since save-2 is a later save of
+    -- the same lineage) can hand this function a line ID that's
+    -- stale/nonexistent in the save actually loaded right now. Only
+    -- ever attempt the delete once the line is confirmed to still
+    -- exist and be readable.
+    if lines.get(entry.id) == nil then
+
+        log.info(
+            logTag .. ": REFUSED (line no longer exists/unreadable, not "
+                .. "attempting delete -- likely a stale cross-save "
+                .. "registry entry): "
+                .. tostring(entry.name)
+                .. " (id=" .. tostring(entry.id) .. ")"
+        )
+
+        callback()
+        return
+
+    end
 
     log.info(
-        "DEDUPE: deleting duplicate line (0 vehicles): "
+        logTag .. ": deleting empty line (0 vehicles): "
             .. tostring(entry.name)
             .. " (id=" .. tostring(entry.id) .. ")"
     )
@@ -1421,7 +1475,7 @@ local function deleteDuplicateLine(entry, callback)
     if not okCommand then
 
         log.info(
-            "DEDUPE: DELETE LINE COMMAND ERROR ("
+            logTag .. ": DELETE LINE COMMAND ERROR ("
                 .. tostring(entry.name)
                 .. "): "
                 .. tostring(commandOrError)
@@ -1438,7 +1492,7 @@ local function deleteDuplicateLine(entry, callback)
             api.cmd.sendCommand(commandOrError, function(cmd, success)
 
                 log.info(
-                    "DEDUPE: DELETE RESULT ("
+                    logTag .. ": DELETE RESULT ("
                         .. tostring(entry.name)
                         .. "): "
                         .. tostring(success)
@@ -1453,7 +1507,7 @@ local function deleteDuplicateLine(entry, callback)
     if not okSend then
 
         log.info(
-            "DEDUPE: DELETE SEND ERROR ("
+            logTag .. ": DELETE SEND ERROR ("
                 .. tostring(entry.name)
                 .. "): "
                 .. tostring(sendErr)
@@ -1550,7 +1604,7 @@ local function processDedupeGroupsNext(groupKeys, groups, index, deletedCount, o
             return
         end
 
-        deleteDuplicateLine(entry, function()
+        deleteEmptyManagedLine(entry, "DEDUPE", function()
             deleteNext(deleteIndex + 1, runningDeletedCount + 1)
         end)
 
@@ -1588,6 +1642,101 @@ function M.dedupeSharedRouteLines(onComplete)
     end
 
     processDedupeGroupsNext(groupKeys, groups, 1, 0, onComplete)
+
+end
+
+
+-- ============================================================
+-- DELETE EMPTY LINES LEFT BEHIND WHEN A HUB IS DISABLED
+--
+-- Decision 60: raised live straight after the Thatcham Sidings
+-- episode (Decision 59) -- turning Auto Redistribute OFF for a hub
+-- stops it claiming NEW lines, but does nothing about ones it already
+-- claimed while it was briefly enabled. Those were left sitting there
+-- as permanent 0-vehicle clutter until someone noticed and deleted
+-- them by hand. Player's framing: the mod should be a step ahead of
+-- whatever a player accidentally sets up, not just report on it.
+--
+-- Wired into handleAutoRedistributeToggleButtonClick's disable branch
+-- (epod_truck_distribution.lua) -- runs the moment a hub is turned
+-- off, reacting to that specific player action rather than sweeping
+-- the whole network in the background on its own schedule.
+--
+-- Only ever deletes a line with 0 vehicles, same safety discipline as
+-- dedupeSharedRouteLines and deleteEmptySourceLine. A line the
+-- now-disabled hub owns that still has real vehicles is left
+-- completely alone and just logged -- it's still doing real work
+-- moving real cargo, whatever hub_registry's enabled/disabled flag
+-- says now.
+-- ============================================================
+
+local function processDeleteEmptyOwnedNext(candidates, index, deletedCount, onComplete)
+
+    local entry = candidates[index]
+
+    if entry == nil then
+
+        log.info("----------------------------------------")
+
+        log.info(
+            "HUB DISABLE CLEANUP COMPLETE: "
+                .. tostring(deletedCount)
+                .. " empty owned line(s) deleted."
+        )
+
+        log.info("----------------------------------------")
+
+        if onComplete ~= nil then
+            onComplete(deletedCount)
+        end
+
+        return
+
+    end
+
+    if entry.vehicleCount > 0 then
+
+        log.info(
+            "HUB DISABLE CLEANUP: leaving "
+                .. tostring(entry.name)
+                .. " alone -- still has "
+                .. tostring(entry.vehicleCount)
+                .. " vehicle(s)."
+        )
+
+        processDeleteEmptyOwnedNext(candidates, index + 1, deletedCount, onComplete)
+        return
+
+    end
+
+    deleteEmptyManagedLine(entry, "HUB DISABLE CLEANUP", function()
+        processDeleteEmptyOwnedNext(candidates, index + 1, deletedCount + 1, onComplete)
+    end)
+
+end
+
+
+function M.deleteEmptyOwnedLines(hubStationGroupId, onComplete)
+
+    log.info("----------------------------------------")
+    log.info("HUB DISABLE CLEANUP: deleting empty lines owned by hub " .. tostring(hubStationGroupId))
+    log.info("----------------------------------------")
+
+    local ownedLineIds = line_ownership.getLinesOwnedBy(hubStationGroupId)
+
+    local candidates = {}
+
+    for _, lineId in ipairs(ownedLineIds) do
+
+        candidates[#candidates + 1] = {
+            id = lineId,
+            name = lines.getName(lineId),
+            vehicleCount = #vehicles.getVehiclesForLine(lineId)
+        }
+
+    end
+
+    processDeleteEmptyOwnedNext(candidates, 1, 0, onComplete)
 
 end
 

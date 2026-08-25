@@ -1,3 +1,6 @@
+local log = require("epod_td.log")
+local lines = require("epod_td.lines")
+
 local M = {}
 
 
@@ -6,6 +9,16 @@ local M = {}
 --
 -- Same proven pattern as managed_registry.lua/hub_registry.lua:
 -- direct file I/O, fresh read every call, no module-level cache.
+--
+-- Decision 63: writes to the game install folder, not a per-savegame
+-- path (same documented gap as hub_registry.lua/managed_registry.lua
+-- -- no reliable API exists to read which save is active). Confirmed
+-- live: a stale line ID from a different save fed into a delete
+-- command elsewhere crashed the game (deleteLine on a nonexistent
+-- line is a native crash, not a Lua error). Now validates on load the
+-- same way managed_registry.lua already does -- any stored line ID
+-- that no longer resolves to a real line is dropped rather than
+-- trusted blindly.
 --
 -- Decision 45 fixed a planner bug that made every hub see EVERY
 -- managed line in the game as its own. Fixing that exposed the real,
@@ -28,6 +41,13 @@ local M = {}
 -- ============================================================
 
 local STATE_FILE_PATH = "epod_td_line_ownership.txt"
+
+-- Per-instance throttle on the expensive game.interface.getLines()
+-- walk only -- NOT a cache of the registry's own contents (every
+-- actual read/write still goes through loadStateFromDisk()/
+-- saveStateToDisk() fresh). Same pattern as managed_registry.lua's
+-- hasMigratedThisSession.
+local hasValidatedThisSession = false
 
 
 local function loadStateFromDisk()
@@ -84,13 +104,72 @@ local function saveStateToDisk(state)
 end
 
 
+-- Decision 63: drops any stored line ID that no longer resolves to a
+-- real line (a different, unrelated save, or a since-deleted line) --
+-- same validate-on-load discipline managed_registry.lua already uses.
+-- Runs the expensive getLines() walk at most once per script instance;
+-- the state itself is still loaded fresh from disk on every call.
+local function loadAndValidate()
+
+    local state = loadStateFromDisk()
+
+    if hasValidatedThisSession then
+        return state
+    end
+
+    hasValidatedThisSession = true
+
+    local ok, allLineIds =
+        pcall(function()
+            return game.interface.getLines()
+        end)
+
+    if not ok or allLineIds == nil then
+        return state
+    end
+
+    local realLineIds = {}
+
+    for _, lineId in ipairs(allLineIds) do
+        realLineIds[lineId] = true
+    end
+
+    local changed = false
+
+    for lineId, _ in pairs(state) do
+
+        if not realLineIds[lineId] then
+
+            log.info(
+                "LINE OWNERSHIP: dropping stale entry "
+                    .. tostring(lineId)
+                    .. " (no longer a real line -- different save, "
+                    .. "or deleted)"
+            )
+
+            state[lineId] = nil
+            changed = true
+
+        end
+
+    end
+
+    if changed then
+        saveStateToDisk(state)
+    end
+
+    return state
+
+end
+
+
 function M.getOwner(lineId)
 
     if lineId == nil then
         return nil
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     return state[lineId]
 
@@ -110,7 +189,7 @@ function M.claim(lineId, hubStationGroupId)
         return
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     if state[lineId] ~= hubStationGroupId then
         state[lineId] = hubStationGroupId
@@ -122,32 +201,77 @@ end
 
 -- For lines that predate this module (Grain, manually-migrated "● "
 -- lines, anything adopted/split before Decision 48) and so have no
--- recorded owner yet: the first hub whose planner run touches it
--- lazily claims it, exactly the same self-healing-on-first-contact
--- pattern managed_registry.lua's migration already uses. Returns
--- true if lineId is owned by some OTHER hub (caller should exclude
--- it), false if it's unowned (and now claimed for hubStationGroupId)
--- or already owned by hubStationGroupId itself.
+-- recorded owner yet: lazily claimed the moment some hub's planner
+-- run touches it, same self-healing-on-first-contact pattern
+-- managed_registry.lua's migration already uses. Returns true if
+-- lineId is owned by some OTHER hub (caller should exclude it),
+-- false if it's unowned (and now claimed) or already owned by
+-- hubStationGroupId itself.
+--
+-- Decision 67 fix: the lazy claim used to unconditionally credit
+-- whichever hub happened to call this first -- live-confirmed real
+-- bug where a line's actual structural hub (repeated 7 times in its
+-- own stops) lost ownership to a different enabled hub that merely
+-- appeared once, as an ordinary destination, because that hub's scan
+-- ran first. Now finds the line's real dominant stop (the repeated
+-- stationGroup, lines.findDominantStationGroup) and claims it for
+-- THAT hub instead, if there is one -- only falls back to crediting
+-- the caller when no repeated anchor exists at all (e.g. a plain,
+-- already-split 2-stop line with no obvious "hub" of its own).
 function M.isOwnedByOther(lineId, hubStationGroupId)
 
     if lineId == nil or hubStationGroupId == nil then
         return false
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     local owner = state[lineId]
 
     if owner == nil then
 
-        state[lineId] = hubStationGroupId
+        local dominantGroup = lines.findDominantStationGroup(lineId)
+
+        local claimFor =
+            dominantGroup ~= nil
+                and dominantGroup
+                or hubStationGroupId
+
+        state[lineId] = claimFor
         saveStateToDisk(state)
 
-        return false
+        return claimFor ~= hubStationGroupId
 
     end
 
     return owner ~= hubStationGroupId
+
+end
+
+
+-- Decision 60: the reverse of getOwner -- every line currently
+-- recorded as owned by this hub. Used when a hub gets disabled to
+-- find what it leaves behind (see line_splitter.deleteEmptyOwnedLines)
+-- rather than leaving orphaned empty lines sitting around forever.
+function M.getLinesOwnedBy(hubStationGroupId)
+
+    if hubStationGroupId == nil then
+        return {}
+    end
+
+    local state = loadAndValidate()
+
+    local lineIds = {}
+
+    for lineId, ownerId in pairs(state) do
+
+        if ownerId == hubStationGroupId then
+            lineIds[#lineIds + 1] = lineId
+        end
+
+    end
+
+    return lineIds
 
 end
 

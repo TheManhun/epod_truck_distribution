@@ -1091,6 +1091,172 @@ Two changes, addressing prevention and cleanup separately (the player's own fram
 
 New duplicates of this kind can no longer form (fix #1). Existing ones, including the mess already sitting in the current save from before this fix, can be cleaned up on demand via the new DEBUG button (fix #2) rather than by hand in the Line Manager. Not yet live-tested — needs a reload to confirm both the ownership skip and the dedupe sweep behave as designed against the real 45120 mess.
 
+## Decision 60 — Disabling a hub now cleans up the empty lines it leaves behind
+
+### What happened
+
+Straight after Decision 59's Thatcham Sidings episode, the player turned Auto Redistribute OFF for Thatcham Sidings (correctly stopping it from claiming any more lines as its own hub) but pointed out the 3 empty lines it had already created (`Thatcham Sidings ↔ Goole Annex`, `Thatcham Sidings ↔ Goole Sidings`, plus one already removed by the dedupe sweep) were just going to sit there forever with nothing to clean them up. Framing: "we need it to act smarter... the end user will make all sort of crazy links, we need to be one step ahead" -- the mod should react to the consequences of a player's own action, not just report on the mess afterward.
+
+### Reason
+
+`hub_registry.disable()` only ever flipped a flag -- nothing downstream of it looked at what that hub had actually claimed while it was enabled. `line_ownership.lua` already records exactly this (which lines a hub owns), but had no reverse lookup (all lines owned BY a given hub, rather than the owner OF a given line) and nothing ever asked it that question.
+
+### Decision
+
+Added `line_ownership.getLinesOwnedBy(hubStationGroupId)` (the reverse of the existing `getOwner`), and a new `line_splitter.deleteEmptyOwnedLines(hubStationGroupId, onComplete)` that finds everything a hub owns and deletes whichever of those lines have 0 vehicles -- same safety bar as `dedupeSharedRouteLines` and `deleteEmptySourceLine` (Decision 59/20), never touches a line still carrying real vehicles. Wired directly into `handleAutoRedistributeToggleButtonClick`'s disable branch, so it fires the moment a hub is turned off -- reacting to that specific player action, not a background sweep running on its own schedule across the whole network. The single-line delete-command logic used by both this and Decision 59's dedupe sweep was consolidated into one shared `deleteEmptyManagedLine(entry, logTag, callback)` helper rather than duplicated a third time.
+
+### Consequence
+
+Turning Auto Redistribute off for a hub now self-heals the lines it leaves behind, instead of requiring a manual Dedupe click or hand-deletion in the Line Manager. Not yet live-tested -- needs a reload, then toggling Auto Redistribute on then off for a hub with real owned-but-empty lines to confirm the cleanup actually fires and logs correctly.
+
+## Decision 61 — Assign & Balance Fleet could hang forever on a stale source-line entry
+
+### What happened
+
+Player selected Goole North and clicked Assign & Balance Fleet to finally process the still-unsplit `Goole North ↔ Goole Annex + Thatcham Sidings + Goole Sidings` line (id=45120) discussed all session. The button sat on "Working... (see log)" indefinitely. The raw log showed Stage 2 ran, found all 90 managed lines game-wide as "candidates" (a separate, real scoping bug in `findDestinationStationGroupOnSplitLine` -- it returns the first stop that ISN'T the hub, without ever checking that the candidate line touches the hub at all, so it matches everything), and every single stop-removal attempt failed with "Could not re-read source line." Then Stage 3 logged "Nothing to do: source line has no spare vehicles" and the log went completely silent -- no delete step, no move to the next source line, no final label update, forever.
+
+Reading `epod_td_source_lines.txt` directly showed the real cause: Goole North's hub had TWO recorded source lines, `28014:26897` and `28014:45120` -- 26897 is a long-dead line ID (a leftover from earlier in the session, predating Decision 54's fix, that was never cleaned from the registry). `processSourceLineNext` (epod_truck_distribution.lua) processes a hub's recorded source lines one at a time; it happened to reach the dead 26897 first.
+
+### Reason
+
+The real, fatal bug: both `line_splitter.assignVehiclesAndRetireStops` and `fleet_allocator.redistributeSpareVehiclesByDemand` have multiple early-return "nothing to do" branches (source line not found/unreadable, no candidates, no spare vehicles, no allocations) that returned a result table WITHOUT ever calling their `onComplete` callback. `processSourceLineNext` chains entirely through that callback to run the next stage and eventually move on to the hub's NEXT recorded source line. Hitting 26897 (0 vehicles, since the line doesn't exist) tripped exactly this kind of early return in `redistributeSpareVehiclesByDemand` -- the callback chain died right there, and 45120 -- the line actually genuinely alive and waiting to be processed -- was never reached at all this run. This is the same class of bug caught and fixed earlier this session in `line_splitter.splitLineIntoDestinations`'s new ownership-check branch (Decision 59) -- evidently not everywhere else that same pattern already existed had been checked.
+
+### Decision
+
+Added the missing `onComplete` call to every early-return branch in both `assignVehiclesAndRetireStops` (3 branches) and `redistributeSpareVehiclesByDemand` (4 branches). Also: `processSourceLineNext`'s delete-step callback now specifically recognizes `reason == "source-line-unreadable"` (as opposed to "still-has-vehicles"/"still-has-destinations", which mean a REAL line just isn't finished yet) and calls `source_line_registry.removeSourceLine` to forget it immediately, rather than leaving it to be uselessly re-attempted on every future Assign & Balance click. The separate `findDestinationStationGroupOnSplitLine` over-broad-candidate-matching bug (Stage 2/3 treating literally every managed game-wide line as a "candidate" for whichever hub is currently running, not just ones that actually touch it) was identified but NOT fixed here -- it's real, but it degrades harmlessly as long as the source line itself is readable (a non-matching candidate's stop-removal attempt just finds nothing to remove and no-ops), so it wasn't the cause of this hang and was left for a separate pass.
+
+### Consequence
+
+**Live-confirmed the core fix works**: after reloading, Assign & Balance Fleet on Goole North correctly skipped/forgot the dead 26897 entry and reached the real 45120 line, stripping all 3 real destinations off it and redistributing its spare vehicles. Also surfaced two further real findings in the same run, both fixed in this same decision:
+
+1. **`fleet_allocator.findManagedSplitLines` is not actually hub-scoped**: the log showed 45120's freed-up spare vehicles being sent to completely unrelated hubs (Corby North, Stow-on-the-Wold, Hemel Hempstead) network-wide, not kept within Goole North's own destination family -- the opposite of what `line_ownership` (Decision 45/48) exists to enforce. Confirmed real but **not fixed yet** -- flagged for a separate, deliberate pass since it's a bigger behavioral change (every hub's Assign & Balance has been sharing spare capacity network-wide all session, and whether that's actually wanted needs discussing, not just reverting).
+
+2. **`vehicles.isVehicleEmpty` was checking the wrong thing**: two of 45120's own vehicles, confirmed genuinely empty (0/12) via their own in-game vehicle panel, were permanently skipped by Stage 3's redistribution ("currently carrying cargo or load unknown"), leaving the source line's final 2 vehicles stranded and the line undeletable indefinitely. Root cause: the check tested `next(cargoLoad) == nil` (an empty TABLE), but `cargoLoad` is a cargo-type -> amount map that can retain a key for a compatible cargo type at value 0 even when nothing is loaded (the exact same map shape `sumLineCargo`, from the earlier in-transit-cargo feature, already had to sum values for rather than count keys). Fixed by summing the actual amounts and checking the total is 0, instead of checking whether the table itself is empty.
+
+Also raised live (player's own framing): even once vehicles clear, the source line ends up as a degenerate "loop" -- several stops that are ALL the hub itself, repeated -- something a player could never build through TF2's own UI, existing only because `buildSourceLineWithoutStop` removes one destination's stop at a time without ever consolidating the redundant hub-only stops left behind. Confirmed as a real but purely cosmetic/transient artifact (it only exists in the brief window between a line's last real destination being stripped and its last vehicle being reassigned) -- not fixed in this decision, left as a candidate follow-up.
+
+## Decision 62 — Turning a hub ON now runs full first-time setup, and the button is renamed "Distribution Hub"
+
+### What happened
+
+Player's idea: standing up a brand-new hub currently means clicking four separate things in the right order (Split, Rename Fleet, Re-Organize Terminals -- already folded into Split -- and Assign & Balance), with no guidance that this sequence exists at all. Proposed wrapping it into the existing Auto Redistribute toggle itself, renamed something clearer like "Distribution Hub: ON/OFF" -- default OFF, and turning it ON triggers the whole setup sequence.
+
+A parallel idea (a live "We are setting up your new Distribution Hub... waiting for trucks to drop off load..." progress indicator) was raised and scaled back after the player's own follow-up concern about optimization: not every player runs this mod on a bare vanilla setup, and a live-updating progress display would need some form of background polling to know when trucks finish delivering -- exactly the kind of added always-on cost the player asked to avoid. Settled on a plain, one-shot final status logged at the end instead of a live progress display.
+
+### Decision
+
+`handleAutoRedistributeToggleButtonClick`'s ON branch now calls a new `runNewHubSetupSequence(hubStationGroupId, onAllDone)`, which chains the exact same module functions the three existing buttons already call -- `splitAllManagedLines` (now takes an optional `onAllDone` parameter, threaded through its recursive calls and the terminal-organizing step, backward-compatible since the existing Split button just passes nil), then `fleet_naming.renameFleetToHubIdentity`, then `processSourceLineNext` (the same Stage 2/3/delete orchestration Assign & Balance already uses) -- with a single plain `logUi` status at the end summarizing what happened, naming anything left mid-delivery for the player to catch on a later manual Assign & Balance click. No new logic was written for any of the three steps themselves; this is purely orchestration.
+
+The button's user-facing label text was renamed from "Auto Redistribute" to "Distribution Hub" (`autoRedistributeLabelText` and all `logUi` messages in this handler) to better describe what it now does -- turning a station into a fully managed Distribution Hub, not just toggling ongoing rebalancing. The underlying function/variable names (`handleAutoRedistributeToggleButtonClick`, `hub_registry.enable/disable`, etc.) were deliberately left unchanged -- only the visible strings changed, keeping the diff to what the player actually asked for rather than a wider mechanical rename.
+
+Turning a hub OFF is unchanged (still just disables plus Decision 60's empty-line cleanup) -- this feature is additive to the ON path only.
+
+### Consequence
+
+Not yet live-tested -- needs a reload. The real test: turn Distribution Hub ON for a fresh, never-split hub and confirm the log shows all three steps running in sequence and a sensible final summary, without needing to click Split/Rename Fleet/Assign & Balance separately.
+
+## Decision 63 — Cross-save registry contamination caused both the wrong ON state and a real crash
+
+### What happened
+
+Player loaded save-1 specifically to test Decision 62's new hub-setup sequence on a genuinely fresh, never-managed hub -- but the Distribution Hub toggle showed ON for a hub that had never been touched in this save. Clicking it OFF (triggering Decision 60's cleanup) crashed the game with a native "Internal error" dialog. The raw log confirmed the sequence: `DISTRIBUTION HUB: turned OFF for hub 27920` -> `HUB DISABLE CLEANUP: deleting empty lines owned by hub 27920` -> crash, with the crash trace naming the `autoRedistributeButton` click as the triggering event.
+
+### Reason
+
+Two findings, one root cause. `hub_registry.lua`, `line_ownership.lua`, and `source_line_registry.lua` all write to the game install folder rather than a per-savegame location -- a gap flagged as far back as this project's early Persistence notes (PROGRESS.md Not Started #2), always described as theoretical ("a different save" as a hypothetical). It stopped being hypothetical tonight: save-2 is a later save of the *same* save-1 lineage (the player's own framing: "Save-2 50 years into mod control"), so both saves genuinely share the same entity IDs for the same physical stations -- hub 27920 really is "Corby North" in both. Loading save-1 after a long save-2 session meant `hub_registry` still had 27920 marked enabled from save-2's play, so the toggle showed ON in save-1 despite this specific save never having managed anything.
+
+The crash was the sharper consequence: `line_ownership.getLinesOwnedBy(27920)` returned line IDs recorded during save-2's session, most of which don't exist (or don't exist as lines at all) in save-1's much earlier state. The new `deleteEmptyManagedLine` helper (Decision 59/60) never re-confirmed a line still existed before calling `api.cmd.make.deleteLine` on it -- unlike `deleteEmptySourceLine`, which has always re-read its target first. `api.cmd.make.deleteLine` on a stale ID is a native engine crash, not a Lua error -- the `pcall` already wrapping that command does not catch it, the same lesson already learned once from Decision 56/57's `alternativeTerminals` crashes.
+
+### Decision
+
+Player pushed back hard on treating this as a future research item: real players swap saves constantly, and a mod that can crash on save-swap is not shippable regardless of how rare the trigger felt tonight. Two fixes, not one:
+
+1. **Immediate crash fix**: `deleteEmptyManagedLine` now calls `lines.get(entry.id)` and refuses to attempt the delete (just logs and moves on) if the line isn't confirmed to still exist -- closes the crash for both `dedupeSharedRouteLines` and `deleteEmptyOwnedLines`, and any future caller of this shared helper.
+
+2. **Systemic fix, not just this one call site**: `managed_registry.lua` already had a proven answer to "no reliable API exists to identify which save is active" -- validate every stored ID against the CURRENT game on load, silently dropping anything that no longer resolves to something real, rather than trusting a global file blindly. `hub_registry.lua`, `line_ownership.lua`, and `source_line_registry.lua` never had this (`hub_registry.lua` used to explicitly claim it "doesn't actually bite" -- live-confirmed wrong tonight). All three now validate on load the same way: `hub_registry` checks each stored hub ID still resolves to a real `STATION_GROUP` component (`stations.getStationGroup`); `line_ownership` and `source_line_registry` check each stored line ID is still in `game.interface.getLines()` (the exact pattern `managed_registry.lua` already proved, including its per-instance throttle on the expensive walk). This closes the crash risk for the general case any real player will actually hit: swapping to a genuinely unrelated save, whose stale IDs from the previous save almost never coincidentally resolve to something valid in the new one.
+
+**What this does NOT fix**: the specific case that caused tonight's crash -- an ID that's genuinely valid in BOTH saves, because save-2 is a later save of save-1's own lineage and true per-save isolation would need a save-identity fingerprint, which still doesn't exist (no reliable API was found, per `managed_registry.lua`'s own research). Existence-validation can't distinguish "valid in this save" from "coincidentally also valid in a related save" -- only a real fingerprint could. That remains open, but Decision 63's fix #1 (the actual crash-causing gap) is what's load-bearing here: even with hub 27920's wrongly-ON state passing validation, the delete command itself no longer fires blind, so it no longer crashes.
+
+### Consequence
+
+The specific crash is closed, and the same class of crash (a stale registry ID reaching a delete/mutate command) is now closed for any genuinely unrelated save-swap, not just this one incident. Cosmetic cross-save state confusion (a hub showing ON when this specific save never enabled it) can still happen for saves that share lineage/entity IDs, same as tonight -- worth knowing about, not crash-worthy anymore. True per-save isolation remains a real, still-open research question (PROGRESS.md Not Started #2) for whenever a save-identity fingerprint API is found.
+
+## Decision 64 — Converted hub stations get a "● " name prefix too
+
+### What happened
+
+Player's idea: managed LINES already get a "● " prefix so they're recognizable at a glance, but the HUB station itself gives no visual signal it's been converted -- you have to open this panel to know. Requested the same convention applied to the station name: `Stow-on-the-Wold Transfer` -> `● Stow-on-the-Wold Transfer` once its Distribution Hub toggle is ON.
+
+### Reason
+
+`api.cmd.make.setName` is documented by the official API as fully entity-agnostic ("the entity Id of the entity that should be renamed," no restriction to lines -- COMMANDS.md) and already LIVE-CONFIRMED working on two different entity types in this codebase: vehicles (`fleet_naming.lua`, real live use against ~90+ vehicle fleets) and lines (via `createLine`'s name argument, used throughout `line_splitter.lua`). Renaming a `STATION_GROUP` entity specifically had never been attempted, but nothing about the documented signature or the proven pattern suggested it should behave differently -- a reasonable, low-risk extension rather than genuinely new API territory. Unlike the `alternativeTerminals` saga (Decision 56/57), `setName` has never been the cause of a crash anywhere in this project across two confirmed entity types.
+
+### Decision
+
+Added `stations.M.setEntityName(entityId, newName, onComplete)` -- a thin wrapper around `api.cmd.make.setName` + `api.cmd.sendCommand`, the exact same proven command shape `fleet_naming.lua` already uses per-vehicle. Wired into `handleAutoRedistributeToggleButtonClick`: turning a hub ON prefixes its station name with "● " (only if not already prefixed, so re-enabling an already-converted hub doesn't double up); turning it OFF strips the prefix back off (only if present). Symmetric with the ON behavior even though only the ON case was explicitly requested, since a station's visible name should reflect its current managed state either direction.
+
+### Consequence
+
+**Live-confirmed the rename itself works** -- station names correctly showed "● Corby North" etc. in a real dump. But the same dump caught a real regression: `line_splitter.lua` and `fleet_naming.lua` both build compound names by reading the hub's station name (`stations.getEntityName`) and prepending their OWN "● " -- once the station's real name already carried that prefix, every freshly-created line/fleet name doubled up ("● ● Corby North ↔ Corby Exchange", confirmed live across many lines created after a hub's rename). Fixed by splitting `stations.getEntityName` into two functions: `getRawEntityName` (the true stored name, unmodified -- used by the toggle handler itself, which needs ground truth to correctly add/strip the prefix idempotently) and `getEntityName` (now always strips a leading "● " before returning -- used by every other caller building a name FROM a hub's name, so a renamed hub's own decorative prefix never leaks into something built from it again). Centralized in `stations.lua` rather than patched at each of the several call sites (`line_splitter.lua`, `fleet_naming.lua`, `line_adopter.lua` all read a hub's name this same way), so the same class of bug can't resurface at a call site not yet written.
+
+## Decision 65 — Fully-degenerate source lines self-heal their last stray empty trucks
+
+### What happened
+
+Two real hubs, screenshotted and confirmed in-game: "Line 9" (Stow-on-the-Wold North, 2 trucks, 0/8 cargo) and "Line 5" (Hemel Hempstead East, 1 truck, 0/4 cargo) both fully stripped of every real destination, but still looping the hub-only degenerate line forever with confirmed-empty trucks going nowhere. Player's framing, deciding whether it was worth fixing: "if we fix it now we have a strong initial setup phase" -- this isn't a rare edge case, it's a near-guaranteed outcome of the one-click hub setup (Decision 62) any time demand-weighted apportionment computes a fair share smaller than the actual spare pool.
+
+### Reason
+
+`redistributeSpareVehiclesByDemand` deliberately caps allocation at each candidate's computed fair share of CURRENT waiting demand -- correct behavior for normal ongoing rebalancing (never assign a spare truck somewhere with no real need for it, per the original agreed design). But once a source line has already been stripped to 0 real destinations, that same caution has no more upside: there is no destination left this line could ever legitimately serve again, so a leftover empty truck sitting on it is pure waste, not a considered decision to hold back capacity for later demand elsewhere.
+
+### Decision
+
+Added `fleet_allocator.forceDistributeRemainingSpares(sourceLineId, hubStationGroup, onComplete)`: only ever touches a vehicle confirmed empty (`vehicles.isVehicleEmpty == true`, the exact Decision 61 fix) -- anything not confirmed empty is skipped and left alone, same Bug A safety net as everywhere else in this codebase. Spreads round-robin onto whichever candidate line currently has the fewest vehicles -- no demand weighting needed, since the only goal here is clearing the dead line, not optimizing allocation.
+
+Wired into `processSourceLineNext` (epod_truck_distribution.lua) as a mop-up: `deleteEmptySourceLine`'s refusal reason `"still-has-vehicles"` specifically means 0 real destinations are left (the *other* refusal reason, `"still-has-destinations"`, is a genuinely different situation -- a real line just not finished yet -- and is deliberately NOT retried this way). Only on that specific reason: run the force-distribute mop-up once, then retry the delete once more before finally recording the source line as done or still-kept.
+
+### Consequence
+
+Not yet live-tested -- needs a reload, then re-running Assign & Balance (or toggling Distribution Hub off/on) on Stow-on-the-Wold North and Hemel Hempstead East specifically, since both already have a real fully-degenerate line sitting in exactly the state this fix targets.
+
+## Decision 66 — Concurrent hub setups can crash the game; refuse to overlap them
+
+### What happened
+
+Real fatal crash, game had to be restarted: `Assertion Failure: Assertion 'it != components.end()' failed`, naming entity 27845 -- exactly "Line 5", the fully-degenerate Hemel Hempstead East source line Decision 65's new force-distribute/retry-delete logic had been actively working on. Player was converting a 4th hub via Distribution Hub ON when it happened.
+
+### Reason
+
+Each hub's Distribution Hub setup (Decision 62) is a long chain of sequential async `sendCommand` round-trips (Split -> Rename -> Stage 2 -> Stage 3 -> delete). Nothing stopped a second hub's setup from starting while an earlier one was still mid-chain -- and their log output has been visibly interleaving all session with no prior incident. Decision 65 changed what's possible during that overlap: a "still-has-vehicles" source line that previously would just sit forever (never deleted) can now actually get deleted once its last vehicle clears. If that deletion lands in the same moment a DIFFERENT hub's setup is iterating `game.interface.getLines()` and reading components off every managed line (`findManagedSplitLines`, `findDestinationStationGroupOnSplitLine`, `demand.scan`, etc.), the engine can be asked to read a component off an entity that's being torn down mid-frame -- a native assertion, not a Lua error. No pcall or "safer" read can catch this; the same lesson already learned from the `deleteLine`/`alternativeTerminals` crashes applies here too. Decision 65 didn't create the overlapping-setups risk, but it did create a new place a deletion could land inside that existing, previously-silent race window.
+
+### Decision
+
+Added `distributionState.hubSetupInProgress`, a simple reentrancy guard (same pattern as `dispatcher.lua`'s `isApplyPlanRunning`, Decision 36): `handleAutoRedistributeToggleButtonClick`'s ON branch now refuses to start a second hub's setup while one is already running, logging a plain "wait for it to finish" message instead. Set true right before `runNewHubSetupSequence` starts, cleared in its completion callback -- which required also fixing a pre-existing gap in `processSourceLineNext`'s three outer `pcall` failure branches (`assignVehiclesAndRetireStops`/`redistributeSpareVehiclesByDemand`/`deleteEmptySourceLine` throwing synchronously): they used to only log and update the button label, never actually calling `onAllDone`. Harmless before tonight, but combined with the new guard it would have left `hubSetupInProgress` stuck `true` forever the first time any of those three ever threw -- permanently disabling hub setup for the rest of the session. All three now call `onAllDone()` too.
+
+**Known remaining gap, not covered by this fix**: the older manual DEBUG buttons (Split, Assign & Balance Fleet, Re-Organize Terminals) do not share this same guard -- a player running one of those by hand while a Distribution Hub setup is mid-flight could still hit the same class of race. Lower probability (those buttons are hidden behind Show Debug Tools, off by default) but not eliminated; a shared, codebase-wide mutex across every line-mutating operation would be the fuller fix, not built tonight.
+
+### Consequence
+
+Not yet live-tested -- needs a reload. The direct trigger (clicking a second hub's Distribution Hub toggle while an earlier one is still running) should now be refused outright rather than racing. Converting hubs one at a time, waiting for each "DISTRIBUTION HUB SETUP COMPLETE" before starting the next, remains the safe pattern regardless -- this guard just makes that the enforced behavior instead of only the recommended one.
+
+## Decision 67 — Line ownership was decided by "who asks first," not "who's the real hub"
+
+### What happened
+
+Player, rightly frustrated ("if me part developer gets it wrong 100% so will the end user"): Line 7 kept refusing to convert no matter what, attributed to Corby East -- but Corby East turned out to be a small, single-platform stub with no Distribution Hub UI worth mentioning, clearly not "a real hub" a player would ever think to click. Checked Line 7's own stop list directly: `Corby North` appears **7 times** (the genuine repeated hub-destination-hub-destination pattern this whole split pipeline is built around), `Corby East` appears **once**, as an ordinary destination -- identical in kind to Corby Annex or Corby Sidings on the same line. Corby North is unmistakably the real hub here. Yet `line_ownership.txt` had it recorded the other way around.
+
+### Reason
+
+`line_ownership.isOwnedByOther`'s lazy first-touch claim (the mechanism that lets a pre-existing, never-explicitly-split line become owned by whichever hub's planner notices it) credited whichever ENABLED hub's scan happened to call this function first -- with zero regard for whether that hub actually appears as the line's structural anchor or merely touches it once as a destination. Both Corby North and Corby East are enabled hubs; Corby East's scan just happened to run first, so it won by pure timing, permanently locking Corby North (the line's real owner in every meaningful sense) out of ever touching it.
+
+### Decision
+
+Added `lines.findDominantStationGroup(lineId)`: counts how many times each stationGroup appears among a line's stops and returns whichever one repeats most (must appear more than once, distinguishing a real hub-anchor from an ordinary single-visit destination) -- nil if there's no such repeated stop. `isOwnedByOther`'s lazy claim now uses this to decide who ownership actually goes to, falling back to crediting the caller only when no repeated anchor exists at all (e.g. an already-split plain 2-stop line, where "who asked" is the only signal there is). Also directly corrected the one already-wrong entry this exposed (`epod_td_line_ownership.txt`: line 24333 reassigned from 28905 to 27920) so Line 7 doesn't have to wait for a future re-claim that will never happen naturally (ownership, once recorded, is never re-evaluated once set).
+
+### Consequence
+
+New wrong-owner assignments of this shape should no longer happen going forward. Not yet live-tested — needs a reload, then re-running Split/Distribution Hub on Corby North specifically to confirm Line 7 is finally picked up as its own. Worth keeping in mind: this was found because ONE case got surfaced by player frustration -- the same first-touch flaw could theoretically have mis-attributed other lines elsewhere on the map before this fix existed, and there's no bulk re-audit of already-recorded ownership built here, only a fix to how NEW claims get decided plus the one confirmed bad entry corrected by hand.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

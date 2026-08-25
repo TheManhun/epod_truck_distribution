@@ -1,3 +1,6 @@
+local log = require("epod_td.log")
+local stations = require("epod_td.stations")
+
 local M = {}
 
 
@@ -19,13 +22,26 @@ local M = {}
 -- independently enabled/disabled -- the toggle button now only ever
 -- affects whichever hub is currently selected, never any other.
 --
--- No staleness validation (unlike managed_registry.lua's line IDs):
--- same reasoning settings.lua already documented for the single-hub
--- version -- a stale/invalid hub ID already degrades harmlessly
--- (planner.calculateTargetAllocation returns zero candidates,
--- dispatcher.applyPlan finds nothing to do) rather than erroring, so
--- a dedicated validation pass would be solving a problem that
--- doesn't actually bite.
+-- Decision 63: this file used to claim staleness validation "doesn't
+-- actually bite" -- live-confirmed wrong. This file (and
+-- line_ownership.lua/source_line_registry.lua) writes to the game
+-- install folder, not a per-savegame path (no reliable API exists to
+-- read which save is active -- same gap documented in
+-- managed_registry.lua). Loading a DIFFERENT save that happens to
+-- reuse the same entity ID (confirmed live: two saves from the same
+-- lineage genuinely share IDs for the same real stations) meant a
+-- hub showed ON in a save that had never actually enabled it, and
+-- fed a stale/wrong-context ID into a delete command elsewhere,
+-- crashing the game. Now validates the same way managed_registry.lua
+-- already does for line IDs: any stored hub ID that no longer
+-- resolves to a real STATION_GROUP component is dropped on load,
+-- rather than trusted blindly. This does not fully solve cross-save
+-- confusion (an ID that happens to be valid in BOTH saves, as in the
+-- crash above, still passes this check -- true per-save isolation
+-- would need a save-identity fingerprint, which still doesn't exist)
+-- but it closes the far more common case: a genuinely unrelated save
+-- whose stale hub ID either doesn't exist at all, or exists as some
+-- other now-invalid reference.
 -- ============================================================
 
 local STATE_FILE_PATH = "epod_td_enabled_hubs.txt"
@@ -85,13 +101,54 @@ local function saveStateToDisk(state)
 end
 
 
+-- Decision 63: drops any stored hub ID that no longer resolves to a
+-- real STATION_GROUP component (a different, unrelated save, or a
+-- since-removed station) -- same validate-on-load discipline
+-- managed_registry.lua already uses for line IDs. Cheap enough to run
+-- on every load (typically a handful of enabled hubs, one
+-- getComponent pcall each), so no per-instance throttle is needed
+-- here the way managed_registry.lua's expensive getLines() walk
+-- needs one.
+local function loadAndValidate()
+
+    local state = loadStateFromDisk()
+
+    local changed = false
+
+    for hubId, _ in pairs(state) do
+
+        if stations.getStationGroup(hubId) == nil then
+
+            log.info(
+                "HUB REGISTRY: dropping stale entry "
+                    .. tostring(hubId)
+                    .. " (no longer a real station -- different save, "
+                    .. "or removed)"
+            )
+
+            state[hubId] = nil
+            changed = true
+
+        end
+
+    end
+
+    if changed then
+        saveStateToDisk(state)
+    end
+
+    return state
+
+end
+
+
 function M.isEnabled(hubStationGroupId)
 
     if hubStationGroupId == nil then
         return false
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     return state[hubStationGroupId] == true
 
@@ -104,7 +161,7 @@ function M.enable(hubStationGroupId)
         return
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     if state[hubStationGroupId] ~= true then
         state[hubStationGroupId] = true
@@ -120,7 +177,7 @@ function M.disable(hubStationGroupId)
         return
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     if state[hubStationGroupId] == true then
         state[hubStationGroupId] = nil
@@ -134,7 +191,7 @@ end
 -- ID, in no particular order.
 function M.getEnabledHubs()
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     local hubIds = {}
 

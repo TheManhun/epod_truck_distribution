@@ -740,7 +740,20 @@ function M.getStationGroup(stationGroupId)
 end
 
 
-function M.getEntityName(entityId)
+-- Decision 64 fix, live-confirmed real bug: getEntityName's result
+-- used to feed straight into "● " .. hubName .. " ↔ " .. destination
+-- (line_splitter.lua) and "● " .. hubName .. " - Fleet " ..N
+-- (fleet_naming.lua). Once a hub STATION itself also gets a "● "
+-- prefix (Decision 64), every line/fleet name built from it doubled
+-- up ("● ● Corby North ↔ Corby Exchange") -- confirmed live in a
+-- real dump. getRawEntityName returns the name exactly as stored, no
+-- stripping -- needed by the ON/OFF toggle handler itself, which has
+-- to see the TRUE current name to decide whether to add or remove
+-- the prefix. getEntityName (below) is for every other caller
+-- (naming ingredients, logging, dumps) and always strips a leading
+-- "● " first, so a renamed hub's decorative prefix never leaks into
+-- something built FROM its name.
+function M.getRawEntityName(entityId)
     if entityId == nil
         or entityId < 0
     then
@@ -761,6 +774,19 @@ function M.getEntityName(entityId)
 
     return "Entity "
         .. tostring(entityId)
+end
+
+
+function M.getEntityName(entityId)
+
+    local name = M.getRawEntityName(entityId)
+
+    if name:sub(1, 4) == "● " then
+        return name:sub(5)
+    end
+
+    return name
+
 end
 
 
@@ -942,6 +968,78 @@ function M.findStationGroupOnLine(
 
     return stationGroupId,
         occurrences
+end
+
+
+-- ============================================================
+-- RENAME A STATION (Decision 64)
+--
+-- setName is documented by the official API as entity-agnostic
+-- (COMMANDS.md: "the entity Id of the entity that should be
+-- renamed," no restriction to lines) and already LIVE-CONFIRMED
+-- working on two different entity types in this codebase -- vehicles
+-- (fleet_naming.lua) and, via createLine's name argument, lines.
+-- This is the first use on a STATION_GROUP entity specifically, same
+-- proven command/sendCommand shape as fleet_naming.lua's per-vehicle
+-- rename.
+-- ============================================================
+function M.setEntityName(entityId, newName, onComplete)
+
+    local okCommand, commandOrError =
+        pcall(api.cmd.make.setName, entityId, newName)
+
+    if not okCommand then
+
+        log.info(
+            "STATIONS: setName command error for entity "
+                .. tostring(entityId)
+                .. ": "
+                .. tostring(commandOrError)
+        )
+
+        if onComplete ~= nil then
+            onComplete(false)
+        end
+
+        return
+
+    end
+
+    local okSend, sendErr =
+        pcall(function()
+
+            api.cmd.sendCommand(commandOrError, function(cmd, success)
+
+                log.info(
+                    "STATIONS: renamed entity "
+                        .. tostring(entityId)
+                        .. " -> \"" .. tostring(newName) .. "\": "
+                        .. tostring(success)
+                )
+
+                if onComplete ~= nil then
+                    onComplete(success)
+                end
+
+            end)
+
+        end)
+
+    if not okSend then
+
+        log.info(
+            "STATIONS: setName send error for entity "
+                .. tostring(entityId)
+                .. ": "
+                .. tostring(sendErr)
+        )
+
+        if onComplete ~= nil then
+            onComplete(false)
+        end
+
+    end
+
 end
 
 

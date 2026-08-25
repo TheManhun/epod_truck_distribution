@@ -1,3 +1,5 @@
+local log = require("epod_td.log")
+
 local M = {}
 
 
@@ -30,9 +32,23 @@ local M = {}
 -- like line 6 did"). A hub can legitimately have split more than one
 -- original combined line, so this now stores a SET per hub, not a
 -- single value.
+--
+-- Decision 63: writes to the game install folder, not a per-savegame
+-- path (same documented gap as hub_registry.lua/line_ownership.lua --
+-- no reliable API exists to read which save is active). Now validates
+-- on load the same way those two do -- any stored line ID that no
+-- longer resolves to a real line (a different, unrelated save, or a
+-- since-deleted line) is dropped rather than trusted blindly. Closes
+-- off feeding a stale cross-save ID into a delete command elsewhere,
+-- confirmed live to crash the game.
 -- ============================================================
 
 local STATE_FILE_PATH = "epod_td_source_lines.txt"
+
+-- Per-instance throttle on the expensive game.interface.getLines()
+-- walk only -- NOT a cache of the registry's own contents. Same
+-- pattern as managed_registry.lua's hasMigratedThisSession.
+local hasValidatedThisSession = false
 
 
 local function loadStateFromDisk()
@@ -102,6 +118,66 @@ local function saveStateToDisk(state)
 end
 
 
+local function loadAndValidate()
+
+    local state = loadStateFromDisk()
+
+    if hasValidatedThisSession then
+        return state
+    end
+
+    hasValidatedThisSession = true
+
+    local ok, allLineIds =
+        pcall(function()
+            return game.interface.getLines()
+        end)
+
+    if not ok or allLineIds == nil then
+        return state
+    end
+
+    local realLineIds = {}
+
+    for _, lineId in ipairs(allLineIds) do
+        realLineIds[lineId] = true
+    end
+
+    local changed = false
+
+    for hubId, lineIdSet in pairs(state) do
+
+        for lineId, _ in pairs(lineIdSet) do
+
+            if not realLineIds[lineId] then
+
+                log.info(
+                    "SOURCE LINE REGISTRY: dropping stale entry "
+                        .. tostring(lineId)
+                        .. " for hub "
+                        .. tostring(hubId)
+                        .. " (no longer a real line -- different save, "
+                        .. "or deleted)"
+                )
+
+                lineIdSet[lineId] = nil
+                changed = true
+
+            end
+
+        end
+
+    end
+
+    if changed then
+        saveStateToDisk(state)
+    end
+
+    return state
+
+end
+
+
 -- Returns a plain array of every line ID Stage 1 has ever split FOR
 -- this hub -- a hub can legitimately have more than one, if the
 -- player had multiple separate combined lines touching it. Empty
@@ -112,7 +188,7 @@ function M.getSourceLines(hubStationGroupId)
         return {}
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     local lineIdSet = state[hubStationGroupId]
 
@@ -141,7 +217,7 @@ function M.addSourceLine(hubStationGroupId, lineId)
         return
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     if state[hubStationGroupId] == nil then
         state[hubStationGroupId] = {}
@@ -171,7 +247,7 @@ function M.removeSourceLine(hubStationGroupId, lineId)
         return
     end
 
-    local state = loadStateFromDisk()
+    local state = loadAndValidate()
 
     local lineIdSet = state[hubStationGroupId]
 
