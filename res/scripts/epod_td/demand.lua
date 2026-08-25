@@ -325,6 +325,37 @@ function M.getCargoTypeDisplayName(cargoType)
 end
 
 
+-- Decision 78: the raw uppercase constant name (e.g. "IRON_ORE"),
+-- same value getCargoTypeIconPath already builds icon paths from.
+-- Needed because demand.scan's cargoTypes map is keyed by the raw
+-- numeric SIM_CARGO type id, while stations.lua's itemsLoaded/
+-- itemsUnloaded fields are keyed by this string constant directly --
+-- two different key spaces for the same real cargo type. Confirmed
+-- live (Cargo Balance Inspector's first run) that mixing them without
+-- this conversion produces duplicate rows for the same cargo type
+-- under two different-looking names ("Iron ore" vs "CargoType
+-- IRON_ORE") instead of one correctly merged row. Returns nil when
+-- the cargo type can't be resolved, same convention as
+-- getCargoTypeIconPath.
+function M.getCargoTypeId(cargoType)
+
+    local info = M.getCargoTypeInfo(cargoType)
+
+    if info == nil then
+        return nil
+    end
+
+    local id = safeField(info, "id")
+
+    if id == nil or id == "" then
+        return nil
+    end
+
+    return id
+
+end
+
+
 -- Returns nil (not a guessed path) when the cargo type or its id
 -- field cannot be resolved; callers must fall back to text.
 function M.getCargoTypeIconPath(cargoType)

@@ -1437,6 +1437,42 @@ New `res/scripts/epod_td/gui_experiment.lua`, triggered by a new always-visible 
 
 Slider/checkbox/action button are still deliberately demo-only (log-only handlers) -- wiring any of them to a real dispatch decision is a separate, later step now that the rendering/interaction/shutdown safety are all confirmed.
 
+## Decision 77 — Cargo Balance Inspector (read-only): the mod is destination-aware but not production-recipe-aware, and this is Stage 1 of finding out how badly that matters
+
+### What happened
+
+Player identified a real gap: a destination needing two inputs (e.g. a steel mill needing both IRON_ORE and COAL) shows up as one combined `waiting` total to the Planner today -- 90 waiting could be 81 iron + 9 coal, and the current allocation math has no way to know the coal side is being starved. Proposed a two-stage plan: a read-only inspector first (real evidence before any control mechanism), then a cargo-aware dispatch mechanism chosen from what that evidence shows.
+
+### Decision
+
+Built Stage 1 only. New DEBUG button "Cargo Balance Inspector," alongside Fleet Balance Report. For every managed destination touching 2+ distinct real cargo types (current waiting, from `demand.scan`'s already-proven per-destination `cargoTypes` breakdown, OR all-time unloaded history, from a new small getter `stations.getUnloadedAmountsByType` -- same confirmed `itemsUnloaded` field Decision 28 already proved breaks down by real cargo type, just keeping amounts instead of only the type list), reports both numbers side by side and flags whichever type sits at or below 25% of the busiest type at THAT destination as "comparatively under-served."
+
+Deliberately does NOT claim to know a destination's actual required input ratio -- no API for that has been confirmed, and this project already learned once (Decision 22's terminal stock-take bug) that an aggregate observation can look meaningful and be wrong. The flag is explicitly relative-within-destination, not a claim about the true recipe.
+
+Deliberately stays read-only and does not go near `alternativeTerminals`/cargo-filter territory -- a related, much bigger proposal (splitting a destination into per-cargo-type dedicated lines with load/unload filters) was raised in the same conversation, but that's the same class of undocumented `Line.Stop` sub-field area that crashed the game twice already (Decisions 56/57), both times because a write that succeeded was still semantically wrong and only failed later when the engine actually used it on a real line with real vehicles. Not ruled out for later, but explicitly not attempted until real evidence from this inspector justifies it, and even then only against a disposable throwaway line per Decision 57's own rule.
+
+### Consequence
+
+Not yet live-tested. Next step per the player's own plan: run it against a real multi-input destination (the steel mill that prompted this) for a few minutes and read `epod_td_cargo_balance_report.txt` -- that real evidence, not more speculation, should decide whether Stage 2 (some cargo-aware control mechanism) is even worth the risk, and if so which one.
+
+## Decision 78 — Cargo Balance Inspector's first live run found a real bug in itself: two different cargo-type key spaces, never reconciled
+
+### What happened
+
+First live run produced a broken-looking report: "Iron ore" (waiting=197) and "CargoType IRON_ORE" (unloaded=162) appeared as two separate rows for the exact same real cargo type, and every single all-time-unloaded row got flagged "comparatively under-served" regardless of whether that was true.
+
+### Reason
+
+`demand.scan`'s `cargoTypes` map is keyed by the raw numeric `SIM_CARGO.cargoType` id; `stations.getUnloadedAmountsByType` (built the same session, Decision 77) is keyed by the uppercase string constant (`"IRON_ORE"`) `itemsLoaded`/`itemsUnloaded` actually use. Two different key spaces for the same real cargo type, merged directly without reconciling them -- `stations.lua`'s own pre-existing comment on `getUnloadedCargoTypes` had already flagged exactly this risk ("a different, lower-level API never cross-checked against vehicle capacity keys... risked a silent format mismatch"), and this is precisely that mismatch, self-inflicted in the same session that wrote the warning. Since the two key sets never matched, every unloaded-only row's "waiting" always read as 0 -- always at or below the 25% threshold -- making the under-served flag fire on every single row regardless of any real imbalance.
+
+### Decision
+
+Added `demand.getCargoTypeId(cargoType)` -- returns the same raw string constant `getCargoTypeIconPath` already builds icon paths from, resolved through the already-proven `cargoTypeRep.get()` path. The inspector now normalizes every waiting-side cargo type onto this string-constant key before merging with the unloaded side, so both columns line up under one real row per cargo type. A cargo type seen only in all-time history (never currently waiting) has no resolvable display name via `cargoTypeRep` from a bare string constant -- falls back to a plain prettified version of the constant itself ("IRON_ORE" -> "Iron Ore") rather than the confusing "CargoType IRON_ORE" label.
+
+### Consequence
+
+Not yet re-tested live. The one genuinely useful, unaffected signal from the first run stands on its own regardless of this bug: Goole Steel Plant showed Iron ore waiting=184 against Coal waiting=36 -- both numbers came from the SAME key space (both matched on the waiting side, no merge involved), a real ~5:1 imbalance, exactly the problem this whole feature exists to surface. Worth a second run now to see the fully corrected report before deciding anything about Stage 2.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

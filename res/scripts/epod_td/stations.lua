@@ -590,6 +590,52 @@ local RESERVED_ITEM_HISTORY_KEYS = {
     _lastYear = true
 }
 
+-- Decision 77: same field as getUnloadedCargoTypes above, but keeps
+-- the real amounts instead of just the list of type names -- needed
+-- by the Cargo Balance Inspector to compare how much of each cargo
+-- type a multi-input destination has actually received, not just
+-- which types it's ever received at all.
+function M.getUnloadedAmountsByType(stationGroupId)
+
+    local amounts = {}
+
+    if stationGroupId == nil or stationGroupId < 0 then
+        return amounts
+    end
+
+    local ok, entity = pcall(game.interface.getEntity, stationGroupId)
+
+    if not ok or entity == nil then
+        return amounts
+    end
+
+    local unloadedTable = safeField(entity, "itemsUnloaded")
+
+    if unloadedTable == nil then
+        return amounts
+    end
+
+    local okIter = pcall(function()
+
+        for key, value in pairs(unloadedTable) do
+
+            if not RESERVED_ITEM_HISTORY_KEYS[key] then
+                amounts[key] = value
+            end
+
+        end
+
+    end)
+
+    if not okIter then
+        return {}
+    end
+
+    return amounts
+
+end
+
+
 function M.getUnloadedCargoTypes(stationGroupId)
 
     local cargoTypes = {}

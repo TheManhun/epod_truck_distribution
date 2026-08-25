@@ -65,10 +65,60 @@ Worth noting this isn't a data-visibility gap -- `demand.scan`'s per-destination
 
 ### Open questions -- nothing here confirmed yet
 
-- Does TF2 expose a factory's *required* input ratio anywhere queryable, or would this have to be inferred indirectly (e.g. from how fast each stockpiled type actually gets consumed once delivered)? This is the load-bearing unknown -- without it, "the right ratio" is a guess dressed up as a formula.
+- ~~Does TF2 expose a factory's *required* input ratio anywhere queryable~~ -- **promising real lead found**, not yet confirmed in this project. The installed "AI Builder" mod (Steam Workshop 2820656841, a mature, 16-version, 25,000+ line mod) has real, working code for exactly this in its own `mod.lua`: an `addModifier("loadConstruction", ...)` hook that, for any construction with `data.type == "INDUSTRY"`, calls `data.updateFn(params)` and reads back `result.rule.input`/`result.rule.output`/`result.rule.capacity`/`result.stocks` -- a genuine production recipe, not inferred. The same mod's own `usefulcommands.txt` (hand-collected API notes) also confirms `api.res.constructionRep.getAll()`/`.get(i)` is a real, directly-queryable resource registry -- same family as `api.res.cargoTypeRep`, which this project's own `demand.lua` already uses successfully -- suggesting industry construction data might be reachable at ordinary runtime, not only through a `mod.lua` load-time hook. Two things remain genuinely unconfirmed before this is buildable: whether `constructionRep.get(i)` exposes the same `.updateFn`/recipe shape the load-time hook uses, and whether a LIVE industry entity carries a readable reference back to which construction it was built from (needed to go from "steel mill entity 88231" to "look up its recipe"). Worth a real, dedicated research pass (a `dumpEntityInfo`-style probe against a real industry entity and against `constructionRep`) before building anything on it -- but this is the strongest lead this question has had all session.
 - How would a truck's per-cargo-type load actually get attributed on a shared multi-cargo line -- `vehicles.getCargoLoad` gives a per-vehicle breakdown already, so the raw mechanism likely exists; what's unproven is turning that into a real allocation signal without adding meaningful per-tick overhead.
 - Same trap this project has already been burned by once (see "Distance/Cycle-Time-Aware Truck Allocation" above): a naive reactive version that keeps chasing whichever cargo type currently looks most starved risks overcorrecting and just flipping the imbalance the other way. Needs the same "baseline vs. recent, hold don't oscillate" discipline, not a first-instinct implementation.
 - Whether splitting the two cargo types onto physically separate dedicated lines (if the real station topology even allows it) solves this more simply than any new allocation math would -- worth ruling out live before building anything.
+
+### Update -- real evidence gathered, two mechanisms explored and superseded
+
+The read-only Cargo Balance Inspector (Decisions 77/78) confirmed this is real, not speculative: Goole Steel Plant showed Iron ore waiting=171 against Coal waiting=44 (~4:1), with Coal's all-time delivered total sitting at 0 despite Iron's 132 -- coal effectively never arrives there in practice.
+
+Two mechanisms for actually separating the cargo were considered and both rejected, for concrete reasons rather than just caution:
+- **Two lines with the same stops, cargo-filtered per stop** -- rejected. TF2 routes cargo by stops + vehicle capacity, not by line name/identity, so two identically-stopped lines wouldn't separate anything without an actual per-stop cargo filter. That filter lives in the same undocumented `Line.Stop` territory (`alternativeTerminals`) that already crashed this game twice (Decisions 56/57).
+- **Two lines, separated by using cargo-restricted vehicles instead of a filter** -- rejected for THIS player's fleet specifically: confirmed live that the real trucks in play can carry both coal and iron (no naturally-restricted vehicles owned), so this mechanism has nothing to restrict with. Would need the player to specifically buy specialized (era-appropriate) single-cargo vehicles, which the mod deliberately never does on its own (Decision 4/8).
+
+See "Point-to-Point Source Runners" below for the mechanism now considered the leading candidate instead of either of these.
+
+## Point-to-Point Source Runners ("Steel Runners") -- Mine-to-Mill-to-Hub Loops
+
+### Origin
+
+Direct follow-on from the cargo-balance problem above, once both "two lines + filter" and "two lines + restricted vehicles" were ruled out. Player's proposal: instead of trying to separate cargo at a shared hub-fed line, send trucks on a direct loop from the actual SOURCE (e.g. a coal mine) straight to the destination (the steel mill), dropping the raw material there, picking up the mill's own output (steel) in return, and carrying that on to the distribution hub. A separate loop does the same for iron ore from the iron mine.
+
+### Why this is a genuinely better mechanism, not just a different one
+
+A direct `Coal Mine <-> Steel Mill` line naturally has only coal available to pick up at the mine end -- there's nothing else physically produced there for a truck to load instead. Separation happens as a mechanical consequence of what each end actually produces, not because anything was configured to enforce it. No cargo filter, no vehicle restriction, no undocumented native field, no risk of repeating Decisions 56/57. This is a materially safer mechanism than either of the two rejected above.
+
+It also incidentally solves a second problem raised in the same conversation: mines not being physically near the hub that's supposed to serve the mill they feed. A direct mine-to-mill loop doesn't route through a hub's own local catchment at all, so it doesn't matter which hub's "territory" the mine sits in.
+
+### What this actually requires -- a real, separate piece of work, not a quick addition
+
+- **A new line topology.** Everything this mod currently manages (Split, Assign & Balance, terminal spreading, the Planner's target allocation) assumes a 2-stop `Hub <-> Destination` line. A mine-mill-hub loop is a 3+-stop chain shaped completely differently -- none of the existing pipeline logic applies to it directly.
+- **Knowing which mine feeds which mill.** Nothing in this mod (or, per live research, in TF2's own scripting API as currently understood) confirms a queryable mine-to-mill relationship. The catchment-detection idea (`SIM_BUILDING`, `SIM_CARGO.targetEntity`/`sourceEntity` -- the latter already confirmed real, Decision 27-adjacent) could eventually discover this automatically, but that's unconfirmed, separate research. The realistic first version has the PLAYER designate "this mine feeds this mill" explicitly -- consistent with this mod's own founding principle (Decision 2: player defines the network, the mod dispatches within it), not a regression from wanting full automation.
+- **A new balancing question**: once real mine-to-mill loops exist, deciding how many trucks each loop gets (coal loop vs. iron loop) is the SAME demand-weighted allocation problem the Planner already solves for ordinary hub lines -- just needs applying to this new line shape once it exists.
+
+### Status
+
+Not started. A real, well-reasoned direction with a genuinely lower risk profile than the alternatives already tried tonight, but it's new scope (a second line topology, a new player-facing "designate a source" step) rather than an extension of the existing hub model. Worth a deliberate design/build session on its own, not squeezed in alongside other work.
+
+## Scope Split: "City Distribution Centre" (v1) vs. a Future "Production Distribution Centre"
+
+### Origin
+
+Raised live, half-joking but genuinely sound, right after the cargo-balance/Steel Runners discussion above: rather than solving multi-input production-recipe balancing (coal+iron for steel, etc.) inside this mod, market and scope v1 as a **City Distribution Centre** -- managing only finished-goods delivery to towns. The much harder recipe-balance problem, and any Steel-Runners-style mine-to-mill mechanism, becomes a separate, later **Production Distribution Centre** concept instead of something v1 needs to solve to be useful.
+
+### Why this is a real option, not just a name change
+
+Towns don't have the "must receive the right ratio of N inputs before anything happens" production-chain dynamic that industries do -- a town just wants deliveries; there's no equivalent of "coal starves the steel mill" between the cargo types a town consumes. Scoping to town-only destinations means the entire cargo-balance problem line of work from tonight (Cargo Balance Inspector, the two rejected separation mechanisms, Steel Runners) stops being a v1 blocker at all -- it's deferred to a genuinely separate future effort with its own name and its own scope, not something jammed into the existing hub model. It also directly answers this session's own "this is becoming Line Manager" scope-creep concern (see the Steel Runners idea above) with a clean, narrow identity instead of an ever-expanding one.
+
+### What "reject raw materials" would actually take
+
+Not just branding -- a real, buildable filter: the mod would need to tell a town-serving destination apart from an industry-serving one, so a Split/Distribution-Hub setup could deliberately skip (or warn about) an industrial destination rather than silently mismanaging it the way it does today. This is the same detection question as the catchment/`SIM_BUILDING` research idea already recorded elsewhere in this file -- there, it was for INCLUDING nearby industries; here, the same capability would be used for EXCLUDING them. Nothing about this distinction is confirmed yet (no live check has been done for "is this destination a town or an industry").
+
+### Status
+
+Not decided, not started -- raised as a genuine strategic option, not yet committed to. Worth weighing deliberately (possibly a fresh conversation, not squeezed into a late-night wind-down) rather than defaulted into.
 
 ### If it does pan out
 

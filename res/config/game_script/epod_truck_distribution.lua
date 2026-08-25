@@ -2110,6 +2110,262 @@ end
 
 
 -- ============================================================
+-- CARGO BALANCE INSPECTOR (config.DEBUG only, Decision 77)
+--
+-- Requested live: the mod is destination-aware (Fleet Balance Report
+-- shows total waiting per line) but not production-recipe-aware -- a
+-- destination needing two inputs (e.g. a steel mill needing both
+-- IRON_ORE and COAL) just shows as one combined waiting total today,
+-- so a truck line can fill up almost entirely with whichever cargo
+-- type happens to be more abundant while the other genuinely starves.
+-- Read-only, Stage 1 of a two-stage plan: this just reports the real
+-- per-cargo-type imbalance so a control mechanism (Stage 2) can be
+-- chosen from real evidence rather than guessed.
+--
+-- Deliberately does NOT claim to know a destination's actual required
+-- input ratio -- no API for that has been confirmed, and this project
+-- has already been burned once (the terminal-allocator stock-take
+-- bug, Decision 22) by treating an aggregate observation as more
+-- meaningful than it was. "Comparatively under-served" here is purely
+-- relative to the busiest cargo type AT THE SAME destination -- a
+-- real, honest signal, not a claim about the true recipe.
+--
+-- Deliberately does NOT touch alternativeTerminals/cargo-filter
+-- territory -- that's the exact undocumented Line.Stop sub-field area
+-- that crashed the game twice (Decisions 56/57). This stays read-only
+-- on purpose until real evidence justifies the next, riskier step.
+-- ============================================================
+
+local function handleCargoBalanceInspectorButtonClick()
+
+    local output = {}
+
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "CARGO BALANCE INSPECTOR (read-only)"
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "Compares CURRENT waiting cargo (by type) against ALL-TIME"
+    output[#output + 1] = "unloaded history (by type) at every managed destination with"
+    output[#output + 1] = "more than one real cargo type. Flags whichever type looks"
+    output[#output + 1] = "comparatively under-served relative to the busiest type at"
+    output[#output + 1] = "THAT destination -- this is a relative signal, not a claim"
+    output[#output + 1] = "about the destination's actual required input ratio (no API"
+    output[#output + 1] = "for that has been confirmed)."
+    output[#output + 1] = "----------------------------------------"
+
+    local ok, allLineIds =
+        pcall(function()
+            return game.interface.getLines()
+        end)
+
+    if not ok or allLineIds == nil then
+
+        logUi("CARGO BALANCE INSPECTOR: could not read the line list.")
+
+        return
+
+    end
+
+    local reportedDestinations = {}
+    local flaggedCount = 0
+
+    for _, lineId in ipairs(allLineIds) do
+
+        if managed_registry.isManaged(lineId) then
+
+            local ownerHubId = line_ownership.getOwner(lineId)
+
+            if ownerHubId ~= nil then
+
+                local okScan, scanResult = pcall(demand.scan, lineId, ownerHubId)
+
+                if okScan and scanResult ~= nil and scanResult.destinations ~= nil then
+
+                    for _, destination in pairs(scanResult.destinations) do
+
+                        if destination.stationGroup ~= ownerHubId
+                            and not reportedDestinations[destination.stationGroup]
+                        then
+
+                            -- Decision 78: demand.scan's cargoTypes is keyed
+                            -- by the raw numeric SIM_CARGO type id;
+                            -- stations.getUnloadedAmountsByType is keyed by
+                            -- the uppercase string constant (e.g.
+                            -- "IRON_ORE"). Confirmed live these are
+                            -- genuinely different key spaces for the same
+                            -- real cargo type -- normalize the waiting side
+                            -- onto the string-constant key (via
+                            -- demand.getCargoTypeId) before merging, or
+                            -- "Iron ore" and "CargoType IRON_ORE" show up as
+                            -- two separate, wrong rows for one real thing.
+                            local waitingByType = {}
+                            local displayNameByKey = {}
+
+                            for cargoType, amount in pairs(destination.cargoTypes or {}) do
+
+                                local normalizedKey =
+                                    demand.getCargoTypeId(cargoType)
+                                        or ("unresolved:" .. tostring(cargoType))
+
+                                waitingByType[normalizedKey] =
+                                    (waitingByType[normalizedKey] or 0) + amount
+
+                                displayNameByKey[normalizedKey] =
+                                    demand.getCargoTypeDisplayName(cargoType)
+
+                            end
+
+                            local okUnloaded, unloadedByType =
+                                pcall(stations.getUnloadedAmountsByType, destination.stationGroup)
+
+                            if not okUnloaded then
+                                unloadedByType = {}
+                            end
+
+                            -- Only interesting if this destination genuinely
+                            -- involves 2+ distinct cargo types -- combines
+                            -- current waiting AND all-time history so a type
+                            -- with 0 waiting right now but a real delivery
+                            -- history still counts.
+                            local allTypes = {}
+
+                            for cargoType, _ in pairs(waitingByType) do
+                                allTypes[cargoType] = true
+                            end
+
+                            for cargoType, _ in pairs(unloadedByType) do
+                                allTypes[cargoType] = true
+                            end
+
+                            local typeCount = 0
+
+                            for _ in pairs(allTypes) do
+                                typeCount = typeCount + 1
+                            end
+
+                            if typeCount >= 2 then
+
+                                reportedDestinations[destination.stationGroup] = true
+
+                                output[#output + 1] =
+                                    tostring(destination.name)
+                                        .. "  (served via "
+                                        .. tostring(getEntityName(ownerHubId))
+                                        .. ")"
+
+                                local rows = {}
+
+                                for cargoType, _ in pairs(allTypes) do
+
+                                    -- displayNameByKey only has an entry when
+                                    -- this cargo type was seen on the waiting
+                                    -- side (the only side that can resolve a
+                                    -- real name via cargoTypeRep -- see
+                                    -- Decision 78). A type seen ONLY in
+                                    -- all-time unloaded history has no
+                                    -- resolvable name; fall back to a plain
+                                    -- prettified version of the raw constant
+                                    -- ("IRON_ORE" -> "Iron Ore") rather than
+                                    -- the confusing "CargoType IRON_ORE".
+                                    local displayName = displayNameByKey[cargoType]
+
+                                    if displayName == nil then
+
+                                        displayName =
+                                            tostring(cargoType)
+                                                :gsub("_", " ")
+                                                :gsub("(%a)([%w']*)", function(first, rest)
+                                                    return first:upper() .. rest:lower()
+                                                end)
+
+                                    end
+
+                                    rows[#rows + 1] = {
+                                        displayName = displayName,
+                                        waiting = waitingByType[cargoType] or 0,
+                                        unloaded = unloadedByType[cargoType] or 0
+                                    }
+
+                                end
+
+                                table.sort(rows, function(a, b)
+                                    return a.waiting > b.waiting
+                                end)
+
+                                local maxWaiting = 0
+
+                                for _, row in ipairs(rows) do
+
+                                    if row.waiting > maxWaiting then
+                                        maxWaiting = row.waiting
+                                    end
+
+                                end
+
+                                for _, row in ipairs(rows) do
+
+                                    local flag = ""
+
+                                    if maxWaiting > 0
+                                        and row.waiting <= maxWaiting * 0.25
+                                    then
+
+                                        flag = "  <-- comparatively under-served"
+                                        flaggedCount = flaggedCount + 1
+
+                                    end
+
+                                    output[#output + 1] =
+                                        "  " .. tostring(row.displayName)
+                                            .. "  |  waiting=" .. tostring(row.waiting)
+                                            .. "  |  unloaded (all-time)=" .. tostring(row.unloaded)
+                                            .. flag
+
+                                end
+
+                                output[#output + 1] = "----------------------------------------"
+
+                            end
+
+                        end
+
+                    end
+
+                end
+
+            end
+
+        end
+
+    end
+
+    local destinationCount = 0
+
+    for _ in pairs(reportedDestinations) do
+        destinationCount = destinationCount + 1
+    end
+
+    output[#output + 1] =
+        "CARGO BALANCE INSPECTOR COMPLETE: "
+            .. tostring(destinationCount) .. " multi-cargo destination(s), "
+            .. tostring(flaggedCount) .. " comparatively-under-served flag(s)."
+
+    output[#output + 1] = "========================================"
+
+    writeReportFile("epod_td_cargo_balance_report.txt", output)
+
+    logUi(
+        "CARGO BALANCE INSPECTOR: wrote "
+            .. tostring(destinationCount)
+            .. " multi-cargo destination(s), "
+            .. tostring(flaggedCount)
+            .. " flag(s) to epod_td_cargo_balance_report.txt "
+            .. "(in the game install folder)."
+    )
+
+end
+
+
+-- ============================================================
 -- DEDUPE SHARED ROUTE LINES (config.DEBUG only)
 --
 -- Decision 59: a line touching two enabled hubs at once could get
@@ -3178,6 +3434,31 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             fleetBalanceReportButton
+
+
+        distributionState.textViews.cargoBalanceInspectorButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".cargoBalanceInspectorButtonLabel",
+                "[ Cargo Balance Inspector (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local cargoBalanceInspectorButton =
+            gui.button_create(
+                WINDOW_ID .. ".cargoBalanceInspectorButton",
+                distributionState.textViews.cargoBalanceInspectorButtonLabel
+            )
+
+        cargoBalanceInspectorButton:onClick(
+            handleCargoBalanceInspectorButtonClick
+        )
+
+        distributionState.cargoBalanceInspectorButton =
+            cargoBalanceInspectorButton
+
+        fixedViews[#fixedViews + 1] =
+            cargoBalanceInspectorButton
 
 
         distributionState.textViews.dedupeSharedRouteLinesButtonLabel =
