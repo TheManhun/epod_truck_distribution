@@ -3,6 +3,7 @@ local gui = require("gui")
 
 local tab_overview = require("epod_td.gui_tab_overview")
 local tab_hubs = require("epod_td.gui_tab_hubs")
+local tab_lines = require("epod_td.gui_tab_lines")
 local tab_services = require("epod_td.gui_tab_services")
 local tab_fleet = require("epod_td.gui_tab_fleet")
 local tab_terminals = require("epod_td.gui_tab_terminals")
@@ -49,7 +50,37 @@ local M = {}
 local WINDOW_ID = "ddCentralManagerWindow"
 local WINDOW_WIDTH = 560
 local ROW_WIDTH = WINDOW_WIDTH
-local MAX_ROWS = 24
+
+-- Decision 121: raised from 24 now that the row pool lives inside a
+-- scroll area (see ensureWindow below) instead of a fixed-height
+-- window that just grew taller with every row -- headroom is now
+-- cheap since a tall pool just scrolls rather than pushing the window
+-- off-screen.
+local MAX_ROWS = 60
+
+-- Decision 121: a SECOND, separate row pool purpose-built for the new
+-- LINES tab's per-destination cargo-icon breakdown (full parity with
+-- the old panel's own managed-line display). Deliberately NOT folded
+-- into the plain `state.rows` pool above: every other tab already
+-- relies on a single full-width text row (e.g. SERVICES' padded
+-- "Service / Current / Target / Waiting / Delta" table) -- narrowing
+-- that shared pool's label to make room for a waiting-count column and
+-- cargo icons would break every one of those tabs' formatting. Same
+-- "pre-allocate once" reasoning as the plain pool; both pools live
+-- inside the same scroll area (see ensureWindow) so an unused pool
+-- just costs (blank) scroll space, not permanent window height.
+local MAX_LINE_ROWS = 48
+local LINE_ROW_LABEL_WIDTH = 260
+local LINE_ROW_WAITING_WIDTH = 90
+local LINE_ROW_CARGO_SLOTS = 3
+local LINE_ROW_CARGO_COUNT_WIDTH = 70
+
+-- setTransparent(true) does not hide an imageView's image content
+-- (confirmed live in the old panel: unused slots rendered a visible
+-- placeholder glyph instead of nothing), only setText("") reliably
+-- hides text -- same real texture swap the old panel already uses to
+-- hide unused icon slots.
+local BLANK_CARGO_ICON = "ui/hud/empty12.tga"
 
 -- Decision 71: a pool of pre-allocated, reusable action-button slots,
 -- same "pre-allocate once, refill on tab switch" reasoning as the row
@@ -69,6 +100,7 @@ local ACTION_BUTTON_COUNT = 8
 
 local TABS = {
     tab_overview,
+    tab_lines,
     tab_hubs,
     tab_services,
     tab_fleet,
@@ -86,6 +118,7 @@ local state = {
     tabButtons = {},
     headerLabel = nil,
     rows = nil,
+    lineRows = nil,
     actionButtons = nil,
     closedByUser = false
 }
@@ -152,6 +185,41 @@ local function clearAllRows()
 end
 
 
+-- Same reused-object leak as clearRow above, extended to the richer
+-- LINES-tab row shape (waiting count + cargo icon/count pairs).
+local function clearLineRow(row)
+
+    row.label:setText("", LINE_ROW_LABEL_WIDTH)
+    pcall(row.label.setStyleClassList, row.label, {})
+
+    row.waitingLabel:setText("", LINE_ROW_WAITING_WIDTH)
+
+    for slotIndex = 1, LINE_ROW_CARGO_SLOTS do
+
+        row.cargoIcons[slotIndex]:setImage(BLANK_CARGO_ICON)
+        pcall(row.cargoIcons[slotIndex].setTransparent, row.cargoIcons[slotIndex], true)
+
+        pcall(row.cargoCounts[slotIndex].setTransparent, row.cargoCounts[slotIndex], true)
+        row.cargoCounts[slotIndex]:setText("", LINE_ROW_CARGO_COUNT_WIDTH)
+
+    end
+
+end
+
+
+local function clearAllLineRows()
+
+    if state.lineRows == nil then
+        return
+    end
+
+    for _, row in ipairs(state.lineRows) do
+        clearLineRow(row)
+    end
+
+end
+
+
 -- Blanks every action-button slot's label, drops its handler, AND
 -- resets its style class list (Decision 81 -- same reused-object
 -- leak as clearRow above, applies equally to buttons).
@@ -184,6 +252,7 @@ function M.refresh(hubStationGroupId)
     end
 
     clearAllRows()
+    clearAllLineRows()
     clearActionButtons()
 
     local activeTab = TABS[state.activeTabIndex]
@@ -192,8 +261,11 @@ function M.refresh(hubStationGroupId)
         return
     end
 
+    -- lineRows is a 4th, additive argument -- every existing tab's
+    -- refresh(rows, hubStationGroupId, actionButtons) signature still
+    -- works unchanged; only gui_tab_lines.lua reads the extra value.
     local ok, err =
-        pcall(activeTab.refresh, state.rows, hubStationGroupId, state.actionButtons)
+        pcall(activeTab.refresh, state.rows, hubStationGroupId, state.actionButtons, state.lineRows)
 
     if not ok then
 
@@ -373,6 +445,27 @@ local function ensureWindow(hubStationGroupId)
 
     end
 
+    -- Decision 121 follow-up (LIVE-CONFIRMED FAILURE): gui.scrollArea_
+    -- create was tried here to wrap the row pools, on the theory that
+    -- it's the one scroll primitive that stays inside the gui.lua
+    -- wrapper system (see the old comment this replaced, and the
+    -- research trail in DECISIONS.md). Live result: the header and tab
+    -- row rendered fine, but the ENTIRE scrolled content area came up
+    -- completely blank -- not merely unscrollable, genuinely invisible,
+    -- across every tab including ones with no scrolling-related change
+    -- at all. gui.lua's own scrollAreaMetatable is empty (no exposed
+    -- size hint / scroll-bar-policy setter), so the scroll area
+    -- apparently collapses to a zero/near-zero preferred size with
+    -- nothing telling it otherwise, hiding its own children. Reverted:
+    -- `contentLayout` (holding both row pools) is added DIRECTLY to
+    -- the window again, exactly like before this attempt -- a working,
+    -- non-scrolling window beats a broken scrolling one. Real
+    -- scrolling in this window remains an open problem; MAX_ROWS/
+    -- MAX_LINE_ROWS stay raised since bigger pre-allocated pools are
+    -- harmless even without a scroll area, just unused headroom.
+    local contentLayout =
+        gui.boxLayout_create(WINDOW_ID .. ".contentLayout", "VERTICAL")
+
     state.rows = {}
 
     for rowIndex = 1, MAX_ROWS do
@@ -385,11 +478,78 @@ local function ensureWindow(hubStationGroupId)
                 false
             )
 
-        layout:addItem(label)
+        contentLayout:addItem(label)
 
         state.rows[rowIndex] = { label = label }
 
     end
+
+    -- Decision 121: LINES tab's icon-rich row pool -- one horizontal
+    -- boxLayout per row (label + waiting count + LINE_ROW_CARGO_SLOTS
+    -- icon/count pairs), exactly the same per-row structure the old
+    -- panel's own ensureDistributionWindow already proved live, just
+    -- rebuilt here for the new GUI's shared framework.
+    state.lineRows = {}
+
+    for rowIndex = 1, MAX_LINE_ROWS do
+
+        local rowPrefix = WINDOW_ID .. ".lineRow." .. tostring(rowIndex)
+
+        local rowLayout =
+            gui.boxLayout_create(rowPrefix .. ".row", "HORIZONTAL")
+
+        local labelView =
+            gui.textView_create(rowPrefix .. ".label", "", LINE_ROW_LABEL_WIDTH, false)
+
+        rowLayout:addItem(labelView)
+
+        local waitingView =
+            gui.textView_create(rowPrefix .. ".waiting", "", LINE_ROW_WAITING_WIDTH, false)
+
+        rowLayout:addItem(waitingView)
+
+        local cargoIcons = {}
+        local cargoCounts = {}
+
+        for cargoSlotIndex = 1, LINE_ROW_CARGO_SLOTS do
+
+            local iconView =
+                gui.imageView_create(
+                    rowPrefix .. ".cargoIcon." .. tostring(cargoSlotIndex),
+                    BLANK_CARGO_ICON
+                )
+
+            local countView =
+                gui.textView_create(
+                    rowPrefix .. ".cargoCount." .. tostring(cargoSlotIndex),
+                    "",
+                    LINE_ROW_CARGO_COUNT_WIDTH,
+                    false
+                )
+
+            pcall(iconView.setTransparent, iconView, true)
+            pcall(countView.setTransparent, countView, true)
+
+            rowLayout:addItem(iconView)
+            rowLayout:addItem(countView)
+
+            cargoIcons[cargoSlotIndex] = iconView
+            cargoCounts[cargoSlotIndex] = countView
+
+        end
+
+        contentLayout:addItem(rowLayout)
+
+        state.lineRows[rowIndex] = {
+            label = labelView,
+            waitingLabel = waitingView,
+            cargoIcons = cargoIcons,
+            cargoCounts = cargoCounts
+        }
+
+    end
+
+    layout:addItem(contentLayout)
 
     -- Decision 72: SETTINGS tab's one-time GUI-element experiment
     -- (slider/comboBox/toggleButton/imageView). Wrapped in this file's

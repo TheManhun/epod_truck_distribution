@@ -4,6 +4,8 @@ local hub_registry = require("epod_td.hub_registry")
 local vehicles = require("epod_td.vehicles")
 local demand = require("epod_td.demand")
 local settings = require("epod_td.settings")
+local dispatcher = require("epod_td.dispatcher")
+local gui_debug_tests = require("epod_td.gui_debug_tests")
 
 local M = {}
 
@@ -25,19 +27,32 @@ local M = {}
 -- into this exact window's gui.lua layout tree (a broken, unparented
 -- native component survived to the engine's own shutdown consistency
 -- check and hard-crashed the game). A cycling button through a fixed
--- set of values (OFF -> 5s -> 10s -> 15s -> 30s -> OFF) achieves the
--- same discrete choice using gui.lua's proven-safe button/textView
--- primitives, the exact same pattern every other toggle in this
--- codebase already uses.
+-- set of values (OFF -> 5s -> 10s -> 15s -> 30s -> 5min -> OFF)
+-- achieves the same discrete choice using gui.lua's proven-safe
+-- button/textView primitives, the exact same pattern every other
+-- toggle in this codebase already uses. All values are seconds OF
+-- GAME TIME (see pollAutoApplyFleetPlan in the main script) -- the
+-- short ones are handy for testing, 300 (5 min) is the player's own
+-- suggested real-play default.
 -- ============================================================
 
-local INTERVAL_CYCLE = { false, 5, 10, 15, 30 }
+local INTERVAL_CYCLE = { false, 5, 10, 15, 30, 300 }
+
+-- How far back M.refresh looks when reporting recent activity --
+-- deliberately the same "5 minutes" the player asked to see reflected
+-- ("so the user can see wow it does stuff"), in game-time
+-- milliseconds (dispatcher.getRecentMoveCount's own unit).
+local RECENT_ACTIVITY_WINDOW_MS = 5 * 60 * 1000
 
 
 local function describeAutoApplyState(enabled, intervalSeconds)
 
     if enabled ~= true then
         return "OFF"
+    end
+
+    if intervalSeconds == 300 then
+        return "every 5 min"
     end
 
     return "every " .. tostring(intervalSeconds) .. "s"
@@ -311,7 +326,63 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
 
     end
 
-    rows[1].label:setText(
+    -- Decision 120: entry point for the "Debug Tests" window (the
+    -- genuinely diagnostic/one-off report buttons that used to live
+    -- directly on the old panel) -- "let's migrate everything to gui
+    -- .. in settings add a button to open up (debug tests)", the
+    -- player's own words. Opens a separate standalone window
+    -- (gui_debug_tests.lua), same "Open"-button pattern as the old
+    -- panel's own "Open New GUI"/"Open Raw UI Experiment" buttons.
+    if actionButtons ~= nil and actionButtons[2] ~= nil and gui_debug_tests.hasActions() then
+
+        local slot = actionButtons[2]
+
+        slot.label:setText("[ Open Debug Tests ]", WINDOW_WIDTH)
+        pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+        slot.handler = function()
+
+            local ok, err = pcall(gui_debug_tests.toggleVisibility)
+
+            if not ok then
+                log.info("SETTINGS: Open Debug Tests failed: " .. tostring(err))
+            end
+
+        end
+
+    end
+
+    -- Player's own request: "so the user can see wow it does stuff" --
+    -- a visible, plain-language activity counter rather than only ever
+    -- showing up in the log. Counts EVERY successful vehicle move
+    -- dispatcher.lua has made (manual "Apply Fleet Plan" clicks
+    -- included, not just automatic ones), over the last 5 minutes of
+    -- GAME time.
+    local okRecentCount, recentMoveCount =
+        pcall(dispatcher.getRecentMoveCount, RECENT_ACTIVITY_WINDOW_MS)
+
+    if okRecentCount and recentMoveCount ~= nil then
+
+        rows[1].label:setText(
+            tostring(recentMoveCount)
+                .. " truck"
+                .. (recentMoveCount == 1 and "" or "s")
+                .. " moved to a different line in the last 5 minutes.",
+            WINDOW_WIDTH
+        )
+
+        pcall(rows[1].label.setStyleClassList, rows[1].label, { "EpodTdTableHeader" })
+
+    else
+
+        rows[1].label:setText(
+            "Recent activity unavailable.",
+            WINDOW_WIDTH
+        )
+
+    end
+
+    rows[2].label:setText(
         "Moves real vehicles between managed lines, same as a manual "
             .. "\"Apply Fleet Plan\" click, just run automatically for "
             .. "every enabled hub on the interval above (5 vehicles max "
@@ -319,7 +390,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
         WINDOW_WIDTH
     )
 
-    rows[2].label:setText(
+    rows[3].label:setText(
         "GUI element experiment result (Decisions 72/73/75): Slider/ComboBox/"
             .. "ToggleButton are safe in the SEPARATE raw-API window "
             .. "(\"Open Raw UI Experiment\"), but not safe to mix into THIS "

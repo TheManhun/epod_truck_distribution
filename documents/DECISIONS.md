@@ -2183,7 +2183,111 @@ Not yet live-tested. Real safety properties carried over automatically from the 
 
 Immediately after building this, player manually proved just how well the mechanism converges: repeated clicks brought two separate hubs' entire service lists down to delta 0 (or +/-1) across nearly every line -- a much tighter result than the first "+62 down to single digits" pass. Player's own refinement: once a hub is this close to target, there's nothing left to fix, so firing a full plan-and-apply cycle every single interval is wasted work.
 
-Added `isHubMeaningfullyImbalanced(hubStationGroupId)`, which peeks at the same `planner.calculateTargetAllocation` plan the SERVICES tab already displays and checks whether any line's delta exceeds `AUTO_APPLY_MIN_DELTA_THRESHOLD` (5, matching the player's own suggested number) before `pollAutoApplyFleetPlan` bothers calling `dispatcher.applyPlan` at all. A hub sitting within +/-5 on every line is left alone until something actually drifts out of range again. If the check itself can't read a plan for some reason, it fails open (treats the hub as imbalanced) rather than silently skipping it forever.
+Added `isHubMeaningfullyImbalanced(hubStationGroupId)`, which peeks at the same `planner.calculateTargetAllocation` plan the SERVICES tab already displays and checks whether any line's delta exceeds a threshold before `pollAutoApplyFleetPlan` bothers calling `dispatcher.applyPlan` at all. If the check itself can't read a plan for some reason, it fails open (treats the hub as imbalanced) rather than silently skipping it forever.
+
+### Follow-up: threshold scales with fleet size instead of a flat number
+
+Player's next refinement: a flat ">5" is too loose for a small hub and too tight for a large one. Player gave two worked examples -- "over 50 trucks... maybe >5", "only 20 trucks... maybe >2" -- and both land on exactly the same ratio (5/50 = 2/20 = 10%). Replaced the fixed `AUTO_APPLY_MIN_DELTA_THRESHOLD` constant with `AUTO_APPLY_MIN_DELTA_FRACTION = 0.10`: the threshold is now computed as 10% of the hub's own total managed fleet size (summed across every line at that hub, not per-line), floored at 1 so even a tiny hub still corrects a genuine problem rather than never triggering. A hub sitting within that self-scaled range on every line is left alone until something actually drifts out of proportion again.
+
+## Decision 118 — Auto Apply Fleet Plan: real game-time interval, and a visible activity counter
+
+### What happened
+
+Player asked for two more refinements while staying focused on this one feature rather than branching to Bug B (explicitly deferred): (1) base the interval on GAME time rather than real seconds, since TF2 can run at 1x-3x speed or be paused, and "every 10 seconds" at 3x speed doesn't mean what it sounds like; (2) show a plain, visible counter somewhere ("7 trucks moved to a different line in the last 5 minutes") specifically so the automation is legible to the player, not just something happening invisibly in the log.
+
+### Decision
+
+**Game time**: confirmed `game.interface.getGameTime().time` is real, returns milliseconds of simulated game time (via two independent real mods -- `income_tax.lua`'s `getGameTime().time` and `cartok/api_helper.lua`'s equivalent `GAME_TIME` component read) -- scales with game speed, freezes when paused, unlike `os.time()`. `pollAutoApplyFleetPlan` now tracks each hub's last-run time and compares against this instead of wall-clock seconds; the interval setting keeps its existing name/values (5/10/15/30) but they're now game-time seconds, plus a new `300` (5 min) option added to the SETTINGS cycle button as the player's own suggested real-play default, on top of the short options that stay handy for testing.
+
+**Activity counter**: added `dispatcher.getRecentMoveCount(windowMs)` -- a module-level list of real game-time timestamps, one appended every time `moveOneVehicle` completes a real, successful `setLine` (deliberately inside the shared low-level function both manual "Apply Fleet Plan" clicks and the automatic timer go through, so the counter reflects ALL real activity, not just automatic runs). The SETTINGS tab now shows "N truck(s) moved to a different line in the last 5 minutes" as the first, most visible row -- a plain, always-on answer to "is this actually doing anything" without needing to check the log.
+
+### Consequence
+
+Not yet live-tested. `getRecentMoveCount` prunes its own list lazily (drops anything older than the requested window on each call), so it stays bounded across a long session rather than growing forever.
+
+### Follow-up: a separate real-time heartbeat, explicitly additive not a replacement
+
+Player clarified the intent behind the fast interval: it should keep reacting quickly (as fast as every 5s) to a REAL imbalance, exactly as already built -- that part was correct and stays untouched. But player also wanted a second, independent mechanism: every 5 minutes of REAL time (not game time -- explicitly named this time, in contrast to the interval above), run `dispatcher.applyPlan` for every enabled hub regardless of whether `isHubMeaningfullyImbalanced` says anything is wrong, "just to keep it humming." Explicitly described as additive ("not replacing old set up"), not a change to the existing threshold-gated behavior.
+
+Added `AUTO_APPLY_HEARTBEAT_REAL_SECONDS = 300` and a separate `lastAutoApplyHeartbeatRealTimeByHub` tracked in real `os.time()` seconds (deliberately NOT game time, matching the player's own "(real time)" wording -- this heartbeat is meant to fire on a predictable wall-clock cadence regardless of game speed, the opposite reasoning from the main interval). `pollAutoApplyFleetPlan` now checks both conditions independently each cycle: the existing game-time interval still gates on `isHubMeaningfullyImbalanced` as before; the heartbeat bypasses that gate entirely when it's due. Harmless when nothing needs moving -- `dispatcher.applyPlan` just reports 0 moves in that case, same as it always has.
+
+### Follow-up: real gap caught by the player -- the gate only ever checked the worst single line
+
+Player asked directly: does a hub with several small deltas on different lines (their example: +2, +3, +2, +1 = 8 total) trigger auto-apply? Checked the actual code and the honest answer was no -- `isHubMeaningfullyImbalanced` only ever compared each line's OWN delta against the threshold, never the total. A hub where several lines are each a little short but no single one crosses the bar would sit there unfixed indefinitely, even though the real aggregate work needed was genuinely meaningful. (Separately confirmed: once `dispatcher.applyPlan` DOES run, it already considers every line together via `buildMoveQueue` -- the gap was specifically in the gate deciding whether to run it at all, not in the move logic itself.)
+
+Fixed by also summing every line's positive delta (total deficit, not surplus too -- summing both would roughly double-count the same imbalance from the other side) and checking that sum against the threshold too, alongside the existing worst-single-line check.
+
+### Follow-up: the group threshold needed its own, higher bar
+
+Player's immediate follow-up concern: summing across many lines will almost always produce a bigger raw number than any single line, so reusing the SAME threshold for the group check would make it fire far more often than the single-line one -- "so it's not triggering non stop?" Player's own proposed fix: single-line threshold stays as-is (>5 on a 50-truck hub), group (summed) threshold doubles (>10) -- a clean 2x. Implemented exactly that: `groupThreshold = threshold * 2`, checked against the summed deficit instead of reusing the single-line threshold.
+
+## Decision 119 — Auto Apply Fleet Plan: a severely-understaffed single line now triggers regardless of hub size
+
+### What happened
+
+Player added a new line ("Upper St Albans <-> Shoreham-by-Sea", 3/8, +5 short) and reported "the auto didnt boost it." Checked the actual math against the live dump: this hub had 145 total managed vehicles, so the 10%-of-fleet threshold (Decision 117) was ~15 and the group threshold (Decision 118) was ~30 -- the new line's +5 shortfall, and the hub's total deficit of +8, both stayed under both bars. Confirmed this was the gate working exactly as designed, not a bug -- the design just had a real blind spot.
+
+### Decision
+
+The hub-wide percentage threshold is deliberately tuned to ignore ordinary rebalancing noise on a large fleet, but that same scaling makes it blind to a brand-new or badly-understaffed line, since its absolute shortfall can stay small relative to a big hub indefinitely. Added a third, independent trigger inside `isHubMeaningfullyImbalanced`: any single line running below 50% of its own target vehicle count (`AUTO_APPLY_SEVERE_SHORTFALL_FRACTION = 0.5`) counts as meaningful on its own, regardless of hub size or the other two thresholds. A follow-up screenshot (same hub, same line grown to 1/18, +17 short) confirmed the existing single-line threshold alone would now also catch it once the gap grew large enough -- but the new severe-shortfall check means a fresh line gets staffed promptly instead of waiting for the hub-wide math to eventually notice it.
+
+### Consequence
+
+Not yet live-tested against a genuinely fresh low-current/high-target line under this new check specifically (the screenshots that prompted this were caught mid-flight, already partway resolved by the existing checks). Watch the log for a new `AUTO APPLY FLEET PLAN` line firing sooner than before the next time a brand-new managed line is added to a large hub.
+
+## Decision 120 — Migrated the legacy panel's DEBUG buttons into a new "Debug Tests" window, opened from the new GUI's SETTINGS tab
+
+### What happened
+
+Player: "lets migrate everything to gui .. in settings add a button to open up (debug tests) lol." The old "Truck Distribution" panel had accumulated 8 genuinely diagnostic/one-off buttons (Assign & Balance Fleet, Rename Fleet to Hub Identity, Show Fleet Plan, Dump All Managed Lines, Fleet Balance Report, Cargo Balance Inspector, Industry Discovery, Dedupe Shared Route Lines) plus a "Show/Hide Debug Tools" toggle built earlier specifically to collapse them (the toggle's own comment already flagged this as a stopgap: "Rather than move them into the new gui_manager.lua framework... this just collapses [them] behind a toggle on the SAME proven panel").
+
+### Decision
+
+Built `gui_debug_tests.lua`, a new standalone window using the exact same proven-safe gui.lua primitives (window/boxLayout/button/textView) as every other window in this codebase -- no raw `api.gui.comp.*` objects cross into it, consistent with Decisions 72/73/75's hard-won rule about the one thing that has ever crashed this mod. It owns none of the underlying logic: `epod_truck_distribution.lua` calls `gui_debug_tests.registerActions({...})` once at load time (config.DEBUG-gated, same as before) handing over the SAME 8 handler functions the old buttons already called -- nothing about what any of these actions actually DO changed, only where their button lives. The 3 handlers that write "busy/done" status back onto their own button (Assign & Balance, Rename Fleet, Dedupe Shared Route Lines) now do so via `gui_debug_tests.getLabel(key)` instead of `distributionState.textViews.xButtonLabel`.
+
+Deleted outright, not migrated: the "Show/Hide Debug Tools" toggle (no longer needed -- nothing left to hide on the old panel) and the "Apply Fleet Plan (DEBUG)" button (pure duplication -- Decision 84 already surfaced the same action on the new GUI's SERVICES tab). Kept on the old panel, unmoved: Auto Redistribute Toggle, Open New GUI, Open Raw UI Experiment -- real operational controls or meta-tools, not diagnostics, per the same distinction the old toggle already drew.
+
+Entry point: a new "[ Open Debug Tests ]" action button on the new GUI's SETTINGS tab (`gui_tab_settings.lua`, action slot 2, next to Auto Apply Fleet Plan's slot 1), gated on `gui_debug_tests.hasActions()` so a non-DEBUG build shows no button at all rather than opening an empty window -- exact parity with the old panel's config.DEBUG gating.
+
+### Consequence
+
+Not yet live-tested -- the game must be relaunched to pick up the new file and load order. Watch for: the new window actually opening from SETTINGS, each of the 8 buttons still doing exactly what it did before (same log lines, same file dumps), and the 3 status-writeback buttons correctly showing "Working..."/"done"/"crashed" text on their OWN button in the NEW window rather than silently no-op'ing.
+
+### Follow-up: found and removed a second real double-up -- Re-Organize Terminals
+
+Player's immediate follow-up: "can you remove anything thats on the pannel thats been put onto the gui, no double up." Audited every action button across both windows. "Re-Organize Terminals" was still on the old panel (`handleReorganizeTerminalsButtonClick`, always-visible, not even DEBUG-gated) calling `terminal_allocator.spreadLinesAcrossTerminals(stationGroupId, {}, callback)` -- and OVERVIEW tab's action slot 1 (Decision 71) already calls the exact same function the exact same way. Deleted the old panel's button and its handler function entirely; OVERVIEW tab is now the only place to trigger it.
+
+Checked everything else for the same pattern and found no other true duplicates: "Split Into Lines & Organize Terminals" has no new-GUI equivalent yet (OVERVIEW tab's own header comment says so explicitly -- Split/Assign & Balance/Distribution Hub are still private composed sequences in epod_truck_distribution.lua, not yet extracted into a shared module). Auto Redistribute Toggle is NOT a duplicate of OVERVIEW's "Auto Redistribute: ON/OFF" row -- the new GUI only DISPLAYS that state read-only, it has no actual toggle control yet, so the old panel's button remains the only way to flip it. Open New GUI / Open Raw UI Experiment are meta-tools with nothing to duplicate.
+
+## Decision 121 — LINES tab: full per-line/destination cargo-icon breakdown moved into the new GUI, plus a scroll area
+
+### What happened
+
+Player, looking at a screenshot of the old panel's per-line destination breakdown (cargo icons included): "cant all this be moved to the gui now? does it have a scroll bar if the info is long?" Checked the actual code: the new GUI's row pool (`gui_manager.lua`, `MAX_ROWS = 24`) is pre-allocated and shared across every tab, and every tab's refresh loop just truncates once it runs out (`if rowIndex > #rows then break end`) -- no scrolling existed. Confirmed `scrollArea` was never actually used anywhere in this codebase, only named in a comment. Player was offered a choice (text-only vs full icon parity; raise the row cap vs try a real scroll area) and chose full icon parity + a real scroll area.
+
+### Research before writing anything
+
+Read the base game's own `res/scripts/gui.lua` directly rather than guessing: `gui.scrollArea_create(id, content)` is real (`game.gui.scrollArea_create(id, content.id)`, returns an object with only `componentMetatable`'s methods -- no exposed size-setter or scroll-bar-policy method through this wrapper). Then checked every installed Workshop mod for real scrollArea usage as evidence: found it in exactly two real mods ("AI Builder" and a "Timetable" mod) -- and BOTH use the RAW `api.gui.comp.ScrollArea.new(...)` system, never `gui.lua`'s wrapper. That's a real, useful data point but not license to copy it directly: Decision 75 already established that mixing raw `api.gui.comp.*` objects into a `gui.lua`-built layout tree (exactly what `gui_manager.lua`'s "DD Central Manager" window is) is the one thing that has ever crashed this mod. So `gui.scrollArea_create` -- unused by any real mod we could find, but the only option that stays 100% inside the wrapper system this window is already built on -- was the one used here, not the raw system real mods actually reach for.
+
+### Decision
+
+**Scroll area**: `gui_manager.lua`'s `ensureWindow` now builds a `contentLayout` holding both row pools, wraps it in `gui.scrollArea_create(...)`, and adds only the scroll area (not the raw layout) to the window. Header, tab row, and action buttons stay OUTSIDE the scroll area so they're always visible regardless of scroll position. Wrapped in its own `pcall` with a fallback to the old non-scrolling behavior (add the raw layout directly) if `scrollArea_create` fails for any reason -- rows are never lost even if the new call doesn't work. `MAX_ROWS` raised 24 -> 60 now that a tall pool just scrolls instead of pushing the window off-screen.
+
+**LINES tab**: a new `gui_tab_lines.lua`, replicating `epod_truck_distribution.lua`'s own `renderManagedLineRows` (name/vehicle-count/waiting header per line, then a per-destination row with a "Waiting: N" count and up to 3 cargo icons, skipping destinations that have never actually produced/received anything). Uses a SECOND, separate row pool (`state.lineRows`, `gui_manager.lua`) rather than retrofitting the existing plain-text `state.rows` pool: every other tab already depends on a single full-width text row for its own padded tables (e.g. SERVICES), and narrowing that shared label to make room for a waiting column and icons would have broken all of them. `gui_manager.M.refresh` now passes `lineRows` as a 4th, additive argument to every tab's `refresh()` -- the other 7 tabs' signatures are unchanged, they just don't read it.
+
+**Cargo-type sorting logic extracted, not duplicated**: the old panel's private `sortedCargoTypes`/`getDestinationCargoTypes` local functions were promoted to a real, public `demand.getSortedCargoTypesForDestination(scanResult, stationGroupId)` -- deliberately NOT the same as the existing `demand.buildDestinationCargoRows` (Decision 79), which only ever returns rows for a destination with 2+ cargo types (it exists to compare types against each other) and would return nil for the common single-cargo-type destination the icon display needs to handle too. The old panel's own `getDestinationCargoTypes` is now a thin wrapper over the new module function, so this sort lives in exactly one place.
+
+### Consequence
+
+Not yet live-tested at the time this was written. See the immediate follow-up below -- the scroll area itself failed on first load.
+
+### Follow-up: scroll area LIVE-CONFIRMED FAILED -- reverted, LINES tab kept
+
+First real load: the "DD Central Manager" window's header and tab row rendered fine (LINES showed up correctly as a selectable tab), but the entire content area below it came up completely blank -- not merely non-scrolling, genuinely invisible, on every tab, not just LINES. `gui.scrollArea_create` was the cause: its `scrollAreaMetatable` (in the base game's own `gui.lua`) is empty -- no exposed size hint or scroll-bar-policy setter -- so the scroll area apparently collapsed to a zero/near-zero preferred size with nothing telling it otherwise, hiding every row inside it regardless of which tab was active.
+
+Reverted immediately: `contentLayout` (holding both row pools) now gets added DIRECTLY to the window again, exactly as before this whole attempt -- a working, non-scrolling window beats a broken scrolling one, same "delete what doesn't work" discipline as every other ruled-out approach this project has hit (`getStockCount`, the Slider/ComboBox crash, etc.). `MAX_ROWS`/`MAX_LINE_ROWS` stay raised (60/48) since bigger pre-allocated pools cost nothing when unused -- the only thing that reverted is the scroll wrapping itself.
+
+**Net result of this whole decision**: the LINES tab (full icon parity, its own row pool, `demand.getSortedCargoTypesForDestination`) is real, kept, and should work once reloaded. Real scrolling in this window remains unsolved -- a sufficiently long hub's content will still just make the window grow tall, same limitation as the old panel has always had. If scrolling is worth another attempt later, the raw `api.gui.comp.ScrollArea` (real, more capable API, used successfully by two independent real mods) would need to live in a window built ENTIRELY on the raw system from the start (like `gui_experiment.lua`) rather than mixed into this gui.lua-built one -- not something to retrofit onto "DD Central Manager" piecemeal.
 
 ## Appendix — open runtime-verification items
 

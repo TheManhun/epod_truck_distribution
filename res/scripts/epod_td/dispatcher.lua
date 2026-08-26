@@ -131,6 +131,73 @@ local lastMovedRun = {}
 local lastLineDirection = {}
 local lastLineDirectionRun = {}
 
+-- ACTIVITY LOG (player's own idea, "so the user can see wow it does
+-- stuff"): one real game-time timestamp per successful vehicle move,
+-- regardless of whether it came from a manual "Apply Fleet Plan"
+-- click or the automatic timer -- both go through moveOneVehicle
+-- below, so both count. Uses game.interface.getGameTime().time (real
+-- confirmed field, milliseconds of simulated game time -- scales with
+-- game speed, freezes when paused), NOT os.time(), so "moved in the
+-- last 5 minutes" means 5 in-game minutes, not 5 real-world minutes
+-- that might not match if the player is fast-forwarding or paused.
+local recentMoveTimestamps = {}
+
+local function getGameTimeMs()
+
+    local ok, gameTime =
+        pcall(function()
+            return game.interface.getGameTime().time
+        end)
+
+    if ok and gameTime ~= nil then
+        return gameTime
+    end
+
+    return nil
+
+end
+
+local function recordSuccessfulMove()
+
+    local gameTimeMs = getGameTimeMs()
+
+    if gameTimeMs ~= nil then
+        recentMoveTimestamps[#recentMoveTimestamps + 1] = gameTimeMs
+    end
+
+end
+
+-- Prunes anything older than windowMs while counting, so the list
+-- stays bounded to only what's still within someone's query window
+-- rather than growing forever over a long session.
+function M.getRecentMoveCount(windowMs)
+
+    local gameTimeMs = getGameTimeMs()
+
+    if gameTimeMs == nil then
+        return 0
+    end
+
+    local cutoff = gameTimeMs - windowMs
+
+    local count = 0
+    local kept = {}
+
+    for _, timestamp in ipairs(recentMoveTimestamps) do
+
+        if timestamp >= cutoff then
+            count = count + 1
+            kept[#kept + 1] = timestamp
+        end
+
+    end
+
+    recentMoveTimestamps = kept
+
+    return count
+
+end
+
 
 local function vehicleCompatibleWithAny(vehicleId, cargoTypes)
 
@@ -233,6 +300,10 @@ local function moveOneVehicle(vehicleId, destinationLineId, destinationLabel, on
                         .. tostring(releaseSuccess)
                         .. ")"
                 )
+
+                if setLineSuccess then
+                    recordSuccessfulMove()
+                end
 
                 onComplete(setLineSuccess)
 

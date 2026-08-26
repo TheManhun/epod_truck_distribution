@@ -63,6 +63,7 @@ local source_line_registry = require("epod_td.source_line_registry")
 local operation_lock = require("epod_td.operation_lock")
 local gui_manager = require("epod_td.gui_manager")
 local gui_experiment = require("epod_td.gui_experiment")
+local gui_debug_tests = require("epod_td.gui_debug_tests")
 local gui = require("gui")
 
 
@@ -263,19 +264,6 @@ local distributionState = {
     -- closed. This flag, set via window:onClose(), lets the window
     -- actually stay closed until the player reselects a station.
     windowClosedByUser =
-        false,
-
-    -- Requested live: too many DEBUG/test buttons cluttering the
-    -- main panel. Rather than move them into the new gui_manager.lua
-    -- framework (deliberately built read-only, no buttons -- see its
-    -- own header comment), this just collapses the genuinely
-    -- diagnostic/one-off buttons behind a toggle on the SAME proven
-    -- panel. Auto Redistribute and Open New GUI stay always visible
-    -- (real operational controls, not diagnostics) -- see the
-    -- "SHOW/HIDE DEBUG TOOLS" section below for which buttons this
-    -- actually gates. Session-only (not persisted): purely a display
-    -- preference, not gameplay state worth a settings.lua entry.
-    debugToolsVisible =
         false,
 
     -- Decision 66, live-confirmed real crash: a native engine
@@ -605,73 +593,6 @@ end
 -- CARGO DISPLAY HELPERS
 -- ============================================================
 
-local function sortedCargoTypes(cargoTypes)
-
-    local result = {}
-
-    if cargoTypes == nil then
-        return result
-    end
-
-
-    for cargoType, count
-        in pairs(
-            cargoTypes
-        )
-    do
-
-        if count ~= nil
-            and count > 0
-        then
-
-            result[
-                #result + 1
-            ] = {
-
-                cargoType =
-                    cargoType,
-
-                count =
-                    count
-
-            }
-
-        end
-
-    end
-
-
-    table.sort(
-        result,
-        function(a, b)
-
-            if type(a.cargoType) == "number"
-                and type(b.cargoType) == "number"
-            then
-
-                return a.cargoType
-                    < b.cargoType
-
-            end
-
-
-            return tostring(
-                a.cargoType
-            )
-                <
-                tostring(
-                    b.cargoType
-                )
-
-        end
-    )
-
-
-    return result
-
-end
-
-
 local function formatDestinationLabel(
     scanResult,
     destinationStationGroup
@@ -713,33 +634,19 @@ end
 
 
 -- Cargo icon rows need the raw sorted list rather than a single
--- concatenated text string.
+-- concatenated text string. Decision 121: thin wrapper over
+-- demand.getSortedCargoTypesForDestination now that the sort itself
+-- moved into demand.lua -- gui_tab_lines.lua (the new GUI's LINES tab)
+-- calls that same module function directly, so this logic lives in
+-- exactly one place instead of two drifting copies.
 local function getDestinationCargoTypes(
     scanResult,
     destinationStationGroup
 )
 
-    if scanResult == nil
-        or scanResult.error ~= nil
-    then
-        return {}
-    end
-
-
-    local destination =
-        demand.getDestination(
-            scanResult,
-            destinationStationGroup
-        )
-
-
-    if destination == nil then
-        return {}
-    end
-
-
-    return sortedCargoTypes(
-        destination.cargoTypes
+    return demand.getSortedCargoTypesForDestination(
+        scanResult,
+        destinationStationGroup
     )
 
 end
@@ -1158,115 +1065,6 @@ local function handleSplitButtonClick()
 end
 
 
--- Raised live: a player adding MORE physical terminals to a hub
--- that's already fully split and settled has no way to make DD use
--- them -- spreadLinesAcrossTerminals only ever runs from Split (which
--- would needlessly re-walk every line's split logic just to force a
--- re-spread) or from a fresh line adoption. This calls the same
--- terminal step directly, on demand, for whatever's currently
--- selected -- same excludeList = {} already proven at the other call
--- site (processHubAdoptionNext) that has no "just split" line to
--- exclude. Always visible, not DEBUG-gated: same reasoning as folding
--- the original "Spread Lines Across Terminals" button into Split --
--- it never touches vehicle cargo, so it carries none of the Bug A/B
--- risk the DEBUG-only buttons below are gated for.
-local function handleReorganizeTerminalsButtonClick()
-
-    if distributionState.selectedStationGroupId == nil then
-
-        logUi(
-            "REORGANIZE TERMINALS: no station selected."
-        )
-
-        return
-
-    end
-
-    -- Same overlap risk as Split (see its own comment above) --
-    -- spreadLinesAcrossTerminals reads every line at the hub, including
-    -- ones a concurrent hub setup could be mid-deleting.
-    if operation_lock.isRunning() then
-
-        logUi(
-            "REORGANIZE TERMINALS: another hub operation is still "
-                .. "running -- wait for it to finish before starting "
-                .. "this one."
-        )
-
-        return
-
-    end
-
-    operation_lock.begin()
-
-
-    local stationGroupId =
-        distributionState.selectedStationGroupId
-
-
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
-    then
-
-        distributionState.textViews.reorganizeTerminalsButtonLabel:setText(
-            "[ Reorganizing... (see log) ]",
-            WINDOW_WIDTH
-        )
-
-    end
-
-
-    local ok, err =
-        pcall(
-            terminal_allocator.spreadLinesAcrossTerminals,
-            stationGroupId,
-            {},
-
-            function(processedCount)
-
-                operation_lock.finish()
-
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
-                then
-
-                    distributionState.textViews.reorganizeTerminalsButtonLabel:setText(
-                        "[ Re-Organize Terminals (done: "
-                            .. tostring(processedCount)
-                            .. " line(s) -- see log) ]",
-                        WINDOW_WIDTH
-                    )
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        operation_lock.finish()
-
-        logUi(
-            "REORGANIZE TERMINALS FAILED: "
-                .. tostring(err)
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.reorganizeTerminalsButtonLabel ~= nil
-        then
-
-            distributionState.textViews.reorganizeTerminalsButtonLabel:setText(
-                "[ Re-Organize Terminals (crashed -- see log) ]",
-                WINDOW_WIDTH
-            )
-
-        end
-
-    end
-
-end
-
-
 -- ============================================================
 -- ASSIGN & BALANCE FLEET (config.DEBUG only)
 --
@@ -1566,11 +1364,9 @@ local function handleAssignAndBalanceButtonClick()
     operation_lock.begin()
 
 
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.assignBalanceButtonLabel ~= nil
-    then
+    if gui_debug_tests.getLabel("assignBalance") ~= nil then
 
-        distributionState.textViews.assignBalanceButtonLabel:setText(
+        gui_debug_tests.getLabel("assignBalance"):setText(
             "[ Working... (see log) ]",
             WINDOW_WIDTH
         )
@@ -1602,11 +1398,9 @@ local function handleAssignAndBalanceButtonClick()
                 .. "first."
         )
 
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.assignBalanceButtonLabel ~= nil
-        then
+        if gui_debug_tests.getLabel("assignBalance") ~= nil then
 
-            distributionState.textViews.assignBalanceButtonLabel:setText(
+            gui_debug_tests.getLabel("assignBalance"):setText(
                 "[ Assign & Balance Fleet (no source line -- see log) ]",
                 WINDOW_WIDTH
             )
@@ -1619,11 +1413,9 @@ local function handleAssignAndBalanceButtonClick()
 
     local function setDoneLabel(text)
 
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.assignBalanceButtonLabel ~= nil
-        then
+        if gui_debug_tests.getLabel("assignBalance") ~= nil then
 
-            distributionState.textViews.assignBalanceButtonLabel:setText(
+            gui_debug_tests.getLabel("assignBalance"):setText(
                 text,
                 WINDOW_WIDTH
             )
@@ -1693,11 +1485,9 @@ local function handleRenameFleetButtonClick()
 
     end
 
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.renameFleetButtonLabel ~= nil
-    then
+    if gui_debug_tests.getLabel("renameFleet") ~= nil then
 
-        distributionState.textViews.renameFleetButtonLabel:setText(
+        gui_debug_tests.getLabel("renameFleet"):setText(
             "[ Working... (see log) ]",
             WINDOW_WIDTH
         )
@@ -1714,11 +1504,9 @@ local function handleRenameFleetButtonClick()
 
             function(renamedCount)
 
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.renameFleetButtonLabel ~= nil
-                then
+                if gui_debug_tests.getLabel("renameFleet") ~= nil then
 
-                    distributionState.textViews.renameFleetButtonLabel:setText(
+                    gui_debug_tests.getLabel("renameFleet"):setText(
                         "[ Rename Fleet to Hub Identity (done: "
                             .. tostring(renamedCount)
                             .. " renamed -- see log) ]",
@@ -1737,11 +1525,9 @@ local function handleRenameFleetButtonClick()
                 .. tostring(err)
         )
 
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.renameFleetButtonLabel ~= nil
-        then
+        if gui_debug_tests.getLabel("renameFleet") ~= nil then
 
-            distributionState.textViews.renameFleetButtonLabel:setText(
+            gui_debug_tests.getLabel("renameFleet"):setText(
                 "[ Rename Fleet to Hub Identity (crashed -- see log) ]",
                 WINDOW_WIDTH
             )
@@ -2513,11 +2299,9 @@ end
 -- ============================================================
 local function handleDedupeSharedRouteLinesButtonClick()
 
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.dedupeSharedRouteLinesButtonLabel ~= nil
-    then
+    if gui_debug_tests.getLabel("dedupeSharedRouteLines") ~= nil then
 
-        distributionState.textViews.dedupeSharedRouteLinesButtonLabel:setText(
+        gui_debug_tests.getLabel("dedupeSharedRouteLines"):setText(
             "[ Deduping... (see log) ]",
             WINDOW_WIDTH
         )
@@ -2530,11 +2314,9 @@ local function handleDedupeSharedRouteLinesButtonClick()
 
             function(deletedCount)
 
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.dedupeSharedRouteLinesButtonLabel ~= nil
-                then
+                if gui_debug_tests.getLabel("dedupeSharedRouteLines") ~= nil then
 
-                    distributionState.textViews.dedupeSharedRouteLinesButtonLabel:setText(
+                    gui_debug_tests.getLabel("dedupeSharedRouteLines"):setText(
                         "[ Dedupe Shared Route Lines (done: "
                             .. tostring(deletedCount)
                             .. " deleted -- see log) ]",
@@ -2559,11 +2341,9 @@ local function handleDedupeSharedRouteLinesButtonClick()
                 .. tostring(err)
         )
 
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.dedupeSharedRouteLinesButtonLabel ~= nil
-        then
+        if gui_debug_tests.getLabel("dedupeSharedRouteLines") ~= nil then
 
-            distributionState.textViews.dedupeSharedRouteLinesButtonLabel:setText(
+            gui_debug_tests.getLabel("dedupeSharedRouteLines"):setText(
                 "[ Dedupe Shared Route Lines (crashed -- see log) ]",
                 WINDOW_WIDTH
             )
@@ -2571,6 +2351,33 @@ local function handleDedupeSharedRouteLinesButtonClick()
         end
 
     end
+
+end
+
+
+-- Decision 120: the genuinely diagnostic/one-off DEBUG buttons that
+-- used to live directly on this panel (behind the old "Show/Hide
+-- Debug Tools" toggle) now live in their own "Debug Tests" window
+-- (gui_debug_tests.lua), opened via a button on the new GUI's
+-- SETTINGS tab. Registered here, once, right after every handler
+-- above is defined -- gui_debug_tests.lua owns none of this logic
+-- itself, it only knows how to build a button for whatever handler it
+-- is handed, same "GUI calls into real modules, never duplicates
+-- their logic" rule every gui_tab_*.lua file already follows.
+if config.DEBUG then
+
+    gui_debug_tests.registerActions({
+
+        { key = "assignBalance", label = "Assign & Balance Fleet (DEBUG)", handler = handleAssignAndBalanceButtonClick },
+        { key = "renameFleet", label = "Rename Fleet to Hub Identity (DEBUG)", handler = handleRenameFleetButtonClick },
+        { key = "showFleetPlan", label = "Show Fleet Plan (DEBUG)", handler = handleShowFleetPlanButtonClick },
+        { key = "dumpAllManagedLines", label = "Dump All Managed Lines (DEBUG)", handler = handleDumpAllManagedLinesButtonClick },
+        { key = "fleetBalanceReport", label = "Fleet Balance Report (DEBUG)", handler = handleFleetBalanceReportButtonClick },
+        { key = "cargoBalanceInspector", label = "Cargo Balance Inspector (DEBUG)", handler = handleCargoBalanceInspectorButtonClick },
+        { key = "industryDiscovery", label = "Industry Discovery (DEBUG)", handler = handleIndustryDiscoveryButtonClick },
+        { key = "dedupeSharedRouteLines", label = "Dedupe Shared Route Lines (DEBUG)", handler = handleDedupeSharedRouteLinesButtonClick }
+
+    })
 
 end
 
@@ -2620,91 +2427,6 @@ local function handleOpenRawUiExperimentButtonClick()
         logUi(
             "OPEN RAW UI EXPERIMENT FAILED: " .. tostring(err)
         )
-
-    end
-
-end
-
-
--- ============================================================
--- APPLY FLEET PLAN (config.DEBUG only)
---
--- First real piece of the Opportunistic Dispatcher (dispatcher.lua,
--- PROGRESS.md Not Started #4). Moves real, empty, compatible
--- vehicles between managed lines toward the Planner's target
--- allocation -- capped at a handful per click (dispatcher.lua's
--- MAX_MOVES_PER_RUN) rather than rebalancing an entire fleet blind
--- on the first live test. Manually triggered only -- does not read
--- the Auto Redistribute toggle. Same staged approach as every
--- earlier stage: prove it live via a manual button first.
--- ============================================================
-
-local function handleApplyFleetPlanButtonClick()
-
-    if distributionState.selectedStationGroupId == nil then
-
-        logUi(
-            "APPLY FLEET PLAN: no station selected."
-        )
-
-        return
-
-    end
-
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.applyFleetPlanButtonLabel ~= nil
-    then
-
-        distributionState.textViews.applyFleetPlanButtonLabel:setText(
-            "[ Working... (see log) ]",
-            WINDOW_WIDTH
-        )
-
-    end
-
-    local hubStationGroupId =
-        distributionState.selectedStationGroupId
-
-    local ok, err =
-        pcall(
-            dispatcher.applyPlan,
-            hubStationGroupId,
-
-            function(movesMade)
-
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.applyFleetPlanButtonLabel ~= nil
-                then
-
-                    distributionState.textViews.applyFleetPlanButtonLabel:setText(
-                        "[ Apply Fleet Plan (done: "
-                            .. tostring(movesMade)
-                            .. " moved -- see log) ]",
-                        WINDOW_WIDTH
-                    )
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        logUi(
-            "APPLY FLEET PLAN FAILED: "
-                .. tostring(err)
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.applyFleetPlanButtonLabel ~= nil
-        then
-
-            distributionState.textViews.applyFleetPlanButtonLabel:setText(
-                "[ Apply Fleet Plan (crashed -- see log) ]",
-                WINDOW_WIDTH
-            )
-
-        end
 
     end
 
@@ -3104,67 +2826,6 @@ end
 
 
 -- ============================================================
--- SHOW/HIDE DEBUG TOOLS (config.DEBUG only)
---
--- Requested live: gates the genuinely diagnostic/one-off buttons
--- (Assign & Balance Fleet, Rename Fleet, Show Fleet Plan, Dump All
--- Managed Lines, Fleet Balance Report, Dedupe Shared Route Lines,
--- Apply Fleet Plan) behind a toggle so the main panel stays short by
--- default. Auto Redistribute and Open New GUI are deliberately left
--- OUTSIDE this gate -- real operational controls the player reaches
--- for regularly, not diagnostics.
---
--- No native "hide this one widget" API has ever been proven in this
--- codebase (the only proven visibility control is the whole native
--- window's own close(), used below), so this works the same way the
--- station-deselect handler already does: close the native window
--- entirely and let it rebuild fresh next tick, this time with (or
--- without) the gated buttons included. windowClosedByUser must be
--- reset straight after -- close() fires the same window:onClose()
--- callback either way, and leaving that flag set would make
--- ensureDistributionWindow() refuse to rebuild at all until the
--- player reselects a station.
--- ============================================================
-local function handleToggleDebugToolsButtonClick()
-
-    distributionState.debugToolsVisible =
-        not distributionState.debugToolsVisible
-
-    local existingWindow =
-        api ~= nil
-            and api.gui ~= nil
-            and api.gui.util ~= nil
-            and api.gui.util.getById(WINDOW_ID)
-            or nil
-
-    if existingWindow ~= nil then
-
-        local okClose, closeErr =
-            pcall(function()
-                existingWindow:close()
-            end)
-
-        if not okClose then
-
-            logUi(
-                "Failed closing window for debug-tools toggle: "
-                    .. tostring(closeErr)
-            )
-
-        end
-
-    end
-
-    distributionState.windowClosedByUser =
-        false
-
-    distributionState.dirty =
-        true
-
-end
-
-
--- ============================================================
 -- CREATE THE DISTRIBUTION WINDOW
 --
 -- IMPORTANT TF2 UI RULE LEARNED DURING TESTING:
@@ -3321,102 +2982,30 @@ local function ensureDistributionWindow()
         splitButton
 
 
-    distributionState.textViews.reorganizeTerminalsButtonLabel =
-        gui.textView_create(
-            WINDOW_ID .. ".reorganizeTerminalsButtonLabel",
-            "[ Re-Organize Terminals ]",
-            WINDOW_WIDTH,
-            false
-        )
-
-    local reorganizeTerminalsButton =
-        gui.button_create(
-            WINDOW_ID .. ".reorganizeTerminalsButton",
-            distributionState.textViews.reorganizeTerminalsButtonLabel
-        )
-
-    reorganizeTerminalsButton:onClick(
-        handleReorganizeTerminalsButtonClick
-    )
-
-    distributionState.reorganizeTerminalsButton =
-        reorganizeTerminalsButton
-
-
     local fixedViews = {
 
         distributionState.textViews.summary,
-        splitButton,
-        reorganizeTerminalsButton
+        splitButton
 
     }
 
 
-    -- config.DEBUG only: "Assign & Balance Fleet" moves real
-    -- vehicles and still carries the two open Bug A/B safety
-    -- questions (PROGRESS.md), and the journey test moves a real
-    -- vehicle too -- neither widget is even created for a non-debug
-    -- build. "Spread Lines Across Terminals" used to be its own
-    -- third button here; folded into the always-visible
-    -- "Split Into Lines & Organize Terminals" button above instead,
-    -- since it doesn't touch vehicle cargo and carries none of this
-    -- block's risk.
+    -- config.DEBUG only. Player's own request: "migrate everything to
+    -- gui" -- the genuinely diagnostic/one-off report buttons (Assign
+    -- & Balance Fleet, Rename Fleet, Show Fleet Plan, Dump All Managed
+    -- Lines, Fleet Balance Report, Cargo Balance Inspector, Industry
+    -- Discovery, Dedupe Shared Route Lines) have all moved off this
+    -- legacy panel into their own "Debug Tests" window
+    -- (gui_debug_tests.lua), opened via a button on the new GUI's
+    -- SETTINGS tab -- see Decision 120. "Apply Fleet Plan (DEBUG)" was
+    -- deleted outright rather than moved: Decision 84 already
+    -- surfaced the same action on the SERVICES tab, so the copy here
+    -- was pure duplication. Auto Redistribute / Open New GUI / Open
+    -- Raw UI Experiment stay on THIS panel -- real operational
+    -- controls or meta-tools, not diagnostics -- "Spread Lines Across
+    -- Terminals" stays folded into the always-visible "Split Into
+    -- Lines & Organize Terminals" button above.
     if config.DEBUG then
-
-        distributionState.textViews.toggleDebugToolsButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".toggleDebugToolsButtonLabel",
-                distributionState.debugToolsVisible
-                    and "[ Hide Debug Tools ]"
-                    or "[ Show Debug Tools ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local toggleDebugToolsButton =
-            gui.button_create(
-                WINDOW_ID .. ".toggleDebugToolsButton",
-                distributionState.textViews.toggleDebugToolsButtonLabel
-            )
-
-        toggleDebugToolsButton:onClick(
-            handleToggleDebugToolsButtonClick
-        )
-
-        distributionState.toggleDebugToolsButton =
-            toggleDebugToolsButton
-
-        fixedViews[#fixedViews + 1] =
-            toggleDebugToolsButton
-
-
-        if distributionState.debugToolsVisible then
-
-        distributionState.textViews.assignBalanceButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".assignBalanceButtonLabel",
-                "[ Assign & Balance Fleet (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local assignBalanceButton =
-            gui.button_create(
-                WINDOW_ID .. ".assignBalanceButton",
-                distributionState.textViews.assignBalanceButtonLabel
-            )
-
-        assignBalanceButton:onClick(
-            handleAssignAndBalanceButtonClick
-        )
-
-        distributionState.assignBalanceButton =
-            assignBalanceButton
-
-        fixedViews[#fixedViews + 1] =
-            assignBalanceButton
-
-        end
 
 
         -- Test Bug B / Park-Stop button removed here -- its question
@@ -3466,185 +3055,6 @@ local function ensureDistributionWindow()
         -- Fleet to Hub Identity" feature below. route_injector.
         -- testVehicleRenameAndColor remains callable manually if
         -- ever needed.
-
-        if distributionState.debugToolsVisible then
-
-        distributionState.textViews.renameFleetButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".renameFleetButtonLabel",
-                "[ Rename Fleet to Hub Identity (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local renameFleetButton =
-            gui.button_create(
-                WINDOW_ID .. ".renameFleetButton",
-                distributionState.textViews.renameFleetButtonLabel
-            )
-
-        renameFleetButton:onClick(
-            handleRenameFleetButtonClick
-        )
-
-        distributionState.renameFleetButton =
-            renameFleetButton
-
-        fixedViews[#fixedViews + 1] =
-            renameFleetButton
-
-
-        distributionState.textViews.showFleetPlanButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".showFleetPlanButtonLabel",
-                "[ Show Fleet Plan (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local showFleetPlanButton =
-            gui.button_create(
-                WINDOW_ID .. ".showFleetPlanButton",
-                distributionState.textViews.showFleetPlanButtonLabel
-            )
-
-        showFleetPlanButton:onClick(
-            handleShowFleetPlanButtonClick
-        )
-
-        distributionState.showFleetPlanButton =
-            showFleetPlanButton
-
-        fixedViews[#fixedViews + 1] =
-            showFleetPlanButton
-
-
-        distributionState.textViews.dumpAllManagedLinesButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".dumpAllManagedLinesButtonLabel",
-                "[ Dump All Managed Lines (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local dumpAllManagedLinesButton =
-            gui.button_create(
-                WINDOW_ID .. ".dumpAllManagedLinesButton",
-                distributionState.textViews.dumpAllManagedLinesButtonLabel
-            )
-
-        dumpAllManagedLinesButton:onClick(
-            handleDumpAllManagedLinesButtonClick
-        )
-
-        distributionState.dumpAllManagedLinesButton =
-            dumpAllManagedLinesButton
-
-        fixedViews[#fixedViews + 1] =
-            dumpAllManagedLinesButton
-
-
-        distributionState.textViews.fleetBalanceReportButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".fleetBalanceReportButtonLabel",
-                "[ Fleet Balance Report (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local fleetBalanceReportButton =
-            gui.button_create(
-                WINDOW_ID .. ".fleetBalanceReportButton",
-                distributionState.textViews.fleetBalanceReportButtonLabel
-            )
-
-        fleetBalanceReportButton:onClick(
-            handleFleetBalanceReportButtonClick
-        )
-
-        distributionState.fleetBalanceReportButton =
-            fleetBalanceReportButton
-
-        fixedViews[#fixedViews + 1] =
-            fleetBalanceReportButton
-
-
-        distributionState.textViews.cargoBalanceInspectorButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".cargoBalanceInspectorButtonLabel",
-                "[ Cargo Balance Inspector (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local cargoBalanceInspectorButton =
-            gui.button_create(
-                WINDOW_ID .. ".cargoBalanceInspectorButton",
-                distributionState.textViews.cargoBalanceInspectorButtonLabel
-            )
-
-        cargoBalanceInspectorButton:onClick(
-            handleCargoBalanceInspectorButtonClick
-        )
-
-        distributionState.cargoBalanceInspectorButton =
-            cargoBalanceInspectorButton
-
-        fixedViews[#fixedViews + 1] =
-            cargoBalanceInspectorButton
-
-
-        distributionState.textViews.industryDiscoveryButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".industryDiscoveryButtonLabel",
-                "[ Industry Discovery (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local industryDiscoveryButton =
-            gui.button_create(
-                WINDOW_ID .. ".industryDiscoveryButton",
-                distributionState.textViews.industryDiscoveryButtonLabel
-            )
-
-        industryDiscoveryButton:onClick(
-            handleIndustryDiscoveryButtonClick
-        )
-
-        distributionState.industryDiscoveryButton =
-            industryDiscoveryButton
-
-        fixedViews[#fixedViews + 1] =
-            industryDiscoveryButton
-
-
-        distributionState.textViews.dedupeSharedRouteLinesButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".dedupeSharedRouteLinesButtonLabel",
-                "[ Dedupe Shared Route Lines (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local dedupeSharedRouteLinesButton =
-            gui.button_create(
-                WINDOW_ID .. ".dedupeSharedRouteLinesButton",
-                distributionState.textViews.dedupeSharedRouteLinesButtonLabel
-            )
-
-        dedupeSharedRouteLinesButton:onClick(
-            handleDedupeSharedRouteLinesButtonClick
-        )
-
-        distributionState.dedupeSharedRouteLinesButton =
-            dedupeSharedRouteLinesButton
-
-        fixedViews[#fixedViews + 1] =
-            dedupeSharedRouteLinesButton
-
-        end
-
 
         -- Open New GUI stays always visible (outside the debug-tools
         -- gate above) -- per the player's own explicit request.
@@ -3701,34 +3111,6 @@ local function ensureDistributionWindow()
         fixedViews[#fixedViews + 1] =
             rawUiExperimentButton
 
-
-        if distributionState.debugToolsVisible then
-
-        distributionState.textViews.applyFleetPlanButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".applyFleetPlanButtonLabel",
-                "[ Apply Fleet Plan (DEBUG) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local applyFleetPlanButton =
-            gui.button_create(
-                WINDOW_ID .. ".applyFleetPlanButton",
-                distributionState.textViews.applyFleetPlanButtonLabel
-            )
-
-        applyFleetPlanButton:onClick(
-            handleApplyFleetPlanButtonClick
-        )
-
-        distributionState.applyFleetPlanButton =
-            applyFleetPlanButton
-
-        fixedViews[#fixedViews + 1] =
-            applyFleetPlanButton
-
-        end
 
     end
 
@@ -5309,10 +4691,25 @@ end
 -- work. Peeks at the SAME plan the SERVICES tab already shows
 -- (planner.calculateTargetAllocation) and skips the actual
 -- dispatcher.applyPlan call entirely unless at least one line is off
--- by more than this many vehicles.
+-- by more than a threshold.
+--
+-- SCALED, not fixed (player's own follow-up): a flat ">5" is too loose
+-- for a small fleet and too tight for a large one. Player's own two
+-- worked examples -- "over 50 trucks... maybe >5", "only 20 trucks...
+-- maybe >2" -- both land on exactly the same ratio (5/50 = 2/20 =
+-- 10%), so the threshold scales as 10% of the hub's OWN total managed
+-- fleet size (summed across every line at that hub, not per-line),
+-- floored at 1 so even a tiny hub still corrects a genuine problem
+-- rather than never triggering at all.
 -- ============================================================
 
-local AUTO_APPLY_MIN_DELTA_THRESHOLD = 5
+local AUTO_APPLY_MIN_DELTA_FRACTION = 0.10
+
+-- A line running below half its OWN target is a real shortfall no
+-- matter how large the rest of the hub's fleet is -- see the
+-- Shoreham-by-Sea case (3/8, +5 short, ignored on a 145-truck hub)
+-- inside isHubMeaningfullyImbalanced below.
+local AUTO_APPLY_SEVERE_SHORTFALL_FRACTION = 0.5
 
 local lastAutoApplyFleetPlanTimeByHub = {}
 
@@ -5328,17 +4725,98 @@ local function isHubMeaningfullyImbalanced(hubStationGroupId)
         return true
     end
 
+    local totalVehicles = 0
+    local totalDeficit = 0
+    local maxAbsDelta = 0
+    local hasSevereShortfall = false
+
     for _, lineInfo in ipairs(plan.lines) do
 
-        if math.abs(lineInfo.delta) > AUTO_APPLY_MIN_DELTA_THRESHOLD then
-            return true
+        totalVehicles = totalVehicles + (lineInfo.currentVehicleCount or 0)
+
+        if lineInfo.delta > 0 then
+            totalDeficit = totalDeficit + lineInfo.delta
+        end
+
+        local absDelta = math.abs(lineInfo.delta)
+
+        if absDelta > maxAbsDelta then
+            maxAbsDelta = absDelta
+        end
+
+        -- LIVE-CONFIRMED real gap: a brand-new line ("Upper St Albans
+        -- <-> Shoreham-by-Sea", 3/8 = +5 short) sat untouched on a
+        -- 145-truck hub because +5 never came close to that hub's
+        -- ~15-truck (10%) threshold -- the hub-wide percentage is
+        -- tuned to ignore ordinary rebalancing noise on a big fleet,
+        -- but that same math makes it blind to a fresh line that's
+        -- badly short RELATIVE TO ITSELF. A line running at under half
+        -- its own target is a real problem regardless of how large the
+        -- rest of the hub's fleet is, so it counts as meaningful on
+        -- its own, independent of the hub-wide thresholds below.
+        if lineInfo.delta > 0
+            and (lineInfo.targetVehicleCount or 0) > 0
+            and (lineInfo.currentVehicleCount or 0)
+                < lineInfo.targetVehicleCount * AUTO_APPLY_SEVERE_SHORTFALL_FRACTION
+        then
+            hasSevereShortfall = true
         end
 
     end
 
-    return false
+    local threshold =
+        math.floor(totalVehicles * AUTO_APPLY_MIN_DELTA_FRACTION + 0.5)
+
+    if threshold < 1 then
+        threshold = 1
+    end
+
+    -- LIVE-CONFIRMED real gap, caught by the player before it ever
+    -- shipped: checking only the WORST single line's delta misses a
+    -- hub where several lines are each a LITTLE short (e.g. +2, +3,
+    -- +2, +1 -- none individually crosses the threshold) but the real
+    -- total work needed (8 vehicles' worth) is genuinely meaningful.
+    --
+    -- Player's own follow-up: the GROUP (summed) threshold needs to be
+    -- its own, higher bar -- summing across many lines will almost
+    -- always produce a bigger raw number than any single line, so
+    -- reusing the same threshold for both would make the group check
+    -- fire far more often than the single-line one, effectively
+    -- triggering "non stop" on ordinary multi-line noise. Doubled for
+    -- the group case specifically (player's own example: single >5,
+    -- group >10 on a 50-truck hub -- a clean 2x).
+    local groupThreshold = threshold * 2
+
+    return maxAbsDelta > threshold or totalDeficit > groupThreshold or hasSevereShortfall
 
 end
+
+
+-- Player's own refinement: real wall-clock seconds don't mean much in
+-- a game that can run at 1x-3x speed or be paused entirely -- "every
+-- 10 seconds" at 3x speed is really "every ~3.3 real seconds", and
+-- keeps ticking even while paused. GAME time (game.interface.
+-- getGameTime().time, real confirmed field, milliseconds of simulated
+-- time) scales with game speed and freezes when paused, matching what
+-- the player actually experiences. The player-facing interval setting
+-- is stored/compared in game-time MILLISECONDS, not real seconds.
+--
+-- HEARTBEAT (player's own follow-up, explicitly "not replacing old
+-- setup" -- an addition, not a swap): the fast, game-time-based
+-- interval above only ever calls dispatcher.applyPlan when
+-- isHubMeaningfullyImbalanced says there's a real (>10% of fleet)
+-- problem -- exactly as designed, so a hub sitting quietly in-range
+-- never gets touched by it. But the player wants a slow, unconditional
+-- safety net running underneath that regardless -- "just to keep it
+-- humming" -- specifically in REAL time (not game time) this time, so
+-- it fires on a predictable wall-clock cadence no matter how fast the
+-- game is running: every AUTO_APPLY_HEARTBEAT_REAL_SECONDS, call
+-- dispatcher.applyPlan for every enabled hub regardless of the
+-- imbalance check. Harmless when nothing needs moving -- applyPlan
+-- itself just reports 0 moves in that case.
+local AUTO_APPLY_HEARTBEAT_REAL_SECONDS = 300
+
+local lastAutoApplyHeartbeatRealTimeByHub = {}
 
 
 local function pollAutoApplyFleetPlan()
@@ -5347,22 +4825,45 @@ local function pollAutoApplyFleetPlan()
         return
     end
 
-    local intervalSeconds =
-        settings.get("autoApplyFleetPlanIntervalSeconds") or 15
+    local okGameTime, gameTimeMs =
+        pcall(function()
+            return game.interface.getGameTime().time
+        end)
 
-    local now = os.time()
+    if not okGameTime or gameTimeMs == nil then
+        return
+    end
+
+    local intervalMs =
+        (settings.get("autoApplyFleetPlanIntervalSeconds") or 15) * 1000
+
+    local nowRealSeconds = os.time()
 
     local enabledHubs = hub_registry.getEnabledHubs()
 
     for _, hubStationGroupId in ipairs(enabledHubs) do
 
         local lastRun = lastAutoApplyFleetPlanTimeByHub[hubStationGroupId] or 0
+        local dueByInterval = (gameTimeMs - lastRun) >= intervalMs
 
-        if now - lastRun >= intervalSeconds then
+        local lastHeartbeat = lastAutoApplyHeartbeatRealTimeByHub[hubStationGroupId] or 0
+        local dueByHeartbeat =
+            (nowRealSeconds - lastHeartbeat) >= AUTO_APPLY_HEARTBEAT_REAL_SECONDS
 
-            lastAutoApplyFleetPlanTimeByHub[hubStationGroupId] = now
+        if dueByInterval or dueByHeartbeat then
 
-            if isHubMeaningfullyImbalanced(hubStationGroupId) then
+            if dueByInterval then
+                lastAutoApplyFleetPlanTimeByHub[hubStationGroupId] = gameTimeMs
+            end
+
+            if dueByHeartbeat then
+                lastAutoApplyHeartbeatRealTimeByHub[hubStationGroupId] = nowRealSeconds
+            end
+
+            -- Heartbeat bypasses the imbalance gate on purpose (it's
+            -- the "run it anyway, just to keep it humming" case); the
+            -- fast interval still only acts on a real, meaningful gap.
+            if dueByHeartbeat or isHubMeaningfullyImbalanced(hubStationGroupId) then
 
                 local ok, err =
                     pcall(

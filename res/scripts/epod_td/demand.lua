@@ -988,6 +988,57 @@ function M.scan(
 end
 
 
+-- Decision 121: extracted from epod_truck_distribution.lua's own
+-- private renderManagedLineRows helpers (sortedCargoTypes +
+-- getDestinationCargoTypes) so the new GUI's LINES tab
+-- (gui_tab_lines.lua) can show the exact same per-destination cargo
+-- icon breakdown as the old panel, via a real module call instead of
+-- a second, drifted-apart copy of the same sort. Deliberately
+-- DIFFERENT from M.buildDestinationCargoRows (Decision 79) just above:
+-- that one only ever returns rows for a destination with 2+ real
+-- cargo types (it exists specifically to compare types against each
+-- other), so it returns nil for the common single-cargo-type
+-- destination -- exactly the case an icon display must still handle.
+-- This returns every real (count > 0) cargo type at a destination,
+-- however many there are, sorted for stable display order.
+function M.getSortedCargoTypesForDestination(scanResult, stationGroupId)
+
+    local destination = M.getDestination(scanResult, stationGroupId)
+
+    if destination == nil then
+        return {}
+    end
+
+    local result = {}
+
+    for cargoType, count in pairs(destination.cargoTypes or {}) do
+
+        if count ~= nil and count > 0 then
+
+            result[#result + 1] = {
+                cargoType = cargoType,
+                count = count
+            }
+
+        end
+
+    end
+
+    table.sort(result, function(a, b)
+
+        if type(a.cargoType) == "number" and type(b.cargoType) == "number" then
+            return a.cargoType < b.cargoType
+        end
+
+        return tostring(a.cargoType) < tostring(b.cargoType)
+
+    end)
+
+    return result
+
+end
+
+
 -- ============================================================
 -- GET ONE DESTINATION FROM A SCAN RESULT
 --
