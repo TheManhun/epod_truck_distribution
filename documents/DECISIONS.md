@@ -1661,6 +1661,252 @@ Construction `type` deliberately left as `ASSET_DEFAULT`, unchanged -- this test
 
 **Live-confirmed working.** No crash this time -- the two-edge shape was the real fix for Decision 88's fatal assertion. First placement attempts (near an existing road/small park, then in an open field) showed the ordinary "Too much curvature" build-validation message, ruling out "just needs an empty spot" -- it reproduced even on open grass. Root cause: the same completely normal TF2 rule any vanilla construction follows -- a road connection needs a reasonable angle to whatever it's snapping near. Confirmed by the player rotating/repositioning until the angle worked, at which point it placed cleanly next to a real road with real traffic passing by. This is the pipeline's first full end-to-end live success: a custom Blender model, exported through ModelEditor's real FBX import, placed in-game as a working construction with a real, functioning road connection.
 
+## Decision 90 — Ground/terrain fitting: found the real, simple mechanism directly in the base game's own shared `constructionutil.lua`, not the complex triangulated mesh data the depot reference file used
+
+### What happened
+
+Player picked "ground/terrain fitting" as the next thing to work on -- the empty `terrainAlignmentLists` (Stage 1's placeholder, copied from the real bench asset which never needed real ground-fitting) was the known cause of the blotchy grass-bleed-through look. Rather than reverse-engineer the depot file's complex triangulated `meshes.equal/greater/less` data (which is tool-generated, not hand-writable), read the real, shared `res/scripts/constructionutil.lua` directly and found `addModelsAndGroups`'s own internals plus a second, much simpler real usage: `makeFaces()` (used by the base game's own `makeTrainStationNew`), which builds `result.terrainAlignmentLists = {{type="EQUAL", faces = { plainRectanglePolygon } }}` directly -- a bare 4-point polygon, not a triangulated mesh at all.
+
+### Decision
+
+Added a `lotFootprint` rectangle matching the construction's real, already-confirmed bounding box (±45 on X and Y, from `epod_truck_distribution_1.mdl`'s own `boundingInfo`) as the `EQUAL` terrain alignment face. Deliberately did NOT add matching `result.groundFaces` texture-painting -- the model already supplies its own gravel-textured ground mesh visually; adding a second, separate ground-texture paint on top would risk fighting or duplicating it. This stage only asks whether flattening the real terrain under the footprint fixes the visual mismatch, not repainting the ground.
+
+### Consequence
+
+**Live-confirmed working.** Player placed on real uneven terrain near an existing road -- the blotchy grass-bleed-through is completely gone, the gravel texture fills the whole real footprint cleanly. Ground/terrain fitting is done.
+
+## Decision 91 — Road connection style swapped: the depot turnaround apron was visually oversized for a plain lot; not the edge geometry's fault
+
+### What happened
+
+Same test that confirmed Decision 90's ground fix also showed the road connection rendering as an oversized paved fan/apron shape, and not fully snapped to the existing dirt path.
+
+### Reason
+
+`"street_depot/entrance_old.lua"` (borrowed in Decision 89 purely because it was in the one real working reference available) is the base game's vehicle-PURCHASE-DEPOT turnaround apron style -- built for buses/trucks queuing to buy/sell vehicles, never actually vetted for a plain lot entrance. The oversized look is that style's own real geometry, not a defect in this construction's edge coordinates.
+
+### Decision
+
+Swapped to `"standard/town_small_old.lua"` -- confirmed real (not guessed) by finding it used directly in `res/scripts/constructionutil.lua`'s own `constructionutil.makeTrainStation`, a genuinely generic plain-street style already proven in real base-game code, for exactly the same kind of STREET edgeList connection. Edge geometry (the two-edge shape from Decision 89) left unchanged -- only the street style string changed.
+
+### Consequence
+
+**Live-confirmed the style swap alone did NOT fix the visible shape.** Player tested and found the paved connector still rendered as a curved, tapering wedge -- correctly pointed out that this was never going to be fixed by a texture/style change, since the shape comes from the edge coordinates (two edges of different length sharing one point), not the material. Decision 91's framing ("root cause: the street style itself") was incomplete -- the style swap was a real, separate improvement (plainer paving texture instead of a depot apron look), but the taper shape is a distinct issue this decision didn't actually address. Also newly observed: the paved connector shows as a separate "no name" entity when selected -- confirms `edgeLists` is successfully building a real, independent street object (genuine further progress past Decision 88's crash), but it isn't touching either the lot's own fence or the pre-existing road on either side.
+
+## Decision 92 — Equalized the two edges' arm lengths; real counter-evidence found against "unequal arms = broken apron"
+
+### What happened
+
+The tapering wedge shape was correctly traced to the two edges sharing one point but extending to different lengths (11 units and 21 units, matching the real depot file's own ~11:21 ratio almost exactly). Before treating "unequal arms" as confirmed broken, checked `constructionutil.lua`'s real `makeTrainStation` function for its own STREET edgeList -- found the SAME shared-point/unequal-arm shape, at an even more extreme ratio (3 units vs 18 units), in genuine shipped vanilla code. This means the shape itself is very likely TF2's normal "entrance stub widens toward the street" idiom, not a defect -- so equalizing the arms doesn't correct a bug, it just chooses a plainer strip shape instead of a tapered one, which is what's visually wanted for a plain lot regardless.
+
+### Decision
+
+Made both edges the same length (11 units) from the shared gate point, collapsing the taper into a straight strip. Left the real, still-unresolved disconnection issue (the stub not touching either the fence or the existing road) for a separate fix -- current leading hypothesis, raised independently before this exchange and not yet contradicted: `result.models[].transf` explicitly applies `constructionutil.rotateTransf(params, ...)` so the model rotates correctly with however the player orients the construction at placement, but `result.edgeLists[].edges` are raw, un-rotated literal coordinates -- if the piece was rotated at all when placed, the model and the edges would end up in genuinely different real-world orientations, which would produce exactly this "correctly-shaped fence, disconnected floating road stub" symptom. Deliberately did not guess at the `transf` module's exact API for rotating a raw point without confirming this first -- asked the player directly whether the piece was rotated when placed, still awaiting an answer.
+
+### Consequence
+
+Superseded by Decision 93 before a live retest -- the rotation-mismatch theory was never actually confirmed or refuted, because a more fundamental error was found first.
+
+## Decision 93 — The actual root cause, found by re-reading the Warehouse mod's real road-building call sites: `edges` entries are `{position, tangentVector}`, not `{point1, point2}`
+
+### What happened
+
+Player suggested looking at exactly how the Warehouse mod (already installed, already read once for its terminal mechanism -- Decision 85) builds its own road connection, rather than continuing to hand-tune coordinates copied from the vehicle-purchase depot. Found the real call sites (`dsd_road_station1.con` lines 618-619): `makeStreets({ { {xMax, yCentre, 0.0}, {streetStub, 0.0, 0.0} }, ... }, {1}, ...)`. The second element of each pair is a literal small vector pointing in the direction of travel (`{streetStub, 0.0, 0.0}` -- a fixed-length constant along the axis of motion), not a second coordinate.
+
+### Reason
+
+Every `edges` entry written since Decision 89 copied the depot file's literal numbers under the assumption they were two endpoints of a line segment. They were actually already-converted `{position, tangentVector}` Hermite-curve samples -- confirmed by cross-checking `constructionutil.lua`'s own `addEdges` function (read earlier for Decision 90's research but not connected to this until now): it explicitly computes `tangent = subtract(points[2], points[1])` from a caller-supplied two-point pair and stores `{points[1], tangent}` -- i.e. the LOW-level format really is point+tangent, and `addEdges` is the convenience wrapper that converts the intuitive two-point format into it. Every attempt so far skipped that conversion and fed a raw second coordinate in as if it were already a tangent -- a nonsensical, huge, wrongly-directed vector -- fully explaining both the tapering wedge shape (Decisions 91/92) and the disconnection from the fence and the existing road (never actually explained by the rotation-mismatch theory, which turned out not to be needed).
+
+### Decision
+
+Replaced the hand-built `result.edgeLists` assignment with a call to `constructionutil.addEdges({ {point1,point2}, {point1,point2} }, result, "STREET", {type=...}, true)` -- the real existing helper, doing the point-pair-to-tangent conversion correctly instead of by hand. Edges now span the real 6m gate width (x=-33 to x=-27) as two parallel, equal-length lines, giving a plain constant-width strip instead of any taper. `free = true` lets the helper auto-compute snap points via `streetutil.freeAllNodes` rather than a manually guessed `snapNodes` index.
+
+### Consequence
+
+**Live-confirmed the core fix worked.** Player placed and the road correctly touched the lot's fence at the gate -- no more taper, no more disconnection. Both issues really did share one root cause, exactly as predicted.
+
+## Decision 94 — New, separate problem surfaced once the connection worked: `free = true`'s auto-generated turnaround loops collided with each other
+
+### What happened
+
+With the connection now correctly anchored, placement failed with "Collision, Construction not possible" -- two purple oval/racetrack shapes visible right at the connection point, overlapping each other.
+
+### Reason
+
+`free = true` passed to `constructionutil.addEdges` computes `res.freeNodes = streetutil.freeAllNodes(edges)`, which auto-generates turnaround-loop geometry at every free edge endpoint. With the two parallel lanes only 6m apart (matching the real gate width), the loops generated for each lane overlapped each other.
+
+### Decision
+
+Changed `free` to `false`, stopping the automatic loop generation entirely. Trade-off: `constructionutil.addEdges` hardcodes `snapNodes = {}` whenever `free` isn't true, so this construction currently has no interactive snap point at all -- acceptable for isolating whether removing the loops fixes the collision, not a final state. A real explicit `snapNodes` index (matching the depot file's `snapNodes = {1}` pattern, now correctly understood) is the next real follow-up once this is confirmed collision-free.
+
+### Consequence
+
+**Live-confirmed the loops are gone** -- a clean small rectangle, no more overlap. But the whole construction (not just the road) now shows red "Collision" -- with `snapNodes` hardcoded empty whenever `free` isn't true, the engine sees a genuinely unconnected road stub sitting close to a real pre-existing road and refuses the whole placement, since nothing marks that endpoint as intended to connect there.
+
+## Decision 95 — Explicit `snapNodes` added back after the `addEdges` call, without reintroducing the loop-generation problem
+
+### What happened
+
+Decision 94 traded the loop-collision for a new "unconnected road too close to existing road" collision by removing `snapNodes` entirely along with `free`.
+
+### Decision
+
+Kept `free = false` (no auto-loop generation) but added `result.edgeLists[#result.edgeLists].snapNodes = {2, 4}` immediately after the `constructionutil.addEdges` call -- the function appends a plain Lua table to `result.edgeLists`, nothing stops mutating it afterward. Indices reasoned from `addEdges`'s own flattening order: two 2-point input groups become 4 edge entries (lane1 inner, lane1 outer, lane2 inner, lane2 outer); 2 and 4 are both lanes' OUTER (away-from-the-lot) points, matching the real depot file's own convention of marking the street-side point connectable rather than the building-side one.
+
+### Consequence
+
+**Crashed -- the exact same fatal assertion as Decision 88** ("`it->second.second == 1`"), on a structurally different-looking attempt (four edge entries from two separate lane groups, `snapNodes = {2,4}`, versus Decision 88's two edges sharing one point, `snapNodes = {1}`). The same failure recurring across two superficially different configurations is a stronger signal than either configuration's own specific numbers -- points at a shared structural mistake rather than a wrong index value.
+
+## Decision 96 — Corrected the actual structural model: a "STREET" edgeList wants ONE connected centerline path, not two hand-specified lane-boundary curves
+
+### What happened
+
+Re-examined every real reference file with this specific question in mind (not "what numbers did it use" but "how many separate, disconnected edge chains does it define"): the depot, `constructionutil.makeTrainStation`, and both real Warehouse mod `makeStreets` call sites all define their road as ONE connected path -- even a 2-entry `edges` array is two sample points along one continuous run (sharing a point, per Decision 93's corrected understanding of the point+tangent format), never two independent, never-touching parallel lines.
+
+### Reason
+
+The previous attempt (Decision 95) built exactly that: two separate lane-boundary curves (x=-33 and x=-27) that never share a single point anywhere -- two genuinely disjoint edge chains inside one edgeList entry, attempting to hand-specify the road's WIDTH directly. That's very likely the real thing the `it->second.second == 1` assertion guards against in both crashes -- not a snapNodes indexing mistake at all. The "STREET" system doesn't take a manually-specified width; the referenced style (`"standard/town_small_old.lua"`) determines the paved width automatically from a single centerline path, exactly matching how every real example actually works.
+
+### Decision
+
+Replaced the two-lane-boundary approach with a single centerline path -- one 2-point group from the gate `(-30,-45,0)` outward to `(-30,-56,0)`, matching the shape (not the exact numbers) of every real reference file. `snapNodes = {2}` marks the single outer/street-side point as connectable, following the same convention.
+
+### Consequence
+
+Not yet live-tested. This is the first attempt built from "what structural pattern do ALL real examples share" rather than "what specific numbers did one example use" -- a more general, better-grounded basis than any single previous attempt.
+
+## Decision 97 — Player found and read a second independent real mod ("Lollo"'s modular streetside lorry station); resolved the snapNodes 0-vs-1-based indexing question left open since Decision 84/89
+
+### What happened
+
+Player extracted and read a `.base5` backup file (an older, pre-refactor, self-contained version) from a real, mature, actively-engineered lorry-station mod. Two findings: (1) independent confirmation of Decision 93's `{position, tangentVector}` format -- a second, unrelated real mod uses the identical shape (`{ {point}, {-1,0,0} }`, a small direction vector, not a second point); (2) resolves the snapNodes indexing question that was never actually settled -- that mod's real, working code sets `snapNodes = {0, 5}` on a 6-edge chain. A "0" appearing at all is only possible under 0-based (native/engine-style) indexing; ordinary Lua table indexing never produces a valid index of 0. Also notably: that mod sets `freeNodes = {}` explicitly alongside populated `snapNodes`, rather than omitting the field.
+
+### Reason
+
+Every previous `snapNodes` value written tonight (`{1}` in Decisions 89/95, `{2,4}` in Decision 95, `{2}` in Decision 96) was chosen assuming ordinary 1-based Lua indexing. Under the corrected 0-based understanding, Decision 96's `{2}` was very likely out-of-bounds on a 2-entry `edges` array (only indices 0 and 1 exist) -- independently explaining that crash regardless of the two-vs-one-path structural question Decision 96 also addressed. Decision 95's `{1}` was pointing at the INNER (gate-side) point, not the outer/street-side point as intended.
+
+### Decision
+
+Corrected `snapNodes` to `{1}` under 0-based indexing (Lua-table index 2 = the outer/street-side point of the single centerline path, native index 1). Added an explicit `result.edgeLists[#result.edgeLists].freeNodes = {}`, matching the real mod's pattern exactly -- `constructionutil.addEdges` with `free = false` never sets this field at all (leaves it nil), which may not be equivalent to an explicit empty table on the native/engine side.
+
+### Consequence
+
+**Live-confirmed working, end to end.** Placed cleanly: a proper cobblestone driveway running from the lot's entrance gate straight to the real, pre-existing paved road with lane markings, no crash, no collision, no taper, fully connected on both ends. This closes out the road-connection thread that started with Decision 88's crash -- nine attempts total, each one narrowed by real evidence (game log errors, real reference mods, a second independent mod cross-check) rather than repeated guessing. Summary of what the finished, working shape actually is: a single centerline path (not hand-specified lane boundaries) from the gate outward, built via `constructionutil.addEdges` with `free = false`, an explicit `snapNodes = {1}` under 0-based native indexing marking the outer/street-side point, and an explicit `freeNodes = {}` -- referencing a plain, generic street style (`"standard/town_small_old.lua"`) rather than the vehicle-depot-specific style first borrowed in Decision 89.
+
+## Decision 98 — Added the exit gate as a second, mirrored road connection using the now-proven entrance pattern
+
+### What happened
+
+With the entrance connection fully confirmed working, added the exit gate (x=30, gap x=27..33, same south fence) as a second, independent `constructionutil.addEdges` call using the exact same shape that just worked: one centerline path, the same generic street style, `snapNodes = {1}` (0-based, outer point) and explicit `freeNodes = {}`.
+
+### Decision
+
+Each `constructionutil.addEdges` call appends its own new entry to `result.edgeLists`, so indexing off `#result.edgeLists` again after the second call correctly targets the exit's own entry, independent of the entrance's.
+
+### Consequence
+
+**Live-confirmed working.** Both gates now have their own independent, cleanly-connected road stub reaching the public highway, no collision between the two despite being on the same construction. This closes out the road-connection thread that began with Decision 88's crash: entrance and exit both proven working, using the same understood, reusable pattern (single centerline path via `constructionutil.addEdges`, generic street style, `snapNodes = {1}` under 0-based indexing, explicit `freeNodes = {}`).
+
+## Decision 99 — First real attempt at the internal driveable lane + terminals, scoped deliberately small after a live design discussion
+
+### What happened
+
+Player floated a full yard concept: drive down the middle, U-turn at the far end, park along one side near the exit, ~5 terminals per side. Given tonight's ModelEditor GUI crash (real, confirmed via Windows crash dumps) ruled out the visual metadata editor for now, and a true U-turn is a genuinely untested curve shape for this project (only straight 2-node lanes have been proven, in the `.con` road stubs), asked the player to choose scope before writing anything. Player chose the smaller, safer option: one straight lane, 2-3 terminal stops, no curve, deferring the full yard layout until this core mechanism is confirmed.
+
+### Decision
+
+Added a real `metadata.transportNetworkProvider` block to `epod_truck_distribution_1.mdl` -- one straight `laneLists` entry (`transportModes = {"TRUCK"}`) extending the already-proven entrance line (x=-30) further north into the lot, with 3 nodes at y=-25/-5/15 plus a closing sentinel duplicate, and a `terminals` table with 3 entries referencing `vehicleNode` 1/2/3 (0-based, per Decision 97's resolved indexing). Tangent convention follows the same `nextPoint - thisPoint` formula `constructionutil.addEdges` itself uses. Also changed `epod_truck_park.con`'s construction `type` from `ASSET_DEFAULT` to `STREET_STATION_CARGO` -- every real example with working terminals uses a station type, none use `ASSET_DEFAULT` -- and added `result.terminalGroups` (3 groups, each referencing `{modelIndex=0, terminalIndex}`) and `result.stations` (one station grouping all 3, matching the real Warehouse mod's own `{terminals={0,1,2,...}, tag=0, pool={...}}` shape).
+
+### Consequence
+
+**Crashed -- but with an unusually precise native error.** "Internal error (see console for details)" during placement preview; the real log gave the exact native assertion: `Assertion 'num % 2 == 0' failed` inside `street_util::CreateTransportNetwork` (`construction_util_connector.cpp:78`) -- the actual engine function that processes `LaneList` data directly. Not the construction-type change suspected in Decision 99's own consequence note -- a structural mistake in the lane's node count instead.
+
+## Decision 100 — Fixed the actual cause: lane node counts must be even (segment pairs), not a continuous polyline of unique points
+
+### What happened
+
+The crashing lane had 5 node entries (gate + 3 stops + 1 duplicate "closing sentinel," following Decision 90's own -- now shown to be wrong -- reading of `straightline.mdl`'s 2-node example). 5 is odd; the native assertion requires an even count.
+
+### Reason
+
+Re-checked every real example specifically for node/edge COUNT (not shape) for the first time: `straightline.mdl` (2), `platform0.mdl`'s laneList (4), the depot's edges (2), every `constructionutil.addEdges` call (always exactly 2 entries per input segment) -- all even, always. The real structure is PAIRS of (segment-start, segment-end) per straight run, not N unique connected points forming one polyline with a closing duplicate at the end. Connected segments simply repeat the same coordinate at their shared point rather than deduplicating it into a single shared entry -- Decision 90's "closing sentinel" reading of a trivial 1-segment (2-node) example never actually tested against a multi-stop case, and turned out to describe the coincidence of a single segment, not a real convention.
+
+### Decision
+
+Rewrote the lane as 3 explicit 2-point segments (gate→stop1, stop1→stop2, stop2→stop3) = 6 node entries, always even. Restored the third "weight" element (3) on each node entry, matching every real reference exactly -- it was dropped by accident while fixing the count, not a deliberate change. Updated `terminals`' `vehicleNode` indices to 1, 3, 5 (0-based) -- the "arrival" entry of each stop's incoming segment.
+
+### Consequence
+
+**Live-confirmed the node-count fix worked** -- no more fatal crash. Placement now failed with a much gentler, non-fatal "Invalid terminals" validation message instead. Nothing about it appeared in the live game log, unlike every previous crash tonight.
+
+## Decision 101 — Used ModelEditor's own VALIDATE feature to isolate the fault to the `.con` side, not the `.mdl`; removed an unnecessary `terminalGroups` layer
+
+### What happened
+
+With no log detail available for "Invalid terminals," used ModelEditor's own **VALIDATE** button on `epod_truck_distribution_1.mdl` directly -- returned "No errors!", and the lane/terminal data rendered visibly correct in the 3D viewport (a clean path through all 3 terminal markers, matching the intended layout exactly). This conclusively isolates the fault to `epod_truck_park.con`'s `terminalGroups`/`stations` wiring, not the model's own `transportNetworkProvider` data.
+
+### Reason
+
+Re-read the real Warehouse mod's ACTIVE code again, specifically checking whether it uses `terminalGroups` at all (not just how it's shaped, which is what Decision 99 checked) -- it doesn't. The real, working, currently-used code skips `result.terminalGroups` entirely and has `result.stations[].terminals` reference the placed models' own terminal indices directly (`{0,1,...,7}` for its 8 placed platform models, each contributing one terminal). A `terminalGroups` block DOES exist in that same file, but fully commented out -- an abandoned earlier approach, not what actually ships. Decision 99 built on the wiki's description of `terminalGroups` as if it were required, without checking whether the one real reference that has working terminals actually uses it.
+
+### Decision
+
+Removed `result.terminalGroups` from `epod_truck_park.con` entirely. `result.stations[1].terminals` now references the `.mdl`'s own 3 terminals directly by index (`{0, 1, 2}`), matching the real active Warehouse mod pattern exactly rather than the more indirect (and apparently unused) mechanism the wiki describes.
+
+### Consequence
+
+**Live-confirmed "Invalid terminals" persisted** even after removing `terminalGroups` -- the stations wiring wasn't the (whole) problem.
+
+## Decision 102 — Added a second, CARGO-tagged laneList alongside the existing TRUCK lane
+
+### What happened
+
+"Invalid terminals" continued with no new log detail. Re-examined `dsd_road_station1_platform0.mdl` (the real, confirmed-working `STREET_STATION_CARGO`-type terminal model) specifically for how many laneLists it has, not just its terminal/node shape -- it has TWO: one tagged `{"TRUCK","TRAM","ELECTRIC_TRAM"}` (the driving lane) and a separate one tagged `{"CARGO"}` (offset from the driving lane, spanning the platform). Our `.mdl` only had the driving lane.
+
+### Decision
+
+Added a second `laneLists` entry tagged `transportModes = {"CARGO"}`, positioned a few meters east of the driving lane (x=-27, still within the real 6m gate width) and spanning the same 3 terminal stops. Doesn't need to reach the gate itself, only cover the stop range, matching how platform0.mdl's own CARGO lane is scoped to just the platform length, not the full approach.
+
+### Consequence
+
+**Live-confirmed "Invalid terminals" persisted** even with a real CARGO-tagged lane added -- that wasn't the (whole) cause either.
+
+## Decision 103 — Corrected Decision 101's wrong turn: `stations[].terminals` really does reference `terminalGroups` ids, not raw model-terminal indices; restored `terminalGroups`
+
+### What happened
+
+Two fixes in a row (Decisions 101, 102) failed to clear "Invalid terminals." Rather than guess a third time, re-fetched the wiki with a narrower, more targeted question this time (the exact required shape of `result.stations`) instead of relying on the earlier general research pass. It is unambiguous: "`terminals` is a list of terminalGroup ids ... fetched in the order of the groups in `result.terminalGroups`."
+
+### Reason
+
+Decision 101 removed `terminalGroups` based on the real Warehouse mod's shorthand (`stations.terminals = {0,1,...,7}` with no `terminalGroups` defined at all), concluding that pattern meant `stations.terminals` could reference raw model-terminal indices directly. That was the wrong inference -- that mod almost certainly works because omitting `terminalGroups` with exactly ONE terminal per placed model (8 models, 8 terminals total) happens to auto-generate matching group ids 1:1, coincidentally producing the same numbers either way. With ONE model contributing THREE terminals, this project's case doesn't fit that same coincidence. Also worth noting for the record: Decision 99's original `terminalGroups` version was never actually tested against "Invalid terminals" at all -- every attempt with it hit the unrelated `.mdl` node-count crash (fixed in Decision 100) before this message could ever appear, so Decision 101 was reacting to an untested assumption, not a confirmed failure of `terminalGroups` itself.
+
+### Decision
+
+Restored `result.terminalGroups` (3 groups, each `{terminals={{0,i}}}`, matching Decision 99's original, wiki-correct shape exactly). Kept Decision 100's node-count fix and Decision 102's CARGO lane addition, both still independently reasoned and not implicated by this specific error.
+
+### Consequence
+
+Not yet live-tested. This reinstates the very first terminalGroups attempt now that the two things that were genuinely blocking it (the node-count crash, and never getting far enough to test this specific piece) are resolved.
+
+## Decision 104 — Strategic pivot on the parking-lot/depot idea: use a real, working truck depot construction (not hand-authored terminal metadata) and build the behavior in Lua instead
+
+### What happened
+
+After Decisions 99-103's repeated "Invalid terminals" failures (crash fixed, node-count fixed, terminalGroups shape corrected against explicit wiki wording -- still invalid, with zero log detail to work from each time), player proposed a different approach: stop hand-authoring the native `transportNetworkProvider`/terminal system entirely. Instead, use a real, already-working truck depot/station construction as the physical building (the already-installed "Warehouse" mod, Workshop 2152226924, is literally a configurable large truck stop -- up to 8 platforms, up to 3600+ shared capacity -- directly answering the player's own "is there a mod with a massive truck stop" question), and build "Central Truck Depot" designation + inter-depot vehicle linking entirely in this project's own Lua game-script layer instead.
+
+### Reason
+
+This sidesteps the exact wall hit repeatedly tonight -- the native construction terminal-validation system is undocumented past a few wiki sentences, gives no log detail on failure, and has needed 9+ live-tested attempts just to get the ROAD connection working, before terminals were even reachable. The Lua game-script layer, by contrast, is this project's proven strength -- `hub_registry.lua`'s pattern (a simple per-entity enabled/disabled registry with a GUI toggle) and `dispatcher.lua`'s pattern (hold -> setLine -> release vehicle reassignment) already solve the two real mechanisms this idea needs: designating a depot, and moving vehicles to/from it. No custom terminal geometry is needed at all if the physical depot is a real, already-functional construction.
+
+### Decision
+
+Deferred as the plan for a future session, not started tonight given how long the construction-modding thread already ran. Shape agreed: (1) a new small registry (mirroring `hub_registry.lua`) letting a player select a real depot/station construction and mark it "Central Truck Depot"; (2) vehicle linking logic (mirroring `dispatcher.lua`'s proven safe move pattern) that assigns/reassigns vehicles between depots as needed; (3) the physical building is a real, existing construction (the Warehouse mod's, or any other real depot/station) -- not `epod_truck_park.con`, which stays as tonight's research artifact, not a production piece.
+
+### Consequence
+
+`epod_truck_park.con`/`epod_truck_distribution_1.mdl`'s outstanding "Invalid terminals" issue is left unresolved and de-prioritized, not abandoned as a dead end -- the real, hard-won pipeline knowledge from tonight (Blender->FBX->ModelEditor, ground fitting, the `{position,tangentVector}` edge format, 0-based indexing, `constructionutil.addEdges`) remains valid and reusable if custom construction work is picked up again later; only the terminal/station layer specifically hit a wall.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

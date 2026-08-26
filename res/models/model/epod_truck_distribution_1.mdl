@@ -49,23 +49,97 @@ return {
 		},
 	},
 	-- ============================================================
-	-- TRANSPORT NETWORK -- REVERTED PENDING ISOLATION (Decision 87)
+	-- TRANSPORT NETWORK -- RE-ADDED (Decision 99), much better informed
+	-- than Decision 87's first, crashed attempt.
 	--
-	-- A hand-authored metadata.transportNetworkProvider block (laneList
-	-- + terminal, real coordinates from the Blender build) was added
-	-- here and caused a real, reproducible engine crash the moment the
-	-- player selected this construction from the menu (confirmed via
-	-- the live game log: a genuine hang + minidump, not a clean
-	-- resource-error message). Pulled back out to isolate it from the
-	-- .con file's own new edgeLists addition (epod_truck_park.con) --
-	-- one change at a time, same debugging discipline as everything
-	-- else tonight. This was always the less-certain of the two new
-	-- pieces (the only real reference example read had an ambiguous
-	-- 4-node junction shape, not a simple 2-node line, so the exact
-	-- format guessed here was never fully grounded). See DECISIONS.md
-	-- Decision 85/87 for the full trail before re-adding this.
+	-- Decision 87's version guessed at the node/tangent format from one
+	-- ambiguous real example (a complex junction shape) and crashed.
+	-- Tonight's road-connection debugging (Decisions 93-98) settled the
+	-- real format with much stronger evidence: `edges`/`nodes` entries
+	-- are {position, tangentVector} pairs (a real, independent second
+	-- mod -- "Lollo"'s lorry station -- confirmed this alongside the
+	-- Warehouse mod), and snapNodes/vehicleNode indices are 0-based
+	-- native indices, not 1-based Lua indices.
+	--
+	-- SCOPE, deliberately small (player's own call after weighing a
+	-- fuller "drive down the middle, U-turn, park near the exit" yard
+	-- concept against this): ONE straight lane, no curves, extending
+	-- the entrance gate's already-proven-working line
+	-- (x=-30, matching epod_truck_park.con's entrance edgeList) further
+	-- north into the lot, with 3 terminal stops along it. A true U-turn
+	-- is a genuinely untested curve shape for this project -- proving
+	-- the core mechanism (a truck entering, stopping, loading) with the
+	-- one curve shape already confirmed safe (straight lines) comes
+	-- first; the fuller yard layout is a real follow-up once this is
+	-- live-confirmed, not before.
+	--
+	-- Tangent convention: same formula constructionutil.addEdges itself
+	-- uses and that tonight's real, working road connections rely on --
+	-- tangent = (next node's position - this node's position).
+	--
+	-- CORRECTED (Decision 100): live-confirmed real engine crash --
+	-- "Assertion `num % 2 == 0' failed" inside the native
+	-- CreateTransportNetwork function that processes LaneList data
+	-- directly (construction_util_connector.cpp:78). The original
+	-- 5-node version below was ODD, and that's exactly what failed.
+	-- Re-examining every real example with this specific question (odd
+	-- vs even node count) shows they're ALL even: straightline.mdl (2),
+	-- platform0.mdl (4), the depot's edges (2), every addEdges call
+	-- (always 2 per input segment). The real structure isn't "N unique
+	-- points forming one continuous polyline plus a closing sentinel"
+	-- (this file's own earlier, wrong assumption) -- it's PAIRS of
+	-- (segment-start, segment-end), one pair per straight run, where
+	-- connected segments simply repeat the same coordinate at their
+	-- shared point rather than deduplicating it into one shared entry.
+	-- 3 stops need 3 segments (gate->stop1, stop1->stop2, stop2->
+	-- stop3) = 6 entries, always even.
 	-- ============================================================
-	metadata = { },
+	metadata = {
+		transportNetworkProvider = {
+			-- Decision 102: added a second laneList tagged "CARGO",
+			-- alongside the existing "TRUCK" driving lane. Real
+			-- evidence: dsd_road_station1_platform0.mdl (a genuine,
+			-- working STREET_STATION_CARGO-type terminal model) has
+			-- exactly this -- one TRUCK/TRAM driving lane AND a
+			-- separate CARGO lane -- not just one lane doing both
+			-- jobs. "Invalid terminals" persisted even after fixing the
+			-- stations wiring (Decision 101), and this station type is
+			-- specifically the CARGO variant -- plausible the terminal
+			-- validity check requires an actual CARGO-tagged path to
+			-- exist, not just a driving lane. Positioned a few meters
+			-- east of the driving lane (x=-27, within the real 6m gate
+			-- width) spanning the same 3 terminal stops -- doesn't need
+			-- to start at the gate itself, only cover the stop range.
+			laneLists = {
+				{
+					nodes = {
+						{ { -30, -45, 0 }, { 0, 20, 0 }, 3 },
+						{ { -30, -25, 0 }, { 0, 20, 0 }, 3 },
+						{ { -30, -25, 0 }, { 0, 20, 0 }, 3 },
+						{ { -30, -5, 0 }, { 0, 20, 0 }, 3 },
+						{ { -30, -5, 0 }, { 0, 20, 0 }, 3 },
+						{ { -30, 15, 0 }, { 0, 20, 0 }, 3 },
+					},
+					transportModes = { "TRUCK" },
+					speedLimit = 30,
+				},
+				{
+					nodes = {
+						{ { -27, -25, 0 }, { 0, 20, 0 }, 3 },
+						{ { -27, -5, 0 }, { 0, 20, 0 }, 3 },
+						{ { -27, -5, 0 }, { 0, 20, 0 }, 3 },
+						{ { -27, 15, 0 }, { 0, 20, 0 }, 3 },
+					},
+					transportModes = { "CARGO" },
+				},
+			},
+			terminals = {
+				{ vehicleNode = 1 },
+				{ vehicleNode = 3 },
+				{ vehicleNode = 5 },
+			},
+		},
+	},
 	version = 1,
 }
 end
