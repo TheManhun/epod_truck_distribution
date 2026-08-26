@@ -55,6 +55,8 @@ local fleet_naming = require("epod_td.fleet_naming")
 local planner = require("epod_td.planner")
 local dispatcher = require("epod_td.dispatcher")
 local line_adopter = require("epod_td.line_adopter")
+local industry_naming = require("epod_td.industry_naming")
+local industry_recipes = require("epod_td.industry_recipes")
 local hub_registry = require("epod_td.hub_registry")
 local line_ownership = require("epod_td.line_ownership")
 local source_line_registry = require("epod_td.source_line_registry")
@@ -212,6 +214,22 @@ local autoAdoptPollCounter =
     0
 
 local isLineAdoptionRunning =
+    false
+
+-- Industry-proximity station naming (player's own idea, checked
+-- against two real Workshop mods -- see industry_naming.lua's header).
+-- Global, map-wide walk over every STATION each cycle -- same cost
+-- category as line_adopter's getLines() walk above, so it gets the
+-- same throttle treatment rather than running every frame. Not gated
+-- on any enabled hub: this labels any eligible non-hub truck station
+-- anywhere on the map, independent of Distribution Hub dispatch.
+local AUTO_INDUSTRY_NAME_POLL_INTERVAL =
+    600
+
+local autoIndustryNamePollCounter =
+    0
+
+local isIndustryNamingRunning =
     false
 
 
@@ -976,14 +994,40 @@ local function splitAllManagedLines(
     end
 
 
-    if realCount < 2 then
+    -- Player's idea: a genuine "coal -> steel -> hub" industry chain
+    -- must never be split -- doing so would break it into disconnected
+    -- hub<->coal and hub<->steel lines, destroying the production
+    -- sequence. Same proximity-based chain detection industry_naming
+    -- uses for its own line-naming (line_adopter.buildAdoptedLineName).
+    local okChain, chainName =
+        pcall(
+            industry_naming.buildChainName,
+            lineInfo.destinations,
+            stationGroupId
+        )
+
+    local isChainLine = okChain and chainName ~= nil
+
+    if realCount < 2 or isChainLine then
+
+        local reasonText
+
+        if isChainLine then
+            reasonText =
+                "detected as an industry chain line (\""
+                    .. tostring(chainName)
+                    .. "\") -- splitting would break the production sequence"
+        else
+            reasonText =
+                tostring(realCount) .. " real destination(s), nothing to split"
+        end
 
         logUi(
             "SPLIT ALL: skipping '"
                 .. tostring(lineInfo.name)
                 .. "' ("
-                .. tostring(realCount)
-                .. " real destination(s), nothing to split)."
+                .. reasonText
+                .. ")."
         )
 
         splitAllManagedLines(
@@ -2148,8 +2192,21 @@ local function handleCargoBalanceInspectorButtonClick()
     output[#output + 1] = "more than one real cargo type. Flags whichever type looks"
     output[#output + 1] = "comparatively under-served relative to the busiest type at"
     output[#output + 1] = "THAT destination -- this is a relative signal, not a claim"
-    output[#output + 1] = "about the destination's actual required input ratio (no API"
-    output[#output + 1] = "for that has been confirmed)."
+    output[#output + 1] = "about the destination's actual required input ratio."
+    output[#output + 1] = ""
+    output[#output + 1] = "Where the destination sits near a known multi-input"
+    output[#output + 1] = "industry (industry_recipes.lua -- a REAL recipe ratio read"
+    output[#output + 1] = "from the industry's own construction data, e.g. steel mill"
+    output[#output + 1] = "wants IRON_ORE:COAL 1:1), a RECIPE CHECK line below also"
+    output[#output + 1] = "names whichever input is proportionally shortest against"
+    output[#output + 1] = "that real ratio -- read-only, nothing acts on this yet."
+    output[#output + 1] = ""
+    output[#output + 1] = "An OUTPUT PICKUP CHECK line also shows how much of this"
+    output[#output + 1] = "industry's OWN output (e.g. STEEL) is currently sitting"
+    output[#output + 1] = "unpicked-up -- Stage 1 of a possible future adaptive chain"
+    output[#output + 1] = "system (build a dedicated output-pickup line only once this"
+    output[#output + 1] = "number shows it's genuinely needed). Plain number, no"
+    output[#output + 1] = "threshold or flag yet -- left for the player to judge."
     output[#output + 1] = "----------------------------------------"
 
     local ok, allLineIds =
@@ -2222,6 +2279,116 @@ local function handleCargoBalanceInspectorButtonClick()
 
                                 end
 
+                                -- RECIPE CHECK (player's own idea): if this
+                                -- destination sits near a known multi-input
+                                -- industry, compare real all-time deliveries
+                                -- against its REAL recipe ratio
+                                -- (industry_recipes.lua), not just the
+                                -- relative under-served heuristic above.
+                                local okEntity, destinationEntity =
+                                    pcall(
+                                        game.interface.getEntity,
+                                        destination.stationGroup
+                                    )
+
+                                local destinationPosition =
+                                    okEntity
+                                        and destinationEntity ~= nil
+                                        and destinationEntity.position
+                                        or nil
+
+                                if destinationPosition ~= nil then
+
+                                    local industryId, industryName =
+                                        industry_naming.findNearestIndustry(
+                                            destinationPosition
+                                        )
+
+                                    if industryId ~= nil then
+
+                                        local ratio =
+                                            industry_recipes.getInputRatio(industryId)
+
+                                        if ratio ~= nil then
+
+                                            local unloadedAmounts =
+                                                stations.getUnloadedAmountsByType(
+                                                    destination.stationGroup
+                                                )
+
+                                            local mostNeeded =
+                                                industry_recipes.findMostNeededInput(
+                                                    industryId,
+                                                    unloadedAmounts
+                                                )
+
+                                            if mostNeeded ~= nil then
+
+                                                local ratioParts = {}
+
+                                                for cargoType, weight in pairs(ratio) do
+                                                    ratioParts[#ratioParts + 1] =
+                                                        tostring(cargoType) .. "=" .. tostring(weight)
+                                                end
+
+                                                output[#output + 1] =
+                                                    "  RECIPE CHECK ("
+                                                        .. tostring(industryName)
+                                                        .. ", wants "
+                                                        .. table.concat(ratioParts, ":")
+                                                        .. "): needs more "
+                                                        .. tostring(mostNeeded)
+
+                                            end
+
+                                        end
+
+                                        -- OUTPUT PICKUP CHECK (Stage 1 of
+                                        -- the player's own "adaptive chain"
+                                        -- idea): plain, read-only, no
+                                        -- invented threshold -- just shows
+                                        -- how much of this industry's OWN
+                                        -- output is currently sitting
+                                        -- unpicked-up. A chain line's
+                                        -- inbound-cargo trucks may not be
+                                        -- able to also carry this (a
+                                        -- specialized single-cargo fleet
+                                        -- can't), so a real, growing number
+                                        -- here is the signal that a
+                                        -- dedicated output-pickup line
+                                        -- would help -- left for the
+                                        -- player to judge for now, not
+                                        -- flagged automatically.
+                                        local outputCargoType =
+                                            industry_recipes.getOutputCargoType(industryId)
+
+                                        if outputCargoType ~= nil then
+
+                                            local outputWaiting = 0
+
+                                            for _, row in ipairs(rows) do
+
+                                                if row.cargoType == outputCargoType then
+                                                    outputWaiting = row.waiting
+                                                    break
+                                                end
+
+                                            end
+
+                                            output[#output + 1] =
+                                                "  OUTPUT PICKUP CHECK ("
+                                                    .. tostring(industryName)
+                                                    .. "): produces "
+                                                    .. tostring(outputCargoType)
+                                                    .. ", currently waiting="
+                                                    .. tostring(outputWaiting)
+
+                                        end
+
+                                    end
+
+                                end
+
                                 output[#output + 1] = "----------------------------------------"
 
                             end
@@ -2260,6 +2427,72 @@ local function handleCargoBalanceInspectorButtonClick()
             .. tostring(flaggedCount)
             .. " flag(s) to epod_td_cargo_balance_report.txt "
             .. "(in the game install folder)."
+    )
+
+end
+
+
+-- ============================================================
+-- INDUSTRY DISCOVERY (read-only)
+--
+-- Player's question: since a full live "universal detector" for
+-- arbitrary (including modded) industry recipes isn't proven feasible
+-- (see industry_recipes.lua's own header on this), the practical
+-- middle ground is discovery instead of guessing: list every industry
+-- construction actually loaded on this map (api.res.constructionRep.
+-- getAll(), a real function confirmed via the "AI Builder" mod's own
+-- live usage) and flag which ones industry_recipes.lua doesn't
+-- recognize yet. Turns "silently unsupported" into a concrete list to
+-- extend by hand, the fastest real path to supporting a heavier
+-- industry mod once one is actually installed and tested.
+-- ============================================================
+local function handleIndustryDiscoveryButtonClick()
+
+    local output = {}
+
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "INDUSTRY DISCOVERY (read-only)"
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "Every industry construction currently loaded on this map"
+    output[#output + 1] = "(vanilla or modded), flagging any that industry_recipes.lua"
+    output[#output + 1] = "does not yet recognize -- add those fileNames' real"
+    output[#output + 1] = "stocks/rule.input/output data (same method as the vanilla"
+    output[#output + 1] = "roster: read the real .con file) to extend support."
+    output[#output + 1] = "----------------------------------------"
+
+    local fileNames = industry_recipes.findAllIndustryFileNames()
+
+    local knownCount = 0
+    local unknownCount = 0
+
+    for _, fileName in ipairs(fileNames) do
+
+        if industry_recipes.isKnownIndustry(fileName) then
+            knownCount = knownCount + 1
+        else
+            unknownCount = unknownCount + 1
+            output[#output + 1] = "UNKNOWN: " .. tostring(fileName)
+        end
+
+    end
+
+    output[#output + 1] = "----------------------------------------"
+
+    output[#output + 1] =
+        "INDUSTRY DISCOVERY COMPLETE: "
+            .. tostring(#fileNames) .. " industry construction(s) found, "
+            .. tostring(knownCount) .. " known, "
+            .. tostring(unknownCount) .. " unknown."
+
+    output[#output + 1] = "========================================"
+
+    writeReportFile("epod_td_industry_discovery.txt", output)
+
+    logUi(
+        "INDUSTRY DISCOVERY: " .. tostring(#fileNames) .. " found, "
+            .. tostring(knownCount) .. " known, "
+            .. tostring(unknownCount) .. " unknown -- wrote "
+            .. "epod_td_industry_discovery.txt (in the game install folder)."
     )
 
 end
@@ -3359,6 +3592,31 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             cargoBalanceInspectorButton
+
+
+        distributionState.textViews.industryDiscoveryButtonLabel =
+            gui.textView_create(
+                WINDOW_ID .. ".industryDiscoveryButtonLabel",
+                "[ Industry Discovery (DEBUG) ]",
+                WINDOW_WIDTH,
+                false
+            )
+
+        local industryDiscoveryButton =
+            gui.button_create(
+                WINDOW_ID .. ".industryDiscoveryButton",
+                distributionState.textViews.industryDiscoveryButtonLabel
+            )
+
+        industryDiscoveryButton:onClick(
+            handleIndustryDiscoveryButtonClick
+        )
+
+        distributionState.industryDiscoveryButton =
+            industryDiscoveryButton
+
+        fixedViews[#fixedViews + 1] =
+            industryDiscoveryButton
 
 
         distributionState.textViews.dedupeSharedRouteLinesButtonLabel =
@@ -5026,6 +5284,128 @@ local function pollAutoDispatchPending()
 end
 
 
+-- ============================================================
+-- AUTO APPLY FLEET PLAN (Decisions -- player's own idea, live-
+-- validated by hand: manually clicking "Apply Fleet Plan" every 5-7
+-- seconds took a badly imbalanced network down to nearly flat within
+-- a couple of minutes). Off by default (settings.lua) -- opt-in, same
+-- stance this project has taken on every other consequential
+-- automatic action.
+--
+-- Real wall-clock seconds (os.time()), not a guiUpdate tick count --
+-- the player picks "every 10s" meaning real seconds, not however many
+-- frames that happens to be. Tracked per hub so each hub gets its own
+-- independent cadence rather than all firing in lockstep.
+--
+-- No shared reentrancy flag needed across hubs: dispatcher.applyPlan
+-- already refuses to overlap itself for the SAME hub
+-- (applyPlanRunningByHub, checked live in dispatcher.lua), so calling
+-- it for every due hub each poll is safe on its own.
+--
+-- MIN DELTA THRESHOLD (player's own refinement, after watching a hand-
+-- rebalanced network settle to mostly +/-1): once a hub is this close
+-- to its target, there's nothing meaningful left to fix -- computing
+-- and applying a plan every single interval regardless is wasted
+-- work. Peeks at the SAME plan the SERVICES tab already shows
+-- (planner.calculateTargetAllocation) and skips the actual
+-- dispatcher.applyPlan call entirely unless at least one line is off
+-- by more than this many vehicles.
+-- ============================================================
+
+local AUTO_APPLY_MIN_DELTA_THRESHOLD = 5
+
+local lastAutoApplyFleetPlanTimeByHub = {}
+
+
+local function isHubMeaningfullyImbalanced(hubStationGroupId)
+
+    local ok, plan = pcall(planner.calculateTargetAllocation, hubStationGroupId)
+
+    if not ok or plan == nil or plan.lines == nil then
+        -- Unknown -- fail open and let dispatcher.applyPlan itself
+        -- decide, rather than silently skipping a hub this check
+        -- couldn't read.
+        return true
+    end
+
+    for _, lineInfo in ipairs(plan.lines) do
+
+        if math.abs(lineInfo.delta) > AUTO_APPLY_MIN_DELTA_THRESHOLD then
+            return true
+        end
+
+    end
+
+    return false
+
+end
+
+
+local function pollAutoApplyFleetPlan()
+
+    if not settings.get("autoApplyFleetPlanEnabled") then
+        return
+    end
+
+    local intervalSeconds =
+        settings.get("autoApplyFleetPlanIntervalSeconds") or 15
+
+    local now = os.time()
+
+    local enabledHubs = hub_registry.getEnabledHubs()
+
+    for _, hubStationGroupId in ipairs(enabledHubs) do
+
+        local lastRun = lastAutoApplyFleetPlanTimeByHub[hubStationGroupId] or 0
+
+        if now - lastRun >= intervalSeconds then
+
+            lastAutoApplyFleetPlanTimeByHub[hubStationGroupId] = now
+
+            if isHubMeaningfullyImbalanced(hubStationGroupId) then
+
+                local ok, err =
+                    pcall(
+                        dispatcher.applyPlan,
+                        hubStationGroupId,
+
+                        function(movesMade)
+
+                            if movesMade > 0 then
+
+                                logUi(
+                                    "AUTO APPLY FLEET PLAN: "
+                                        .. tostring(movesMade)
+                                        .. " vehicle(s) moved for hub "
+                                        .. tostring(hubStationGroupId)
+                                        .. "."
+                                )
+
+                            end
+
+                        end
+                    )
+
+                if not ok then
+
+                    logUi(
+                        "AUTO APPLY FLEET PLAN FAILED for hub "
+                            .. tostring(hubStationGroupId)
+                            .. ": "
+                            .. tostring(err)
+                    )
+
+                end
+
+            end
+
+        end
+
+    end
+
+end
+
+
 -- Runs line_adopter.detectAndAdopt from an ordinary per-frame poll,
 -- same call context as pollAutoDispatchPending above and for the same
 -- reason (Decision 39): setName/register issue real commands, so this
@@ -5165,12 +5545,66 @@ local function pollNewLineAdoption()
 end
 
 
+-- Same reentrancy-guard shape as pollNewLineAdoption above:
+-- industry_naming.detectAndNameStations issues real setName commands
+-- through a chained callback, so a second poll firing mid-chain must
+-- not start a second walk on top of it.
+local function pollIndustryNaming()
+
+    autoIndustryNamePollCounter = autoIndustryNamePollCounter + 1
+
+    if autoIndustryNamePollCounter < AUTO_INDUSTRY_NAME_POLL_INTERVAL then
+        return
+    end
+
+    autoIndustryNamePollCounter = 0
+
+    if isIndustryNamingRunning then
+        return
+    end
+
+    isIndustryNamingRunning = true
+
+    local ok, err =
+        pcall(
+            industry_naming.detectAndNameStations,
+
+            function(renamedCount)
+
+                isIndustryNamingRunning = false
+
+                if renamedCount > 0 then
+
+                    logUi(
+                        "INDUSTRY NAMING: " .. tostring(renamedCount)
+                            .. " truck station(s) auto-named after "
+                            .. "their nearest industry."
+                    )
+
+                end
+
+            end
+        )
+
+    if not ok then
+
+        isIndustryNamingRunning = false
+
+        logUi("INDUSTRY NAMING FAILED: " .. tostring(err))
+
+    end
+
+end
+
+
 local function guiUpdate()
 
     runStartupDiagnosticsOnce()
 
     pollAutoDispatchPending()
     pollNewLineAdoption()
+    pollIndustryNaming()
+    pollAutoApplyFleetPlan()
 
     -- New GUI framework (gui_manager.lua) is a separate window, not
     -- gated on station selection the way the existing panel is --

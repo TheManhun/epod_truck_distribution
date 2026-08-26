@@ -1,5 +1,6 @@
 local log = require("epod_td.log")
 local lines = require("epod_td.lines")
+local hub_registry = require("epod_td.hub_registry")
 
 local M = {}
 
@@ -48,6 +49,67 @@ local STATE_FILE_PATH = "epod_td_line_ownership.txt"
 -- saveStateToDisk() fresh). Same pattern as managed_registry.lua's
 -- hasMigratedThisSession.
 local hasValidatedThisSession = false
+
+
+-- LIVE-CONFIRMED real bug: lines.findDominantStationGroup just counts
+-- which stationGroup repeats most often on a line's stops, with no
+-- idea which one is actually a hub. A genuinely messy, hand-built line
+-- that happens to revisit the SAME industry two or more times (very
+-- plausible while a player is manually wiring up a complex route) but
+-- only ever touches its real hub once gets its "dominant" stop
+-- computed as that industry, not the hub -- confirmed live via a real
+-- dump: a 17-stop line touching "Upper St Albans" (a real, enabled
+-- hub) 4 times got its owner corrected to "St Albans Goods factory"
+-- (a plain industry, not a hub, also visited 4 times) instead, and a
+-- separate 9-stop line got its owner corrected to "St Albans Steel
+-- mill" (visited twice) over its real hub "Poole Sidings" (visited
+-- once). This silently broke every hub-scoped action against that
+-- line (Split, Assign & Balance, planner) since none of them would
+-- ever recognize the line as belonging to a real, enabled hub again.
+--
+-- Fix: only ever trust a "dominant" candidate that is ACTUALLY a
+-- currently-enabled hub (hub_registry.isEnabled) -- an industry no
+-- matter how many times it repeats is never eligible. Local to this
+-- file rather than changing lines.findDominantStationGroup itself,
+-- which is a generic, hub-agnostic utility used for other purposes.
+local function findDominantHubStationGroup(lineId)
+
+    local stops = lines.getStops(lineId)
+    local stopCount = lines.safeLength(stops)
+
+    local counts = {}
+
+    for index = 1, stopCount do
+
+        local stop = stops[index]
+
+        if stop ~= nil then
+
+            local stationGroup = lines.safeField(stop, "stationGroup")
+
+            if stationGroup ~= nil and hub_registry.isEnabled(stationGroup) then
+                counts[stationGroup] = (counts[stationGroup] or 0) + 1
+            end
+
+        end
+
+    end
+
+    local bestGroup = nil
+    local bestCount = 0
+
+    for stationGroup, count in pairs(counts) do
+
+        if count > bestCount then
+            bestCount = count
+            bestGroup = stationGroup
+        end
+
+    end
+
+    return bestGroup
+
+end
 
 
 local function loadStateFromDisk()
@@ -169,7 +231,7 @@ local function loadAndValidate()
     -- uses.
     for lineId, ownerId in pairs(state) do
 
-        local dominantGroup = lines.findDominantStationGroup(lineId)
+        local dominantGroup = findDominantHubStationGroup(lineId)
 
         if dominantGroup ~= nil and dominantGroup ~= ownerId then
 
@@ -265,7 +327,7 @@ function M.isOwnedByOther(lineId, hubStationGroupId)
 
     if owner == nil then
 
-        local dominantGroup = lines.findDominantStationGroup(lineId)
+        local dominantGroup = findDominantHubStationGroup(lineId)
 
         local claimFor =
             dominantGroup ~= nil

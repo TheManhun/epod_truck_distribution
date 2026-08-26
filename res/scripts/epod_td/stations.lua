@@ -831,6 +831,29 @@ function M.getEntityName(entityId)
         return name:sub(5)
     end
 
+    -- Decision 105 follow-up, LIVE-CONFIRMED real bug (real
+    -- screenshot): an industry-linked station's own display name
+    -- already spells out "* Industry <-> Hub - NN" -- feeding that
+    -- whole thing into a composite name builder that ALSO prepends
+    -- the same hub (line_adopter.buildAdoptedLineName's
+    -- "hubName .. ↔ .. destinationName", fed by vehicles.lua reading
+    -- this exact function) re-embeds the hub a second time, e.g.
+    -- "Hemel Hempstead East ↔ * Carnforth Quarry <-> Hemel Hempstead
+    -- East - 01". Same lesson as the "● " case just above, just a
+    -- bigger decoration to strip: reduce to "Industry - NN" for any
+    -- composite use -- the hub is already supplied by whatever is
+    -- building the composite name, so it doesn't need to appear
+    -- twice. getRawEntityName (used by industry_naming.lua itself to
+    -- decide whether a station has already been touched) still sees
+    -- the real, undecorated name -- only this stripped-for-display
+    -- version changes.
+    local industryName, _, number =
+        name:match("^%* (.-) <%-> (.+) %- (%d+)$")
+
+    if industryName ~= nil then
+        return industryName .. " - " .. number
+    end
+
     return name
 
 end

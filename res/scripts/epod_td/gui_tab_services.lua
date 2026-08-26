@@ -1,6 +1,7 @@
 local planner = require("epod_td.planner")
 local dispatcher = require("epod_td.dispatcher")
 local operation_lock = require("epod_td.operation_lock")
+local chain_builder = require("epod_td.chain_builder")
 local log = require("epod_td.log")
 
 local M = {}
@@ -118,6 +119,65 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
                 if not ok then
                     operation_lock.finish()
                     log.info("SERVICES TAB: Apply Fleet Plan failed: " .. tostring(err))
+                end
+
+            end
+
+        end
+
+    end
+
+    -- Player's own idea, after seeing a real dump showing a coal mine
+    -- and a steel mill running as two separate hub<->industry lines
+    -- with the mill genuinely starved of coal (industry_recipes.lua's
+    -- RECIPE CHECK, independently confirmed against TF2's own native
+    -- industry panel): merges any such pair at this hub into one real
+    -- hub -> source -> consumer chain line (chain_builder.lua). Same
+    -- operation_lock guard as Apply Fleet Plan -- moves real vehicles
+    -- and deletes lines, the same category of consequential action.
+    if actionButtons ~= nil and actionButtons[2] ~= nil then
+
+        local slot = actionButtons[2]
+
+        if operation_lock.isRunning() then
+
+            slot.label:setText("[ Build Supply Chains (busy -- another hub operation running) ]", 560)
+            slot.handler = nil
+
+        else
+
+            slot.label:setText("[ Build Supply Chains ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+            slot.handler = function()
+
+                if operation_lock.isRunning() then
+
+                    log.info("SERVICES TAB: another hub operation is still running -- ignoring click.")
+                    return
+
+                end
+
+                operation_lock.begin()
+
+                local ok, err =
+                    pcall(
+                        chain_builder.runChainBuilderForHub,
+                        hubStationGroupId,
+
+                        function(builtCount, movedCount)
+                            operation_lock.finish()
+                            log.info(
+                                "SERVICES TAB: Build Supply Chains done ("
+                                    .. tostring(builtCount) .. " chain(s) built, "
+                                    .. tostring(movedCount) .. " vehicle(s) moved)."
+                            )
+                        end
+                    )
+
+                if not ok then
+                    operation_lock.finish()
+                    log.info("SERVICES TAB: Build Supply Chains failed: " .. tostring(err))
                 end
 
             end

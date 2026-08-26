@@ -51,7 +51,20 @@ local M = {}
 
 local STATE_FILE_PATH = "epod_td_settings.txt"
 
-local DEFAULTS = {}
+-- autoApplyFleetPlanEnabled/autoApplyFleetPlanIntervalSeconds: player's
+-- own idea after manually clicking "Apply Fleet Plan" every 5-7 seconds
+-- and watching a badly imbalanced network (deltas of +62, +25, +41)
+-- converge to nearly-flat within a couple of minutes -- real, live
+-- proof the mechanism works well when applied often, not just on the
+-- rare 5000-delivery auto-trigger or a single manual click. Off by
+-- default: this is still a real vehicle-moving action (same
+-- dispatcher.applyPlan a manual click uses), so it stays an opt-in
+-- setting rather than a silent behavior change, same as this
+-- project's consistent stance on automating anything consequential.
+local DEFAULTS = {
+    autoApplyFleetPlanEnabled = false,
+    autoApplyFleetPlanIntervalSeconds = 15,
+}
 
 
 local function loadStateFromDisk()

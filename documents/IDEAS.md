@@ -1513,4 +1513,32 @@ Turns a "huh, that's weird, why is this idle" moment (which took a live Line Man
 
 ---
 
+---
+
+## Per-Feature On/Off Toggles for Automatic Naming/Colouring
+
+### Origin
+
+Raised live right after `industry_naming.lua` and `fleet_naming.lua` existed side by side, both firing automatically with no way to opt out: "we should give the end user the option to turn features off haha." Right now, turning any of these off means editing/removing code -- not something a player using this as a normal mod should have to do.
+
+### The idea
+
+Three independent settings, each a plain boolean stored via `settings.lua`'s existing generic `M.get(key)`/`M.set(key, value)` store (already the exact right shape for this -- no new persistence mechanism needed):
+
+- **Name Change Trucks (on/off)** -- gates `fleet_naming.renameFleetToHubIdentity` (currently only ever player-triggered via a button, so this toggle would guard that button/action itself).
+- **Name Change Truck Stations (on/off)** -- gates `industry_naming.detectAndNameStations`, called from `pollIndustryNaming()` in the main game_script. Since that poll runs automatically (Decision 105), this is the one toggle of the three that actually needs checking on a live/automatic path, not just at a manual button click.
+- **Colour Change Trucks (on/off)** -- gates whichever vehicle-colour feature exists/lands from IDEAS.md's "Vehicle Identity Naming and Fleet Colour-Coding" idea (referenced in `fleet_naming.lua`'s own header comment) -- not yet built as of this note, but should carry the same toggle from day one rather than bolting it on after the fact.
+
+Needs a real GUI home for the three checkboxes/toggle buttons -- most natural fit is a "Settings" section somewhere in `gui_manager.lua`'s tab framework (or a small dedicated SETTINGS tab), rather than DEBUG-only or config-file-only switches, since these are meant to be an ordinary player-facing preference.
+
+### What's already proven vs. still a story
+
+**Confirmed**: `settings.lua`'s get/set mechanism itself is proven and already live (Decision 35's fresh-read-every-call fix, used for `autoDispatchPending` today). **Not yet built**: any of the three keys, the gating checks inside `fleet_naming.lua`/`industry_naming.lua`/the not-yet-built colour feature, or the GUI controls to flip them.
+
+### If it does pan out
+
+A player who doesn't want their trucks/stations auto-renamed (or, once built, auto-coloured) gets a real off switch instead of needing to edit Lua -- turns three currently-unconditional automatic behaviours into genuine opt-in/opt-out player preferences, consistent with this project's own "stay in our lane, player-driven" stance on automation elsewhere.
+
+---
+
 `○` = Player has the wheel.

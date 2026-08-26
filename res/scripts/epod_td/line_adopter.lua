@@ -4,6 +4,7 @@ local stations = require("epod_td.stations")
 local vehicles = require("epod_td.vehicles")
 local managed_registry = require("epod_td.managed_registry")
 local line_ownership = require("epod_td.line_ownership")
+local industry_naming = require("epod_td.industry_naming")
 
 local M = {}
 
@@ -60,7 +61,22 @@ local M = {}
 -- assumes. Unfiltered, "Hendon East ↔ School Lane" came out as
 -- "Hendon East ↔ Hendon East + School Lane". Filtering out any
 -- destination whose stationGroup matches the hub fixes it.
+-- Player's idea: a line that genuinely chains through multiple
+-- industries (coal -> steel -> hub) gets its own naming convention
+-- instead of the ordinary "+"-joined destination list -- "●*" marks
+-- it as both a managed line ("●") AND industry-linked ("*", matching
+-- industry_naming.lua's own station-naming prefix), so it reads as
+-- distinct from an ordinary adopted line at a glance. See
+-- industry_naming.buildChainName's own header for why this is
+-- proximity-based, not a real cargo audit.
 local function buildAdoptedLineName(hubStationGroup, hubName, destinations)
+
+    local okChain, chainName =
+        pcall(industry_naming.buildChainName, destinations, hubStationGroup)
+
+    if okChain and chainName ~= nil then
+        return "●* " .. chainName .. " <-> " .. tostring(hubName)
+    end
 
     local destinationNames = {}
 

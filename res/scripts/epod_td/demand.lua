@@ -107,28 +107,24 @@ end
 -- ENTITY / LINE HELPERS
 -- ============================================================
 
+-- LIVE-CONFIRMED real bug (screenshot, Decision 105 follow-up): this
+-- used to be its own raw game.interface.getName call with no
+-- stripping at all -- a second, independent implementation of what
+-- stations.getEntityName already does, drifted apart from it. Any
+-- destination fed through this into line_splitter.lua's
+-- "hubName .. ↔ .. destination.name" (line 151-155) skipped both the
+-- "● " hub-prefix strip AND the newer "* Industry <-> Hub - NN"
+-- strip, so a hub-linked or industry-linked destination's own
+-- decorated name got embedded wholesale, re-showing the hub a second
+-- time. Delegates to the shared, now-fixed stations.getEntityName
+-- instead of maintaining a second copy of the same logic.
 local function getEntityName(entityId)
 
-    if type(entityId) ~= "number"
-        or entityId < 0
-    then
+    if type(entityId) ~= "number" then
         return "UNKNOWN"
     end
 
-    local ok, name =
-        pcall(
-            game.interface.getName,
-            entityId
-        )
-
-    if ok
-        and name ~= nil
-        and name ~= ""
-    then
-        return name
-    end
-
-    return "Entity " .. tostring(entityId)
+    return stations.getEntityName(entityId)
 
 end
 
@@ -457,6 +453,7 @@ function M.buildDestinationCargoRows(destination)
         end
 
         rows[#rows + 1] = {
+            cargoType = cargoType,
             displayName = displayName,
             waiting = waitingByType[cargoType] or 0,
             unloaded = unloadedByType[cargoType] or 0

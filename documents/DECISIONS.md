@@ -1907,6 +1907,284 @@ Deferred as the plan for a future session, not started tonight given how long th
 
 `epod_truck_park.con`/`epod_truck_distribution_1.mdl`'s outstanding "Invalid terminals" issue is left unresolved and de-prioritized, not abandoned as a dead end -- the real, hard-won pipeline knowledge from tonight (Blender->FBX->ModelEditor, ground fitting, the `{position,tangentVector}` edge format, 0-based indexing, `constructionutil.addEdges`) remains valid and reusable if custom construction work is picked up again later; only the terminal/station layer specifically hit a wall.
 
+Followed up by renaming `res/construction/asset/epod_truck_park.con` to `epod_truck_park.con.disabled` -- TF2 scans `res/construction/**/*.con` by extension, so this pulls it from the build menu without deleting any of the file's content. Fully reversible (rename back to `.con`) whenever custom construction work resumes. `epod_truck_distribution_1.mdl` and its research comments are untouched and left in place.
+
+## Decision 105 — Auto-name non-hub truck stations after their nearest industry ("* " prefix)
+
+### What happened
+
+Player linked a Steam Workshop "naming mod" (3360333659, "Auto Line Namer"), asking whether it showed how to detect a factory near a truck station and auto-name the station, using a marker (e.g. "*") to visually separate these from Distribution Hub names ("● "). Reading its actual source (it's downloaded locally) showed it does something different: it renames whole LINES from town names (`api.engine.system.stationSystem.getTown`), cargo types, and vehicle mode -- no industry-proximity detection exists in it at all.
+
+The real mechanism came from reading a second, much larger locally-installed mod directly: "AI Builder" (2820656841), which uses `game.interface.getEntities({radius=N, pos=...}, {type="SIM_BUILDING", includeData=true})` extensively and live, with confirmed real fields on each result (`.name`, `.position`, `.id`) read throughout its own code (e.g. `ai_builder_base_util.lua` lines 4563/6908/7150/7210). A third mod's bundled real dump (Linemanager's `general.lua`, from a genuine `game.interface.getEntity` call on a STATION) separately confirmed a STATION entity carries `.cargo`, `.carriers.ROAD`, `.position`, and `.stationGroup`.
+
+### Reason
+
+The rename half needed no new research at all -- `stations.setEntityName` (Decision 64) already wraps the exact proven `api.cmd.make.setName` + `sendCommand` pattern, already used on STATION_GROUP entities. Only the detection half ("what industry is near this station") was new, and real, working evidence for it existed in an already-installed mod rather than needing to be guessed.
+
+### Decision
+
+Built `res/scripts/epod_td/industry_naming.lua`: walks every STATION on the map (`getEntities` with `radius = math.huge`, same global-enumeration pattern the AI Builder mod itself uses for SIM_BUILDING/TOWN), skips anything already a Distribution Hub (`hub_registry.isEnabled` or an existing "● " name) or already carrying our own "* " prefix, and for the rest -- if it's a road-cargo station -- finds the nearest SIM_BUILDING within 150m (AI Builder's own `isPointInsideIndustry` treats ~120m as an industry's real footprint radius; 150 gives a station just outside that footprint room to still match) and renames it to `"* " .. industryName .. " - " .. originalName` via the existing chained one-at-a-time rename pattern from `fleet_naming.lua`. A persisted processed-set file (same io.open/validate-on-load shape as `hub_registry.lua`) means each station is only ever evaluated once, not re-scanned forever.
+
+Player explicitly chose (via AskUserQuestion): scope = only non-hub truck stations (hubs keep their "● " identity untouched); trigger = automatic, not a manual button -- wired into `guiUpdate` via a new `pollIndustryNaming()`, throttled to every 600 ticks like `pollNewLineAdoption`, independent of whether any hub is enabled.
+
+### Consequence
+
+Flagged honestly in the code's own header comment: the STATION-side fields (`.cargo`, `.carriers.ROAD`) were confirmed real from a genuine `game.interface.getEntity(stationId)` singular-call dump, not yet from the `getEntities(..., includeData=true)` map-wide path used here specifically -- almost certainly the same shape (same interface family, same pattern SIM_BUILDING already confirmed), but per this project's own evidence-first rule this still needs a real live check (does `INDUSTRY NAMING: ... renamed` show up in the log with sensible names?) before being fully trusted. Not yet live-tested.
+
+### Follow-up: two naming branches, hub-aware
+
+Player refined the format immediately after seeing the plan: `* Steel Factory <-> Corby North - 01`, using the NEAREST ENABLED HUB by straight-line distance -- but only when the station is actually, really linked to that hub by an existing managed line (reusing fleet_naming's own `lineTouchesHub` shape, checked both ways: does any managed line touch both this station and that hub?). If not connected yet, drop the "* " prefix and the hub entirely and fall back to `IndustryName - NearestTownName` (station's own `.town` field, confirmed real per the Linemanager dump) -- informative on its own, and visually distinct so a not-yet-linked station is never mistaken for a genuinely hub-connected one. Numbering ("- 01") counts per (industry, hub) PAIR specifically, not per industry alone, so two different hubs both drawing from the same factory don't fight over the same number sequence -- persisted to disk (`epod_td_industry_hub_counters.txt`) the same io.open way as everything else in this file, so it keeps counting up rather than resetting every session.
+
+Known, deliberately accepted limitation: a station is only ever evaluated once (the persisted processed-set still gates this). One discovered before it has any line at all permanently gets the NOT-CONNECTED town-based name -- it is never retroactively upgraded to the hub-numbered name if a line links it to a hub afterward. Not built around for now, same "good enough until proven otherwise" call fleet_naming.lua already made about its own renumbering-on-rerun behavior.
+
+### Follow-up: LIVE-CONFIRMED working, but broke line-name display (real screenshot, same day)
+
+First real live confirmation: a station genuinely got renamed to `* Carnforth Quarry <-> Hemel Hempstead East - 01` -- the detection, hub-matching, and rename mechanism all worked exactly as designed. But the player immediately spotted a knock-on bug: line names built FROM that station's name came out broken/duplicated, e.g. a line showing "Hemel Hempstead East ↔ Carnforth ..." with the hub name embedded twice once expanded.
+
+**Root cause, traced through the actual code**: this is Decision 64's exact bug pattern repeating, just with a bigger decoration. `stations.getEntityName()` already strips the "● " hub prefix specifically so composite name-builders (line names, fleet names) never re-embed it -- but it had no equivalent handling for the new "* Industry <-> Hub - NN" format, so a composite builder that prepends the SAME hub name (`vehicles.lua:1528` feeds `line_adopter.buildAdoptedLineName`'s `hubName .. ↔ .. destinationName`) re-embedded that hub a second time. Separately, `demand.lua` turned out to have its OWN independent, undecorated `getEntityName` (a raw `game.interface.getName` call with no stripping at all, feeding `line_splitter.lua`'s line-creation naming) -- a second, drifted-apart copy of the same logic that never got either strip, hub or industry.
+
+**Fix**: `stations.getEntityName()` now also recognizes the "* Industry <-> Hub - NN" pattern and reduces it to "Industry - NN" for composite use (the hub is already supplied by whatever builds the composite name, so it doesn't need to appear twice). `demand.lua`'s separate local `getEntityName` was deleted and replaced with a thin delegate to `stations.getEntityName`, so there is only one implementation of "the clean display name for composite use" from now on, not two that can silently drift apart again. `getRawEntityName` (used by `industry_naming.lua` itself to decide whether a station has already been touched) is untouched -- only the stripped-for-display path changed.
+
+### Consequence
+
+Not yet re-tested live after this fix -- next load should show `Hemel Hempstead East ↔ Carnforth Quarry - 01` instead of the duplicated form. Worth specifically checking that an already-adopted line's name doesn't need a manual re-trigger to pick up the corrected text (line names are set once at creation/adoption time, not continuously recomputed, so an EXISTING broken line name may stay broken until that line is re-adopted or manually renamed -- only NEW composite names built after this fix are guaranteed correct).
+
+## Decision 106 — Chain-line detection: never split a "coal -> steel -> hub" industry chain, name it distinctly instead
+
+### What happened
+
+Player raised a real risk once industry detection existed: a line whose non-hub stops form a genuine production chain (pick up coal, drop it at a steel mill, continue to the hub) would be silently destroyed by the existing manual "Split Into Lines & Organize Terminals" button, which treats ANY line with 2+ real destinations as a split candidate -- splitting a chain line turns it into two disconnected hub<->coal and hub<->steel lines, losing the actual production sequence the truck was running. Checked first and confirmed automatic adoption (`line_adopter.lua`'s poll) was already safe -- it only renames/registers a multi-stop line as one unit, never splits it; the risk was specifically the manual button.
+
+### Decision
+
+Added `industry_naming.buildChainName(destinations, hubStationGroupId)`: reuses the same proximity-based `findNearestIndustryName` already built for station naming, walks a line's non-hub stops in order, and returns a "Coal Mine -> Steel Mill"-style joined name only if EVERY stop resolves to a distinct nearby industry -- if even one stop has no industry nearby, returns nil and the line is treated exactly as before (an ordinary multi-destination line). Wired into two places: (1) `line_splitter`'s manual split-candidate check (`epod_truck_distribution.lua`'s `splitAllManagedLines`) now skips a line entirely when it's detected as a chain, logging why, instead of splitting it; (2) `line_adopter.buildAdoptedLineName` now names a genuine chain line `"●* " .. chainName .. " <-> " .. hubName` (player's own suggested format) instead of the ordinary `"● " .. hubName .. " ↔ " .. "+"-joined destinations` -- "●" still marks it as a managed line, "*" marks it as industry-linked, matching `industry_naming.lua`'s own station-prefix convention.
+
+### Reason
+
+Same "reuse what's already proven instead of building a second detector" logic as everything else in this session -- `findNearestIndustryName` was already live-confirmed working (Decision 105's real screenshot), so chain detection is a thin wrapper around it rather than new research.
+
+### Consequence
+
+Deliberately NOT verified against actual cargo movement -- this is proximity only (same limitation `industry_naming.lua` already carries), not a check that the truck genuinely carries coal out of stop 1 and steel out of stop 2 (that would need a real `SIM_CARGO.sourceEntity`/`targetEntity` audit, a bigger feature not built here). A line that happens to have two stops each merely NEAR a different industry, without actually being a real production chain, would still get treated as one -- accepted as a reasonable simplification for now, same as Decision 105's own naming heuristic. Not yet live-tested: needs a real chain line adopted or split-attempted to confirm the naming and the skip both actually fire as designed.
+
+## Decision 107 — Fix: industry naming went completely silent after loading an earlier save
+
+### What happened
+
+Player deliberately loaded an earlier save ("save -3", from before a prior split) to test Decision 106's chain-skip behavior -- and reported that this time, NOTHING renamed at all, not even stations that had never been touched in that save's own timeline.
+
+### Reason, traced through the actual code
+
+`industry_naming.lua`'s persisted processed-set file (`epod_td_industry_named_stations.txt`) has the exact same limitation `hub_registry.lua` already hit and fixed once before (Decision 63): it lives in the game install folder, not per-save. Every station visited during the EARLIER live test (Decision 105's real screenshot, on a LATER save in the same lineage) got permanently marked "done" in that shared file -- including stations that, on THIS earlier save, had never actually been renamed at all, because their rename hadn't happened yet in this save's own timeline. Loading an earlier save rolls the in-game station names back; it does not roll back this mod-side flat file, so every one of those stations came up "already processed" and got silently skipped, station-wide.
+
+### Decision
+
+Replaced the flat "seen" boolean with two outcome tags per stationGroupId: `RENAMED_TAG` (got the durable "* Industry <-> Hub - NN" name) and `NONE_TAG` (no industry ever found nearby, or never an eligible station at all -- a static map fact, not a save-history fact). On load, `RENAMED_TAG` entries are now validated against the REAL live name (same "trust the save over a stale flag" principle as hub_registry's Decision 63): if the "* " marker isn't actually there right now, the entry is dropped and the station is reconsidered fresh. A third case -- industry found but not yet connected to a hub -- is now deliberately never persisted at all; it's re-evaluated every poll (with an idempotency check against the current raw name so this doesn't spam identical renames every cycle), which also incidentally fixes Decision 105's separately-noted "never retroactively upgraded" limitation for that specific case.
+
+### Consequence
+
+Old entries in the existing state file are plain numbers with no tag, so they don't match the new `id\ttag` line format at all -- they're silently dropped on the very next load. This means the fix takes effect immediately with no manual file cleanup needed; every previously "locked out" station becomes eligible for fresh evaluation again as soon as this code runs. Not yet re-tested live -- next load on the same earlier save should show real renames happening again.
+
+## Decision 108 — Real industry recipe ratios, and a read-only "what does this factory actually need" check
+
+### What happened
+
+Live test confirmed Decision 107's fix worked: 35 of 35 stations renamed successfully on reload (real log: `INDUSTRY NAMING COMPLETE: 35 of 35 station(s) renamed`). Player then asked a bigger question: can the mod detect what a factory actually NEEDS (e.g. "iron:coal 5:1") and flag when real deliveries are out of balance with it -- explicitly framed as central to "the main idea" of the mod (proper distribution).
+
+### Research, fully evidence-first
+
+Traced a complete, real chain rather than guessing:
+
+1. `api.engine.system.streetConnectorSystem.getConstructionEntityForSimBuilding(industryEntity)` -- a real function, confirmed via its exact live use in the "AI Builder" traffic mod (workshop 2820656841, `ai_builder_base_util.lua`'s `util.getFarmFields`).
+2. `api.engine.getComponent(constructionId, api.type.ComponentType.CONSTRUCTION)` returns a real, documented `Construction` table with a `.fileName` field (e.g. `"industry/steel_mill.con"`) -- also confirmed via that same real mod's `util.getConstruction` helper.
+3. The actual recipe ratio was read directly from the REAL vanilla construction files (extracted from the base game's own `construction.zip`), not from the AI Builder mod's `inputCargoTypeForAiBuilder`/`sourcesCountForAiBuilder` params -- those turned out to be a **non-vanilla addition requiring a separate companion patch mod** (confirmed absent from every real vanilla industry file checked). The real vanilla mechanism is `industryutil.lua`'s `addIndustryData(name, era, data, constr, stockListConfig)`, where `stockListConfig.stocks` (input cargo types) and `stockListConfig.rule.input` (positional ratio weights) get baked into the construction's own `result.rule` at build time.
+
+Checked the FULL vanilla industry roster this way, not just steel mill: every raw-material producer (coal/iron/oil wells, quarry, farm, forest) has no inputs at all, correct for extraction industries; every single-input processor (chemical plant, construction materials plant, food processing plant, fuel refinery, oil refinery, saw mill, tools factory) has nothing to balance (one input, ratio is meaningless). Exactly three vanilla industries have a genuine multi-input ratio: `steel_mill` (IRON_ORE:COAL, 2:2), `goods_factory` (PLASTIC:STEEL, 1:1), `machines_factory` (PLANKS:STEEL, 1:1). Every real vanilla ratio turned out to be 1:1 -- the player's own "5:1" example was illustrative, not a real number this game ships with, but the mechanism itself works for whatever ratio a given industry actually has.
+
+### Decision
+
+Built `res/scripts/epod_td/industry_recipes.lua`: `getIndustryFileName`/`getInputRatio` (the confirmed chain above) and `findMostNeededInput(industryEntityId, unloadedAmountsByType)`, which normalizes real delivered amounts by their recipe weight before comparing (so a genuinely asymmetric ratio like 4:1 is judged correctly rather than always flagging the smaller raw number). Wired into the existing, already-proven-safe **Cargo Balance Inspector** (read-only DEBUG report) rather than the dispatcher: for each reported destination, finds its nearest industry (`industry_naming.findNearestIndustry`, newly exposed alongside the existing name-only `findNearestIndustryName`), and if that industry has a known ratio, adds a `RECIPE CHECK (..., wants X:Y): needs more Z` line using real `stations.getUnloadedAmountsByType` data.
+
+Player explicitly chose the read-only-report-first rollout (over wiring straight into the dispatcher) when asked, matching this project's established pattern of proving a mechanism via a manual report before letting it act automatically on truck routing.
+
+### Consequence
+
+**LIVE-CONFIRMED, first run, no crash** (real `epod_td_cargo_balance_report.txt`): all four real multi-input industries in the player's save got picked up correctly --
+- Corby Machines factory: PLANKS=9 vs STEEL=545 unloaded (all-time) -> correctly flagged "needs more PLANKS"
+- Thatcham Goods factory: PLASTIC=432 vs STEEL=766 -> correctly flagged "needs more PLASTIC"
+- Goole Steel mill: COAL=7131 vs IRON_ORE=11022 -> correctly flagged "needs more COAL"
+- Corby Steel mill: COAL=2280 vs IRON_ORE=3036 -> correctly flagged "needs more COAL"
+
+Every real shortfall direction matched hand-checked arithmetic against the real 1:1 ratios. The full chain (industry -> construction -> fileName -> ratio table -> comparison) is now proven end-to-end, not just documented. Wiring this into actual truck redistribution (the dispatcher/planner) is still NOT done -- that remains a separate, explicitly-deferred next step, to be raised again if the player wants to act on these findings rather than just see them.
+
+### Follow-up: player independently corroborated it via TF2's own native industry panel
+
+Player screenshotted the real Goole Steel mill panel: `Rule` shows the same 2:2:1 IRON_ORE:COAL:STEEL icons already found in the vanilla file; `Stocks` shows real-time `Stored`/`Consumption` per type -- IRON_ORE stored=3960, COAL stored=0, both consumption=140. This independently confirms the RECIPE CHECK's "needs more COAL" finding using a completely different, more immediate signal (live stockpile level) than the mod's own all-time-delivered-totals proxy -- both agree.
+
+Investigated whether that exact "Stored" number is itself readable live: `api.engine.system.simEntityAtStockSystem.getStockCount(stockEntity, stockId)` is documented (`api.engine.md`) but genuinely unused in every real mod checked -- no real reference implementation exists to confirm parameter semantics against. Added `industry_recipes.getStockCounts(industryEntityId)` as an explicit, clearly-labeled LIVE TEST (not a trusted read): tried `getStockCount(industryId, index-1)` for each known input cargo type using its real .con-file order as the 0-based stockId, wired into the Cargo Balance Inspector as a `STOCK TEST` line.
+
+**LIVE-TESTED AND RULED OUT.** Player ran it and sent a second real screenshot: Goole Steel mill now genuinely showing IRON_ORE stored=4330, COAL stored=14 in the native panel. The mod's own `STOCK TEST` output for the exact same industry: `IRON_ORE stored=0`, `COAL stored=0` -- and every other industry checked (Thatcham Goods factory, Corby Machines factory) also came back a flat 0 for every cargo type. `ok=true` in every case (no error thrown), just the wrong number, and not close enough to be an off-by-one or scaling issue. Most likely `getStockCount` tracks cargo actually queued for pickup by a vehicle (matching the system's own doc wording, "the amount of item WAITING at a given stock"), not an industry's raw-material reserve level -- a genuinely different concept from the panel's "Stored" figure.
+
+Removed both `industry_recipes.getStockCounts`/`STOCK_ORDER` and the report's `STOCK TEST` line entirely rather than leave a confirmed-always-wrong signal sitting in the mod (this project's own established practice -- delete what's proven not to work rather than leave dead/misleading code). The RECIPE CHECK signal (real all-time delivered totals) is unaffected and remains the trusted mechanism -- it independently agreed with both of the player's real screenshots (Goole Steel mill genuinely needing more COAL, confirmed twice now via the native panel's own numbers).
+
+## Decision 109 — Build real supply chains: merge two separate hub-linked lines into one hub->source->consumer chain
+
+### What happened
+
+Player asked why the steel mill's coal stock wasn't recovering despite real coal deliveries happening. A managed-lines dump showed the real cause: the coal mine and the steel mill are two entirely separate single-stop lines (`● Goole North ↔ Goole East` -> coal mine, `● Goole North ↔ Goole Steel Plant` -> steel mill), both only touching the shared hub, never each other. Confirmed this is a real architectural gap: `dispatcher.lua`/`fleet_allocator.lua`'s whole demand signal is built around OUTBOUND waiting cargo (stuff piling up, needing collection), never an industry's INBOUND need -- nothing in the existing "main brain" was ever trying to keep the mill's coal stock topped up. Player confirmed: yes, build the direct chain.
+
+### Decision
+
+Built `res/scripts/epod_td/chain_builder.lua`, reusing every already-proven primitive in this codebase rather than any new command:
+
+- **Detection** (`M.findChainCandidates`): for a hub's simple (single real destination) managed lines, classifies each destination's nearest industry as a PRODUCER (has a known output cargo type, `industry_recipes.getOutputCargoType`, built from the same real vanilla `output = {...}` fields already extracted for Decision 108) or a CONSUMER (has a known input ratio AND a real current shortfall, reusing `industry_recipes.findMostNeededInput` -- the exact signal already live-confirmed twice against the player's own screenshots). Pairs a consumer's most-needed cargo type against a producer of that exact type at the same hub.
+- **Stage 1** (`M.buildChainLine`, purely additive): builds a real hub -> source -> consumer 3-stop line via `api.type.Line.new()` + `lines.makeNativeStopCopy`/`appendNativeStop` (the exact shape `line_splitter.buildSingleDestinationLine` already uses, just with 3 stops instead of 2) and `api.cmd.make.createLine` (already proven). Named `"●* SourceIndustry -> ConsumerIndustry <-> HubName"` -- the "●*" prefix deliberately matches Decision 106's own chain-naming convention for continuity. Registers via `managed_registry.register` + `line_ownership.claim`, same as every other line this mod creates.
+- **Stage 2** (`M.migrateVehiclesAndCleanup`, the consequential step): moves only CURRENTLY EMPTY vehicles from both old lines onto the new one, one at a time, using the exact hold -> setLine -> release sequence and `vehicles.isVehicleEmpty` guard already relied on everywhere else in this codebase (Decision 36's hard-won lesson) -- a vehicle mid-trip with cargo is left exactly where it is, safe to retry later. Deletes each old line only if it ends up genuinely empty AND still resolves to a real line (`lines.get(id) ~= nil` checked immediately before `api.cmd.make.deleteLine`, since that command crashes the native engine outright on a stale ID, not a catchable Lua error -- same discipline as `line_splitter.deleteEmptyManagedLine`).
+
+Wired as a new **"Build Supply Chains"** button in the SERVICES tab (action slot 2, alongside the existing "Apply Fleet Plan"), guarded by the same shared `operation_lock` as every other hub-mutating button. Deliberately a manual button, not automatic -- this moves real vehicles and deletes real lines, a meaningfully bigger action than the read-only naming/recipe-check work, matching the player's own established "player-driven, not autonomous" preference for anything this consequential.
+
+### Consequence
+
+**LIVE-CONFIRMED, first click, no crash** (real log): correctly detected the exact Goole Coal mine -> Goole Steel mill (COAL) pairing at hub 28014, created `"●* Goole Coal mine -> Goole Steel mill <-> Goole North"` successfully, moved 3 currently-empty vehicles onto it, and correctly left both old lines in place (`31494`/`31060`) since each still had a vehicle mid-trip with cargo -- exactly the designed partial-progress behavior, nothing forced. `CHAIN BUILDER COMPLETE: 1 chain line(s) built, 3 vehicle(s) moved.` Re-running the button later, once those remaining vehicles deliver and go empty, should finish the migration and delete both old lines. Detection remains proximity + real-recipe based, not a cargo-flow audit -- it does not verify a truck genuinely carries the matched cargo type between the two stops, only that the physical pairing (producer's output == consumer's most-needed input, same hub) is real. A hub with more than one producer of the same cargo type only ever pairs with the first one found -- acceptable for now, not built around.
+
+Re-run on the correct hub a second time (player initially ran it on the wrong hub, 28029/Stow-on-the-Wold, correctly found nothing there): moved 7 more empty vehicles onto the chain line (now 15, grown further on its own via the normal dispatcher since it registers as an ordinary managed line) and shrank both old lines further (Goole East 9->5, Goole Steel Plant 23->20). Confirms the migration is genuinely incremental and safe to re-run repeatedly, exactly as designed.
+
+Player then raised a further real-world consideration: a truck specialized to a single cargo type (e.g. only COAL) physically cannot also carry the mill's STEEL output on its way back through, unlike a generalist multi-cargo truck. Re-examined for a stranding risk and found none -- vehicle cargo capacity travels with the vehicle, not the line, so a specialized truck merged onto the chain simply continues doing its own job (coal in, or steel out) and skips stops it's incompatible with. The chain merge is a net win either way; specialized fleets just don't get the "either truck evacuates the output" bonus generalist fleets get.
+
+### Follow-up idea: a self-correcting three-stage system (not yet built)
+
+Player proposed a fuller adaptive design: (1) run the simple hub->source->consumer chain as built here; (2) if the consumer's own OUTPUT cargo is observed piling up (meaning the current fleet can't evacuate it -- exactly the specialized-truck scenario above), automatically build a dedicated consumer<->hub output-pickup line and staff it; (3) once that dedicated line exists, simplify the original chain by dropping the hub stop entirely (a pure source<->consumer loop, since output pickup is now handled separately). Agreed as a genuinely coherent design, but explicitly staged rather than built all at once, matching this session's own proven methodology:
+
+- **Stage 1** (detection only, read-only, no commands) -- see Decision 111.
+- **Stage 2** (build a dedicated output line using only existing idle vehicles) -- deliberately NOT to include purchasing a brand-new vehicle, a capability never proven anywhere in this project; every action so far has only ever reassigned vehicles that already exist.
+- **Stage 3** (drop the hub stop from the original chain) -- deferred until Stage 2 is proven, and even then via the same proven create-new/migrate/delete-old pattern rather than an unproven "edit an existing line's stops in place" command.
+
+## Decision 111 — Output Pickup Check (Stage 1 of the adaptive-chain idea)
+
+### What happened
+
+Following Decision 109's follow-up discussion, player agreed to build Stage 1 only: a plain, read-only signal showing how much of an industry's own output is currently sitting unpicked-up, with no threshold or automatic action yet.
+
+### Decision
+
+Added a `cargoType` field to `demand.buildDestinationCargoRows`'s row struct (previously only `displayName`/`waiting`/`unloaded`/`underServed` -- a small, backward-compatible addition, existing callers unaffected). Added an `OUTPUT PICKUP CHECK` line to the Cargo Balance Inspector, right alongside the existing RECIPE CHECK: for any industry-linked destination, looks up its real output cargo type (`industry_recipes.getOutputCargoType`, the same real vanilla `output = {...}` data already used for chain detection) and reports that type's current raw `waiting` amount, found by matching against the row's new `cargoType` field. Deliberately no flag, no threshold, no "needs attention" heuristic -- just the real number, left for the player to judge, matching the recommended "safest" approach of proving a plain signal before building anything that reacts to it.
+
+### Consequence
+
+**LIVE-CONFIRMED**: every OUTPUT PICKUP CHECK line fired correctly with the right industry and right output cargo type. The actual finding: every output checked (Goole/Corby Steel mill STEEL, Thatcham Goods factory GOODS, Corby Machines factory MACHINES) showed `waiting=0` -- including Corby's steel mill, which has no chain line at all yet. Real conclusion: in this player's fleet (generalist multi-cargo trucks), output pickup was never actually the bottleneck -- the old dedicated hub<->mill lines already evacuated output fine on their own. The real problem this whole session solved was specifically the INPUT side. No evidence yet that Stage 2/3 of the adaptive-chain idea (Decision 109's follow-up) is even needed -- left as a "watch and see" signal rather than built further.
+
+## Decision 112 — Chain builder gap found and fixed: single-input industries were invisible
+
+### What happened
+
+Player shared a fresh managed-lines dump from a different hub (Stow-on-the-Wold Transfer, 15903) and asked to check it. Found a real, live example of exactly the coal/steel hub-detour pattern the chain builder was built to fix, but for a pair it couldn't actually detect: a Stow-on-the-Wold Oil refinery (produces OIL) and a Carnforth Fuel refinery (needs OIL, its only input) sitting as two separate single-stop lines at the same hub. `chain_builder.findChainCandidates`'s consumer detection only ever checked `industry_recipes.getInputRatio()`, which Decision 108 deliberately scoped to just the three genuine multi-input industries (steel mill, goods factory, machines factory) -- every single-input processor (fuel refinery, tools factory, construction materials plant, food processing plant, chemical plant, saw mill) was completely invisible to chain detection, even though they're actually simpler cases to handle.
+
+### Decision
+
+Added `industry_recipes.SINGLE_INPUT_TYPES` (same real vanilla `stocks = {...}` data already extracted for Decision 108, just the single-input subset) and `M.getSingleInputType(industryEntityId)`. Deliberately kept SEPARATE from `INPUT_RATIOS`/`findMostNeededInput` rather than folded in as a one-entry ratio: that function's whole job is a RELATIVE comparison between multiple real inputs, which is meaningless with only one input (it would trivially always name that one type regardless of real supply level). `chain_builder.findChainCandidates` now also checks `getSingleInputType` alongside the existing ratio check -- a single-input consumer is added unconditionally, no imbalance threshold needed, since a more efficient direct delivery is never a downside for a producer that only ever consumes one thing.
+
+### Consequence
+
+Not yet live-tested. Player confirmed their save likely has real examples of every vanilla industry type running, so this should get thoroughly exercised on the next "Build Supply Chains" click at any hub touching a single-input processor -- worth specifically checking Stow-on-the-Wold Transfer (the oil/fuel refinery pair that surfaced this gap) first.
+
+## Decision 113 — Industry Discovery report (practical middle ground on "universal detection")
+
+### What happened
+
+Player asked whether industry recipe detection could be made fully automatic/generic instead of hardcoded per fileName, specifically thinking ahead to industry-pack mods that add many more resources/industries. Researched honestly: the real, resolved recipe (`result.rule`) is only ever computed inside an industry's own `updateFn` at construction-build time and isn't exposed on any live-queryable component found so far -- no proven mechanism exists to read an arbitrary (especially modded) industry's real ratio back out at runtime. Player accepted this and asked for the practical middle ground instead: since they plan to install an industry-pack mod, at least surface which industries on the map aren't recognized yet, rather than staying silent about it.
+
+### Decision
+
+Added `industry_recipes.findAllIndustryFileNames()` (walks `api.res.constructionRep.getAll()` -- a real, confirmed function, used live in the "AI Builder" mod to enumerate every loaded construction -- filtering for `"industry/"` in the path, excluding `"industry/extension/"`, the exact same filter that mod uses) and `industry_recipes.isKnownIndustry(fileName)` (checks presence in `OUTPUT_CARGO_TYPES`, which covers every vanilla industry this project currently understands). Wired into a new DEBUG button, "Industry Discovery", writing to `epod_td_industry_discovery.txt`: lists every industry construction actually loaded on the map and calls out any fileName not yet recognized.
+
+### Reason
+
+Turns "silently unsupported" (the existing, safe fallback -- an unknown fileName already just returns nil everywhere, never crashes) into a concrete, actionable list. Once the player installs a heavier industry-pack mod, this report is the fastest path to extending real support: run it, get back exactly which fileNames are missing, then read each one's real `.con` file the same proven way Decision 108 already did for the vanilla roster (no guessing at ratios).
+
+### Consequence
+
+**LIVE-CONFIRMED, first click, no errors.** Player installed a real Workshop mod ("Industry Expanded" by Col0Korn, 1950013035 -- 13 new cargo types, does not overwrite vanilla assets) with zero instances of its new industries actually built anywhere on the map. Industry Discovery still correctly found all 19 new fileNames (`advanced_chemical_plant.con`, `advanced_steel_mill.con`, `coffee_farm.con`, `fishery.con`, `livestock_farm.con`, `marble_mine.con`, `silver_ore_mine.con`, etc.) and flagged every one as unknown: `35 industry construction(s) found, 16 known, 19 unknown` -- exactly matching a direct read of the mod's own `res/construction/industry/` folder. Confirms `constructionRep.getAll()` genuinely sees modded construction TYPES regardless of whether any instance exists on the current map, resolving the open question from the player's own "might need a new game" concern -- no new game was needed for this.
+
+Two follow-up real industries were then found live on the new map sharing vanilla display names with genuinely different fileNames/recipes -- `advanced_steel_mill.con` (same 2:2 IRON_ORE:COAL ratio as vanilla, bigger capacity, confirmed via both the real file and the native industry panel showing capacity 400 vs vanilla's 200) and `advanced_food_processing_plant.con` (real inputs MEAT/COFFEE/ALCOHOL, weights `{1,0,0}` -- MEAT alone appears sufficient, COFFEE/ALCOHOL read as optional alternates). Not yet added to `industry_recipes.lua` -- player chose to keep exploring the new map before deciding which industries are worth extending support for.
+
+## Decision 114 — Fix: a hub-mutating operation that finds "nothing to do" leaves operation_lock stuck forever
+
+### What happened
+
+On the new map, player enabled "Poole Sidings" as a Distribution Hub. Setup appeared to run, but trying to enable a second hub ("Upper St Albans") was silently refused every time: `DISTRIBUTION HUB: another hub's setup is still running -- wait for it to finish before starting this one.` No crash, no visible error in the GUI -- just permanent, silent refusal.
+
+### Root cause, traced through the real log
+
+Poole Sidings' only real splittable line got skipped (a stale cross-save `line_ownership` claim -- see Decision 115 below for the deeper bug behind that), and its other two lines were legitimately protected chain lines (Decision 106) -- leaving Stage 4 (`terminal_allocator.spreadLinesAcrossTerminals`) with zero real candidates. Its "nothing to do" early-return handed back a value synchronously (`{success=true, processedCount=0}`) but **never called its own `onComplete` callback**. Every real caller of this function -- initial hub setup, the standalone "Re-Organize Terminals" button, and auto-adoption's terminal re-apply -- only ever waits on that callback to release `operation_lock` or continue its own chain. Confirmed this was a latent, long-standing bug (not something introduced this session) that most hub setups never happened to trigger, because they almost always had at least one real splittable candidate by the time Stage 4 ran.
+
+### Decision
+
+Both early-return branches in `terminal_allocator.spreadLinesAcrossTerminals` (`terminalCount == 0` and `#candidates == 0`) now call `onComplete(0)` before returning, matching the shape every real caller already expects. Fixes all four affected call sites at the source rather than patching each one separately.
+
+### Consequence
+
+The fix prevents this from happening again, but `operation_lock` is deliberately in-memory only (by design, per its own header) -- so the CURRENT session's stuck lock needed a save reload to clear, not just the code fix. Not yet re-tested live after reload.
+
+## Decision 115 — Second real bug found in the same dump: line ownership mis-attributed to an industry, not a hub
+
+### What happened
+
+Player manually built a genuinely messy 17-stop line (30 vehicles) touching both enabled hubs, and asked for it to be split into a clean set of lines -- exactly what "Split Into Lines & Organize Terminals" already does. But a fresh dump showed the line's "owner hub" recorded as `* St Albans Goods factory <-> Poole Sidings - 01 (70714)` -- a plain industry, not a hub at all. A second, separate 9-stop line showed the same pattern: owner recorded as `St Albans Steel mill` (87824) instead of its real hub, Poole Sidings.
+
+### Root cause
+
+`lines.findDominantStationGroup` (used by `line_ownership.lua`'s self-correcting ownership pass, Decision 67) just counts which stationGroup repeats most often across a line's stops -- it has no concept of which one is actually a hub. A hand-built line that happens to revisit the SAME industry two or more times (very plausible while manually wiring up a complex route) but only touches its real hub once gets its "dominant" stop computed as that industry. Confirmed exactly this in the dump: the 17-stop line touches "Upper St Albans" (a real, enabled hub) 4 times, but "St Albans Goods factory" also 4 times -- tied, and the industry won. The 9-stop line touches its real hub "Poole Sidings" only once, but "St Albans Steel mill" twice. Once mis-attributed, every hub-scoped action against that line (Split, Assign & Balance, the planner) would silently never recognize it as belonging to a real, enabled hub again.
+
+### Decision
+
+Added `findDominantHubStationGroup` local to `line_ownership.lua` (not a change to the generic, hub-agnostic `lines.findDominantStationGroup`, which is used for other purposes): identical frequency-counting logic, but only ever counts a stop toward the tally if `hub_registry.isEnabled(stationGroup)` is true -- an industry, no matter how many times it repeats, is never eligible to be mistaken for the owning hub. Swapped both real call sites (the session-start correction pass, and the lazy first-touch claim in `isOwnedByOther`) over to it.
+
+### Consequence
+
+Self-healing, no manual data cleanup needed: the existing once-per-session correction pass in `line_ownership.loadAndValidate` will automatically re-derive and fix both already-corrupted entries on the player's next save reload (the same reload already needed to clear Decision 114's stuck operation_lock). Worth knowing: the 17-stop line will be correctly reassigned to **Upper St Albans** (touched 4 times) rather than Poole Sidings (touched once) -- the player will need to select Upper St Albans, not Poole Sidings, to split it. Not yet live-tested.
+
+## Decision 116 — Full "Industry Expanded" roster added to industry_recipes.lua in one batch
+
+### What happened
+
+After manually adding `advanced_goods_factory.con` and (mid-session) `silver_mill.con`/`silver_ore_mine.con` one pair at a time as the player physically found them in-game, player pointed out the obvious: since every file is directly readable, there's no need to wait for each one to be discovered live -- just read the whole remaining roster at once.
+
+### Decision
+
+Read all 14 remaining `UNKNOWN` fileNames from the last Industry Discovery report directly (same method as every prior addition -- real `stocks`/`rule.input`/`output` fields, not guessed), plus the two previously-confirmed-but-not-yet-added ones (`advanced_steel_mill.con`, `advanced_food_processing_plant.con`) from earlier in the session. Categorized each by the same rules already established:
+
+- **Genuine multi-input ratio** (`INPUT_RATIOS`): `advanced_steel_mill.con` (IRON_ORE:COAL 2:2, identical to vanilla, bigger capacity), `advanced_machines_factory.con` (SILVER:STEEL 1:1, both genuinely required).
+- **Single required input, rest weight-0/optional** (`SINGLE_INPUT_TYPES`): `advanced_chemical_plant.con` (GRAIN), `advanced_construction_material.con` (SLAG, real stocks list also has SAND/MARBLE/STONE all at weight 0), `advanced_food_processing_plant.con` (MEAT), `advanced_fuel_refinery.con` (OIL_SAND), `advanced_tools_factory.con` (STEEL), `alcohol_distillery.con` (GRAIN), `coffee_refinery.con` (COFFEE_BERRIES), `livestock_farm.con` (GRAIN), `meat_processing_plant.con` (LIVESTOCK, real stocks list also has FISH at weight 0), `paper_mill.con` (LOGS).
+- **Pure zero-input producers** (`OUTPUT_CARGO_TYPES` only): `coffee_farm.con` (COFFEE_BERRIES), `fishery.con` (FISH), `marble_mine.con` (MARBLE), `oil_sand_mine.con` (OIL_SAND).
+
+**New edge case found**: `advanced_fuel_refinery.con` is the first industry seen (vanilla or modded) with a real TWO-output recipe (`output = { FUEL=1, SAND=1 }`). Since `OUTPUT_CARGO_TYPES` only ever tracks one output per fileName, FUEL was registered as the primary (matches the industry's own name/purpose) and the header comment updated to flag this explicitly -- a chain built around this industry's SAND byproduct specifically would not be detected. A real, documented gap, not a silent guess.
+
+### Consequence
+
+Not yet live-tested. Next Industry Discovery run should show `0 unknown` for this mod's full roster (35 industries, all recognized). Every newly-registered single/multi-input industry becomes immediately eligible for `chain_builder`'s automatic detection on the player's next "Build Supply Chains" click, without needing to be discovered one at a time in-game first. **LIVE-CONFIRMED shortly after**: player reloaded and ran Build Supply Chains again -- Industry Discovery came back `35 known, 0 unknown`, and real new chains were built using the newly-registered industries, including `St Albans Steel mill -> St Albans Tools factory` (STEEL), only possible because `advanced_tools_factory.con` had just been added.
+
+## Decision 117 — Auto Apply Fleet Plan (opt-in, player-configurable interval)
+
+### What happened
+
+After the Cargo Balance Inspector and Fleet Plan work exposed a real, large network imbalance (deltas of +62, +25, +41 on several lines), player manually clicked "Apply Fleet Plan" by hand every 5-7 seconds and watched the whole network converge to nearly flat (mostly within +/-3 of target) in a couple of minutes. This directly proved out an idea raised earlier in the same conversation: the Fleet Plan is computed and shown live continuously, but never ACTED on except by manual click or the rare 5000-delivery auto-trigger -- explaining why a visible, correctly-diagnosed imbalance can sit uncorrected indefinitely. Player asked for this to run automatically, with a player-chosen interval (proposed as a slider: 5/10/15/30s).
+
+### Decision
+
+Built as an opt-in setting (`settings.lua`: `autoApplyFleetPlanEnabled` default false, `autoApplyFleetPlanIntervalSeconds` default 15) rather than a default-on behavior change -- same stance this project has taken on every other consequential automatic action all session. A new `pollAutoApplyFleetPlan()` in the main game_script (called from `guiUpdate`, same as every other poller) tracks each enabled hub's own last-run time in real wall-clock seconds (`os.time()`, not a guiUpdate tick count -- "every 10s" means real seconds, not frame-dependent ticks) and calls `dispatcher.applyPlan` for any hub that's due. No new cross-hub reentrancy coordination was needed: `dispatcher.applyPlan` already refuses to overlap itself for the same hub (`applyPlanRunningByHub`, a real guard already inside `dispatcher.lua`), so polling every due hub each cycle is safe on its own -- confirmed by reading the function before relying on it, not assumed.
+
+**No real Slider used**, deliberately: this exact settings window has a documented, LIVE-CONFIRMED crash (Decisions 72/73/75) from mixing a raw `api.gui.comp.Slider` into its gui.lua layout tree -- a broken, unparented native component survived to the engine's own shutdown consistency check and hard-crashed the game. Built as a cycling button instead (`[ Auto Apply Fleet Plan: OFF / every 5s / 10s / 15s / 30s ]`, click to advance), using gui.lua's proven-safe button/textView primitives -- the exact same interaction pattern every other toggle in this codebase already uses, giving the player the same discrete choice without touching the crash-prone component.
+
+### Consequence
+
+Not yet live-tested. Real safety properties carried over automatically from the manual button: same `MAX_MOVES_PER_RUN` cap dispatcher.lua already enforces, same empty-vehicle-only reassignment discipline -- this doesn't introduce any new movement mechanism, just automates *when* the existing, already-proven mechanism fires.
+
+### Follow-up: skip the poll entirely once a hub is already well-balanced
+
+Immediately after building this, player manually proved just how well the mechanism converges: repeated clicks brought two separate hubs' entire service lists down to delta 0 (or +/-1) across nearly every line -- a much tighter result than the first "+62 down to single digits" pass. Player's own refinement: once a hub is this close to target, there's nothing left to fix, so firing a full plan-and-apply cycle every single interval is wasted work.
+
+Added `isHubMeaningfullyImbalanced(hubStationGroupId)`, which peeks at the same `planner.calculateTargetAllocation` plan the SERVICES tab already displays and checks whether any line's delta exceeds `AUTO_APPLY_MIN_DELTA_THRESHOLD` (5, matching the player's own suggested number) before `pollAutoApplyFleetPlan` bothers calling `dispatcher.applyPlan` at all. A hub sitting within +/-5 on every line is left alone until something actually drifts out of range again. If the check itself can't read a plan for some reason, it fails open (treats the hub as imbalanced) rather than silently skipping it forever.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

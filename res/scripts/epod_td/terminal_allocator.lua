@@ -798,6 +798,23 @@ function M.spreadLinesAcrossTerminals(hubStationGroup, excludeLineIds, onComplet
             "FAILED: could not determine a real terminal count for this station."
         )
 
+        -- LIVE-CONFIRMED real bug: this early return used to hand back
+        -- a value synchronously and never call onComplete at all --
+        -- but EVERY real caller (initial hub setup, the standalone
+        -- Re-Organize Terminals button, and auto-adoption's terminal
+        -- re-apply) only ever waits on the callback to release its own
+        -- operation_lock or continue its own chain. Hitting this
+        -- branch left the lock stuck permanently (within that game
+        -- session), silently refusing every future hub-mutating
+        -- action with no crash and no visible error -- exactly what
+        -- happened live enabling a hub whose only splittable line got
+        -- skipped (a stale cross-save ownership claim) and whose two
+        -- other lines were legitimately protected chain lines, leaving
+        -- zero real candidates for this function to work with.
+        if onComplete ~= nil then
+            onComplete(0)
+        end
+
         return {
             success = false,
             reason = "terminal-count-unavailable"
@@ -813,6 +830,12 @@ function M.spreadLinesAcrossTerminals(hubStationGroup, excludeLineIds, onComplet
     if #candidates == 0 then
 
         log.info("Nothing to do: no managed (\"● \") lines found.")
+
+        -- Same missing-callback bug as the terminalCount==0 branch
+        -- above -- fixed the same way.
+        if onComplete ~= nil then
+            onComplete(0)
+        end
 
         return {
             success = true,

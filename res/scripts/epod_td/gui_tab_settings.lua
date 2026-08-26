@@ -3,8 +3,83 @@ local gui = require("gui")
 local hub_registry = require("epod_td.hub_registry")
 local vehicles = require("epod_td.vehicles")
 local demand = require("epod_td.demand")
+local settings = require("epod_td.settings")
 
 local M = {}
+
+
+-- ============================================================
+-- AUTO APPLY FLEET PLAN (on/off + interval)
+--
+-- Player's own idea, live-validated by hand: manually clicking "Apply
+-- Fleet Plan" every 5-7 seconds took a badly imbalanced network
+-- (deltas of +62, +25, +41) down to nearly flat within a couple of
+-- minutes -- real proof this is worth automating, not just a guess.
+-- dispatcher.applyPlan already has its OWN per-hub reentrancy guard
+-- (applyPlanRunningByHub), so polling every enabled hub on a timer
+-- needs no extra cross-hub coordination -- each hub's own guard
+-- already prevents overlapping runs for that hub.
+--
+-- A real Slider was deliberately NOT used here: Decisions 72/73/75
+-- documented a LIVE, REAL crash from mixing a raw api.gui.comp.Slider
+-- into this exact window's gui.lua layout tree (a broken, unparented
+-- native component survived to the engine's own shutdown consistency
+-- check and hard-crashed the game). A cycling button through a fixed
+-- set of values (OFF -> 5s -> 10s -> 15s -> 30s -> OFF) achieves the
+-- same discrete choice using gui.lua's proven-safe button/textView
+-- primitives, the exact same pattern every other toggle in this
+-- codebase already uses.
+-- ============================================================
+
+local INTERVAL_CYCLE = { false, 5, 10, 15, 30 }
+
+
+local function describeAutoApplyState(enabled, intervalSeconds)
+
+    if enabled ~= true then
+        return "OFF"
+    end
+
+    return "every " .. tostring(intervalSeconds) .. "s"
+
+end
+
+
+local function nextAutoApplyState(enabled, intervalSeconds)
+
+    local currentIndex = 1
+
+    for index, value in ipairs(INTERVAL_CYCLE) do
+
+        if index == 1 then
+
+            if enabled ~= true then
+                currentIndex = index
+            end
+
+        elseif enabled == true and value == intervalSeconds then
+
+            currentIndex = index
+
+        end
+
+    end
+
+    local nextIndex = currentIndex + 1
+
+    if nextIndex > #INTERVAL_CYCLE then
+        nextIndex = 1
+    end
+
+    local nextValue = INTERVAL_CYCLE[nextIndex]
+
+    if nextValue == false then
+        return false, intervalSeconds
+    end
+
+    return true, nextValue
+
+end
 
 
 -- ============================================================
@@ -203,8 +278,44 @@ end
 
 function M.refresh(rows, hubStationGroupId, actionButtons)
 
+    if actionButtons ~= nil and actionButtons[1] ~= nil then
+
+        local slot = actionButtons[1]
+
+        local enabled = settings.get("autoApplyFleetPlanEnabled")
+        local intervalSeconds = settings.get("autoApplyFleetPlanIntervalSeconds")
+
+        slot.label:setText(
+            "[ Auto Apply Fleet Plan: "
+                .. describeAutoApplyState(enabled, intervalSeconds)
+                .. " ]",
+            WINDOW_WIDTH
+        )
+
+        pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+        slot.handler = function()
+
+            local newEnabled, newInterval =
+                nextAutoApplyState(enabled, intervalSeconds)
+
+            settings.set("autoApplyFleetPlanEnabled", newEnabled)
+            settings.set("autoApplyFleetPlanIntervalSeconds", newInterval)
+
+            log.info(
+                "SETTINGS: Auto Apply Fleet Plan -> "
+                    .. describeAutoApplyState(newEnabled, newInterval)
+            )
+
+        end
+
+    end
+
     rows[1].label:setText(
-        "SETTINGS -- not built yet.",
+        "Moves real vehicles between managed lines, same as a manual "
+            .. "\"Apply Fleet Plan\" click, just run automatically for "
+            .. "every enabled hub on the interval above (5 vehicles max "
+            .. "per hub per run, same safety cap as the manual button).",
         WINDOW_WIDTH
     )
 
@@ -213,8 +324,8 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
             .. "ToggleButton are safe in the SEPARATE raw-API window "
             .. "(\"Open Raw UI Experiment\"), but not safe to mix into THIS "
             .. "window's gui.lua layout tree (that mix is what crashed once "
-            .. "-- see DECISIONS.md). Table and ScrollArea are gui.lua-"
-            .. "wrapped and safe here, but unused so far.",
+            .. "-- see DECISIONS.md). This is why the interval above cycles "
+            .. "through a fixed button instead of a real slider.",
         WINDOW_WIDTH
     )
 
