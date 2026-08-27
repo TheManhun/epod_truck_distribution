@@ -1541,4 +1541,77 @@ A player who doesn't want their trucks/stations auto-renamed (or, once built, au
 
 ---
 
+## Persistent Game-Bar Indicator (instead of / alongside a window)
+
+### Origin
+
+Player shared the TF2 modding wiki's own FPS-counter example: `api.gui.util.getById("gameInfo"):getLayout():addItem(rawComponent)`, run once from a `guiInit` callback -- injecting a small element directly into the game's own always-visible bottom bar, not a new floating window at all.
+
+### The idea
+
+A small permanent indicator (e.g. active hub count, "N trucks moved recently," or a quick health glyph) living directly in the game's own `"gameInfo"` bar -- always visible with zero clicks, never hidden behind the map or needing a window opened at all. A genuinely different option from every GUI surface this mod has built so far (the old panel, the new "DD Central Manager" tabbed window, `gui_debug_tests.lua`), which all require the player to open something first.
+
+### What's already proven vs. still a story
+
+**Confirmed real and documented** (TECHNICAL_RESEARCH.md): the wiki's own official example does exactly this, using the raw `api.gui.comp.*` system and a real `guiInit` callback this mod does not currently define. **Not yet built or tried**: nothing has been added to the real `"gameInfo"` bar in this codebase; unproven whether TF2's actual `"gameInfo"` id/layout matches what the wiki shows in this game version, same "confirm before building on it" caution as every other API claim in this project.
+
+### If it does pan out
+
+Gives the player an always-on pulse of DD activity without opening any window -- complements rather than replaces the DD Central Manager, which stays the place for real detail/actions.
+
+---
+
+## Native `TabWidget`/`List` Components (real tabs/lists, not the manual workarounds this project built)
+
+### Origin
+
+Same wiki page: it documents a real `TabWidget` component (`onCurrentChanged` callback, `tabWidget.currentChanged` event) and a real `List` component (`onSelect`, `list.select`). `gui_manager.lua`'s "DD Central Manager" fakes tabs with plain buttons specifically because — per that file's own comment — "a native TF2 tab-widget API has never been used anywhere in this codebase" (Decision 50); every long-content view in this project (the old panel's rows, the new GUI's row pools) uses a pre-allocated flat pool with a hard truncation ceiling for the same reason.
+
+### The idea
+
+Two separate, independent experiments, both raw-system-only (same caution as the failed `gui.scrollArea_create` attempt — Decision 121 — never mix raw `api.gui.comp.*` into a `gui.lua`-built layout tree):
+
+- Try a real `api.gui.comp.TabWidget` for "DD Central Manager"'s tab bar, replacing the manual "> " -prefix/style-class button-switching hack. Confirmed to have a real, direct `onCurrentChanged` callback per the wiki's own component-callback table (checkmark confirmed against the actual table image, not just pasted text) — the stronger of these two leads.
+- Try a real `api.gui.comp.List` for the LINES tab (or any other long/growing content), replacing the truncate-at-a-fixed-row-count pattern used everywhere today — might solve Decision 123's "content pushed off-screen / other tabs pushed down" tradeoff more natively than juggling two competing row-pool sizes. Weaker lead than TabWidget: the real component-callback table has no `List` column at all, so there's no confirmed direct `:onSelect(fn)` method — any real selection handling would go through the generic `guiHandleEvent` dispatcher instead (see TECHNICAL_RESEARCH.md). Worth confirming `List` even exists as a constructible component before relying on it.
+
+Either one would need its own from-scratch raw-system window (like `gui_experiment.lua`) to prove safe before ever touching the real "DD Central Manager" window, exactly the same staged approach every other GUI primitive in this project has gone through.
+
+### What's already proven vs. still a story
+
+**Confirmed real and documented**: both components exist per the wiki's own component-callback table (TECHNICAL_RESEARCH.md). **Not yet tried at all**: no code anywhere in this project has ever called `api.gui.comp.TabWidget` or `api.gui.comp.List`; genuinely unproven in this specific game version/mod sandbox until tested live.
+
+### If it does pan out
+
+Real native tabs and a real scrollable list would resolve two long-standing, self-imposed workarounds (manual tab-switching, hard row-count truncation) at once, and would be the natural foundation if the old panel is ever fully retired in favor of "DD Central Manager."
+
+## Clickable Hub List on Overview — switch which hub the GUI shows without hunting the map
+
+### Origin
+
+Raised live, following the 8-tab-to-4-tab consolidation discussion (Decision 138-era): folding the HUBS tab's enabled-hub list into OVERVIEW was proposed as a static display only. Player's own follow-up: "add this to ideas, but Hubs listed on front page, if you click a hub it then shows that hubs data in the GUI? easy way to check all hubs not have to hunt the map for them."
+
+### The idea
+
+OVERVIEW shows the list of enabled hubs (already exactly what HUBS displays today via `hub_registry.getEnabledHubs()` + `stations.getEntityName`) as real clickable rows, not plain text. Clicking a hub in that list switches which hub's data the ENTIRE window shows — every tab (LINES, CARGO, SETTINGS, etc.) re-renders against the clicked hub, exactly as if the player had selected that hub's station on the map.
+
+### Why this is a bigger change than it looks -- flagged during the tabs-consolidation critique
+
+Every tab in `gui_central_raw.lua` today receives `hubStationGroupId` as a parameter threaded through from ONE source of truth: `distributionState.selectedStationGroupId`, set only by clicking a real station entity on the map (`handleStationSelection` in `epod_truck_distribution.lua`). There is currently no concept of "the GUI's own idea of which hub is active," independent of the map selection -- `gui_central_raw.lua`'s `ensureWindow`/`M.refresh`/`selectTab` all take `hubStationGroupId` as an incoming argument on every call, never store their own.
+
+Building this means introducing exactly that: a GUI-owned "currently viewed hub" that can be SET by a click inside the window itself, decoupled from (though still initialized by) the map selection. Real design questions this raises, not yet answered:
+- Does clicking a map station still override the GUI's in-window hub choice on the next tick, or does the GUI's own choice "win" until the player clicks another hub row or closes/reopens the window? (The two mechanisms could easily fight each other -- e.g. player clicks "Poole Sidings" in the list, then the game's own passive re-selection logic or a stray click elsewhere on the map silently snaps it back to "Upper St Albans.")
+- `M.refresh(hubStationGroupId)` is called every `guiUpdate` tick with whatever the CURRENT map selection is -- if the GUI's own hub choice is meant to persist independently, every tab's refresh path needs to start preferring an internal `state.viewedHubStationGroupId` over the incoming parameter, which touches `gui_central_raw.lua`'s core refresh/selectTab plumbing, not just the OVERVIEW tab's own rendering.
+
+### What's already available vs. still to design
+
+**Already available, reusable as-is**: the hub list itself (`hub_registry.getEnabledHubs()`, `stations.getEntityName()`) -- `gui_tab_hubs.lua` already builds exactly this list today, just as plain text rows, not buttons.
+
+**Not yet designed**: the map-selection-vs-GUI-selection precedence question above; whether "switching hub in the GUI" should also pan/center the map camera to that hub (nice-to-have, matches native TF2 entity-follow behavior, unconfirmed whether this raw window type exposes anything like `setLocateButtonVisible`/a real camera-jump call) or leave the map alone entirely (simpler, avoids surprising the player by moving their camera).
+
+### If it does pan out
+
+Removes the last practical reason a player would need to leave the GUI and hunt the map just to check on a different hub -- directly serves the "easy way to check all hubs" goal, and is the natural completion of folding HUBS into OVERVIEW (Decision 138-era tab consolidation) rather than leaving that merge as a read-only downgrade from what the dedicated HUBS tab could already do (nothing there was ever clickable either, so this is a genuine upgrade, not just a relocation).
+
+---
+
 `○` = Player has the wheel.

@@ -1,5 +1,8 @@
 local vehicles = require("epod_td.vehicles")
 local demand = require("epod_td.demand")
+local chain_builder = require("epod_td.chain_builder")
+local operation_lock = require("epod_td.operation_lock")
+local log = require("epod_td.log")
 
 local M = {}
 
@@ -21,6 +24,12 @@ local M = {}
 -- the imbalance this view exists to surface -- see Decision 78's
 -- discovery and documents/IDEAS.md's "Cargo-Type-Aware Allocation"
 -- entry.
+--
+-- Decision 145: "Build Supply Chains" moved here from the now-dropped
+-- SERVICES tab -- player's own framing, "that's a cargo/supply-network
+-- action, not fleet/line management," and this is the page that
+-- already surfaces the exact under-served-cargo signal the action
+-- addresses. Same operation_lock-guarded chain_builder call, unchanged.
 -- ============================================================
 
 function M.getLabel()
@@ -46,7 +55,63 @@ local function stripHubMarker(name)
 end
 
 
-function M.refresh(rows, hubStationGroupId)
+function M.refresh(rows, hubStationGroupId, actionButtons)
+
+    if actionButtons ~= nil and actionButtons[1] ~= nil then
+
+        local slot = actionButtons[1]
+
+        if hubStationGroupId == nil then
+
+            slot.label:setText("[ Build Supply Chains: select a hub first ]", 560)
+            slot.handler = nil
+
+        elseif operation_lock.isRunning() then
+
+            slot.label:setText("[ Build Supply Chains (busy -- another hub operation running) ]", 560)
+            slot.handler = nil
+
+        else
+
+            slot.label:setText("[ Build Supply Chains ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+            slot.handler = function()
+
+                if operation_lock.isRunning() then
+
+                    log.info("CARGO TAB: another hub operation is still running -- ignoring click.")
+                    return
+
+                end
+
+                operation_lock.begin()
+
+                local ok, err =
+                    pcall(
+                        chain_builder.runChainBuilderForHub,
+                        hubStationGroupId,
+
+                        function(builtCount, movedCount)
+                            operation_lock.finish()
+                            log.info(
+                                "CARGO TAB: Build Supply Chains done ("
+                                    .. tostring(builtCount) .. " chain(s) built, "
+                                    .. tostring(movedCount) .. " vehicle(s) moved)."
+                            )
+                        end
+                    )
+
+                if not ok then
+                    operation_lock.finish()
+                    log.info("CARGO TAB: Build Supply Chains failed: " .. tostring(err))
+                end
+
+            end
+
+        end
+
+    end
 
     if hubStationGroupId == nil then
 

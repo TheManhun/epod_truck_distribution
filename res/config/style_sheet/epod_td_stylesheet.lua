@@ -82,12 +82,31 @@ function data()
 
     -- Decision 80 additions -- DD Central Manager polish pass.
 
+    -- Decision 130: tighter padding -- player-relayed suggestion,
+    -- since with LINES moved to its own window "DD Central Manager"
+    -- is back to 7 tabs, but they were still reading as pushed right
+    -- up against the window edge on a 4K display.
     a("!EpodTdTabActive", {
-        backgroundColor = ssu.makeColor(70, 140, 110, 200)
+        backgroundColor = ssu.makeColor(70, 140, 110, 200),
+        padding = { 3, 8, 3, 8 }
     })
 
     a("!EpodTdTabInactive", {
-        backgroundColor = ssu.makeColor(255, 255, 255, 15)
+        backgroundColor = ssu.makeColor(255, 255, 255, 15),
+        padding = { 3, 8, 3, 8 }
+    })
+
+    -- Two separate declarations rather than a comma-list selector --
+    -- the single "!Class TextView" descendant selector is already
+    -- proven in this file (see "!EpodTdHeader TextView" above); a
+    -- combined "!A TextView, !B TextView" comma-list is only
+    -- documented, not yet used anywhere in this codebase.
+    a("!EpodTdTabActive TextView", {
+        fontSize = 16
+    })
+
+    a("!EpodTdTabInactive TextView", {
+        fontSize = 16
     })
 
     -- Decision 82: original 0.85/0.85/0.95 header color and 0.75/0.75/
@@ -103,9 +122,59 @@ function data()
         color = { 0.95, 0.55, 0.4, 1 }
     })
 
+    -- Decision 137: distinct RED, deliberately different from
+    -- EpodTdWarningText's orange -- "genuinely idle, nothing to carry"
+    -- (SERVICES tab, folded in from the now-dropped FLEET tab) and
+    -- "short of planner target" are different conditions and can both
+    -- apply to the same row, so they need visually distinguishable
+    -- colors, not the same one doing double duty.
+    a("!EpodTdIdleText", {
+        color = { 0.95, 0.35, 0.35, 1 }
+    })
+
     a("!EpodTdMutedText", {
         color = { 0.5, 0.55, 0.55, 1 }
     })
+
+    -- Decision 145: SERVICES merged into LINES -- player's request,
+    -- "show the delta Number in the middle of the line as Red (-)
+    -- White (0) Green (+)". Zero delta deliberately gets NO class (an
+    -- empty setStyleClassList call) rather than a dedicated "white"
+    -- class -- default/unstyled text in this window already reads as
+    -- bright near-white, distinct enough from both colors below and
+    -- from the muted vehicle/waiting text sitting either side of it.
+    a("!EpodTdDeltaNegative", {
+        color = { 0.95, 0.35, 0.35, 1 }
+    })
+
+    a("!EpodTdDeltaPositive", {
+        color = { 0.45, 0.85, 0.5, 1 }
+    })
+
+    -- Decision 136: player's request -- a big, bold-reading heading
+    -- naming the active section, since the tab bar's buttons were
+    -- shrunk to short codes (TAB_SHORT_LABELS) to stop the full names
+    -- getting cut off. No confirmed "bold" style property in this
+    -- codebase (only fontSize/color/padding/backgroundColor have ever
+    -- been proven), so prominence comes from a distinctly larger
+    -- fontSize plus the same warm accent color EpodTdTableHeader
+    -- already uses, rather than an unproven bold attempt.
+    a("!EpodTdSectionHeading", {
+        color = { 0.95, 0.8, 0.5, 1 }
+    })
+
+    a("!EpodTdSectionHeading TextView", {
+        fontSize = 26
+    })
+
+    -- Decisions 125/127 (BOTH LIVE-CONFIRMED FAILURES): tried collapsing
+    -- an unused row to near-zero height first via `maxSize` alone, then
+    -- via `size`/`minSize`/`maxSize` all set to `{0,0}` -- neither made
+    -- any visible difference to this widget type in this game version.
+    -- Removed rather than left as dead, misleading CSS. If this idea is
+    -- ever revisited, it needs new evidence (e.g. a different widget
+    -- type, or confirmation this property is even read for TextView),
+    -- not a third guess at the same property combination.
 
     return result
 

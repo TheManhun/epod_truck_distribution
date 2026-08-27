@@ -1,9 +1,10 @@
 local log = require("epod_td.log")
 local gui = require("gui")
+local hub_registry = require("epod_td.hub_registry")
+local stations = require("epod_td.stations")
 
 local tab_overview = require("epod_td.gui_tab_overview")
 local tab_hubs = require("epod_td.gui_tab_hubs")
-local tab_lines = require("epod_td.gui_tab_lines")
 local tab_services = require("epod_td.gui_tab_services")
 local tab_fleet = require("epod_td.gui_tab_fleet")
 local tab_terminals = require("epod_td.gui_tab_terminals")
@@ -51,36 +52,14 @@ local WINDOW_ID = "ddCentralManagerWindow"
 local WINDOW_WIDTH = 560
 local ROW_WIDTH = WINDOW_WIDTH
 
--- Decision 121: raised from 24 now that the row pool lives inside a
--- scroll area (see ensureWindow below) instead of a fixed-height
--- window that just grew taller with every row -- headroom is now
--- cheap since a tall pool just scrolls rather than pushing the window
--- off-screen.
-local MAX_ROWS = 60
-
--- Decision 121: a SECOND, separate row pool purpose-built for the new
--- LINES tab's per-destination cargo-icon breakdown (full parity with
--- the old panel's own managed-line display). Deliberately NOT folded
--- into the plain `state.rows` pool above: every other tab already
--- relies on a single full-width text row (e.g. SERVICES' padded
--- "Service / Current / Target / Waiting / Delta" table) -- narrowing
--- that shared pool's label to make room for a waiting-count column and
--- cargo icons would break every one of those tabs' formatting. Same
--- "pre-allocate once" reasoning as the plain pool; both pools live
--- inside the same scroll area (see ensureWindow) so an unused pool
--- just costs (blank) scroll space, not permanent window height.
-local MAX_LINE_ROWS = 48
-local LINE_ROW_LABEL_WIDTH = 260
-local LINE_ROW_WAITING_WIDTH = 90
-local LINE_ROW_CARGO_SLOTS = 3
-local LINE_ROW_CARGO_COUNT_WIDTH = 70
-
--- setTransparent(true) does not hide an imageView's image content
--- (confirmed live in the old panel: unused slots rendered a visible
--- placeholder glyph instead of nothing), only setText("") reliably
--- hides text -- same real texture swap the old panel already uses to
--- hide unused icon slots.
-local BLANK_CARGO_ICON = "ui/hud/empty12.tga"
+-- Decision 129: LINES moved out to its own standalone window
+-- (gui_lines_window.lua) -- no longer a tab here, so this pool no
+-- longer needs to coexist with a second, icon-rich one. See that
+-- file's own header comment for the full history (Decisions 121/
+-- 123/125/127/128 all tried to make the two pools share this one
+-- window without one permanently pushing the other down; none of it
+-- actually worked).
+local MAX_ROWS = 24
 
 -- Decision 71: a pool of pre-allocated, reusable action-button slots,
 -- same "pre-allocate once, refill on tab switch" reasoning as the row
@@ -100,7 +79,6 @@ local ACTION_BUTTON_COUNT = 8
 
 local TABS = {
     tab_overview,
-    tab_lines,
     tab_hubs,
     tab_services,
     tab_fleet,
@@ -118,7 +96,6 @@ local state = {
     tabButtons = {},
     headerLabel = nil,
     rows = nil,
-    lineRows = nil,
     actionButtons = nil,
     closedByUser = false
 }
@@ -150,6 +127,47 @@ local function positionWindow()
     )
 
 end
+
+
+-- Decision 126: player's request, "Maybe the Top should be
+-- Distribution Hub - Hub name (if its not Set to be Distribution it
+-- defaults to Truck Station - Station name) since it opens when you
+-- select other stations." Real station name via stations.getEntityName
+-- (already strips this mod's own "* "/"● " display prefixes), real
+-- hub status via hub_registry.isEnabled -- same two calls
+-- gui_tab_overview.lua and gui_tab_hubs.lua already use for the exact
+-- same distinction.
+local function describeHeader(hubStationGroupId)
+
+    if hubStationGroupId == nil then
+        return "No station selected"
+    end
+
+    local okName, name = pcall(stations.getEntityName, hubStationGroupId)
+    local displayName = okName and tostring(name) or ("station " .. tostring(hubStationGroupId))
+
+    local okEnabled, isEnabled = pcall(hub_registry.isEnabled, hubStationGroupId)
+
+    if okEnabled and isEnabled then
+        return "Distribution Hub - " .. displayName
+    end
+
+    return "Truck Station - " .. displayName
+
+end
+
+
+-- Decision 125 (LIVE-CONFIRMED FAILURE): tried wrapping every row
+-- widget to track whether a tab actually used it this frame, then
+-- applying an `EpodTdCollapsedRow` style class (`maxSize = {_, 0}`) to
+-- whatever stayed unused, hoping to shrink genuinely-empty rows to
+-- near-zero height instead of leaving them as visible blank space.
+-- Live result: no visible difference at all -- OVERVIEW's content
+-- still sat behind the exact same wall of blank space as before.
+-- `maxSize` does not appear to collapse this widget type the way the
+-- wiki's general description suggested. Reverted -- see Decision 126
+-- for the actual fix (reordering the row pools back, prioritizing
+-- whichever tab is shown by default).
 
 
 -- Decision 81: also resets style class list, not just text. Rows are
@@ -185,41 +203,6 @@ local function clearAllRows()
 end
 
 
--- Same reused-object leak as clearRow above, extended to the richer
--- LINES-tab row shape (waiting count + cargo icon/count pairs).
-local function clearLineRow(row)
-
-    row.label:setText("", LINE_ROW_LABEL_WIDTH)
-    pcall(row.label.setStyleClassList, row.label, {})
-
-    row.waitingLabel:setText("", LINE_ROW_WAITING_WIDTH)
-
-    for slotIndex = 1, LINE_ROW_CARGO_SLOTS do
-
-        row.cargoIcons[slotIndex]:setImage(BLANK_CARGO_ICON)
-        pcall(row.cargoIcons[slotIndex].setTransparent, row.cargoIcons[slotIndex], true)
-
-        pcall(row.cargoCounts[slotIndex].setTransparent, row.cargoCounts[slotIndex], true)
-        row.cargoCounts[slotIndex]:setText("", LINE_ROW_CARGO_COUNT_WIDTH)
-
-    end
-
-end
-
-
-local function clearAllLineRows()
-
-    if state.lineRows == nil then
-        return
-    end
-
-    for _, row in ipairs(state.lineRows) do
-        clearLineRow(row)
-    end
-
-end
-
-
 -- Blanks every action-button slot's label, drops its handler, AND
 -- resets its style class list (Decision 81 -- same reused-object
 -- leak as clearRow above, applies equally to buttons).
@@ -238,6 +221,12 @@ local function clearActionButtons()
 end
 
 
+-- Decision 129: LINES tab (and its whole icon-rich row pool) moved out
+-- to its own standalone window (gui_lines_window.lua) -- see that
+-- file's header comment for the full history of why sharing this
+-- window's row pool with every other tab never actually worked.
+
+
 -- Re-renders whichever tab is currently active into the shared row
 -- pool. Safe to call often -- it's just setText calls, same cost
 -- profile as the existing panel's own refresh.
@@ -251,8 +240,11 @@ function M.refresh(hubStationGroupId)
         return
     end
 
+    if state.headerLabel ~= nil then
+        pcall(state.headerLabel.setText, state.headerLabel, describeHeader(hubStationGroupId), WINDOW_WIDTH)
+    end
+
     clearAllRows()
-    clearAllLineRows()
     clearActionButtons()
 
     local activeTab = TABS[state.activeTabIndex]
@@ -261,11 +253,8 @@ function M.refresh(hubStationGroupId)
         return
     end
 
-    -- lineRows is a 4th, additive argument -- every existing tab's
-    -- refresh(rows, hubStationGroupId, actionButtons) signature still
-    -- works unchanged; only gui_tab_lines.lua reads the extra value.
     local ok, err =
-        pcall(activeTab.refresh, state.rows, hubStationGroupId, state.actionButtons, state.lineRows)
+        pcall(activeTab.refresh, state.rows, hubStationGroupId, state.actionButtons)
 
     if not ok then
 
@@ -339,8 +328,25 @@ local function ensureWindow(hubStationGroupId)
     local layout =
         gui.boxLayout_create(WINDOW_ID .. ".layout", "VERTICAL")
 
+    -- Decision 126: dropped "(TEST)"/"DD Central Manager" branding and
+    -- the "ACTIVITY still a placeholder" dev note -- player's request
+    -- to clean up the top banner now that this is the real, primary
+    -- interface (Decision 124), not a test window anymore. The window
+    -- chrome title stays simple and static; the actually-useful,
+    -- per-selection context (which station, hub or not) lives in
+    -- state.headerLabel instead, updated every M.refresh via
+    -- describeHeader -- window:setTitle() would need its own separate
+    -- live check (unverified whether it's safe to call every refresh
+    -- vs. once), so this keeps the update on an already-proven path
+    -- (a plain textView row, refreshed the same way every other row
+    -- already is).
+    -- Decision 133: "(Legacy)" suffix -- gui_central_raw.lua is now the
+    -- window that auto-opens on station selection and owns the plain
+    -- "Central Manager" title; this window is kept only as a reachable
+    -- fallback (Debug Tests -> "Open Central Manager (Legacy)") until
+    -- the new one has proven itself across every tab live.
     local window =
-        gui.window_create(WINDOW_ID, "DD Central Manager (TEST)", layout)
+        gui.window_create(WINDOW_ID, "Central Manager (Legacy)", layout)
 
     window:onClose(function()
         state.closedByUser = true
@@ -351,7 +357,7 @@ local function ensureWindow(hubStationGroupId)
     state.headerLabel =
         gui.textView_create(
             WINDOW_ID .. ".header",
-            "DD Central Manager -- HUBS/ACTIVITY/SETTINGS still placeholders",
+            describeHeader(hubStationGroupId),
             WINDOW_WIDTH,
             false
         )
@@ -399,6 +405,21 @@ local function ensureWindow(hubStationGroupId)
     -- tabs the same way the row pool below is. Positioned above the
     -- info rows so a tab's controls read naturally above its display
     -- content.
+    --
+    -- Decision 126: laid out HORIZONTALLY (player's request, "can the
+    -- buttons be in a line along the top?") instead of stacked one per
+    -- line -- same `gui.boxLayout_create(..., "HORIZONTAL")` pattern
+    -- already proven for the tab row just above. Each label's width
+    -- dropped from the full WINDOW_WIDTH to a narrower fixed size so 2-3
+    -- real buttons can actually sit side by side; a tab using more than
+    -- that (or with longer label text) will just make the row -- and so
+    -- the whole window -- wider, same auto-sizing-to-content behavior
+    -- already seen elsewhere (e.g. the LINES tab's own rows).
+    local ACTION_BUTTON_WIDTH = 260
+
+    local actionRow =
+        gui.boxLayout_create(WINDOW_ID .. ".actionRow", "HORIZONTAL")
+
     state.actionButtons = {}
 
     for slotIndex = 1, ACTION_BUTTON_COUNT do
@@ -407,7 +428,7 @@ local function ensureWindow(hubStationGroupId)
             gui.textView_create(
                 WINDOW_ID .. ".actionLabel." .. tostring(slotIndex),
                 "",
-                WINDOW_WIDTH,
+                ACTION_BUTTON_WIDTH,
                 false
             )
 
@@ -439,33 +460,19 @@ local function ensureWindow(hubStationGroupId)
 
         end)
 
-        layout:addItem(button)
+        actionRow:addItem(button)
 
         state.actionButtons[slotIndex] = { label = label, button = button, handler = nil }
 
     end
 
-    -- Decision 121 follow-up (LIVE-CONFIRMED FAILURE): gui.scrollArea_
-    -- create was tried here to wrap the row pools, on the theory that
-    -- it's the one scroll primitive that stays inside the gui.lua
-    -- wrapper system (see the old comment this replaced, and the
-    -- research trail in DECISIONS.md). Live result: the header and tab
-    -- row rendered fine, but the ENTIRE scrolled content area came up
-    -- completely blank -- not merely unscrollable, genuinely invisible,
-    -- across every tab including ones with no scrolling-related change
-    -- at all. gui.lua's own scrollAreaMetatable is empty (no exposed
-    -- size hint / scroll-bar-policy setter), so the scroll area
-    -- apparently collapses to a zero/near-zero preferred size with
-    -- nothing telling it otherwise, hiding its own children. Reverted:
-    -- `contentLayout` (holding both row pools) is added DIRECTLY to
-    -- the window again, exactly like before this attempt -- a working,
-    -- non-scrolling window beats a broken scrolling one. Real
-    -- scrolling in this window remains an open problem; MAX_ROWS/
-    -- MAX_LINE_ROWS stay raised since bigger pre-allocated pools are
-    -- harmless even without a scroll area, just unused headroom.
-    local contentLayout =
-        gui.boxLayout_create(WINDOW_ID .. ".contentLayout", "VERTICAL")
+    layout:addItem(actionRow)
 
+    -- Decision 129: back to a single row pool, added directly to
+    -- `layout` -- no second pool to coexist with anymore (LINES moved
+    -- to gui_lines_window.lua), so the separate `contentLayout`
+    -- wrapper Decision 121's scrollArea experiment introduced is no
+    -- longer needed either.
     state.rows = {}
 
     for rowIndex = 1, MAX_ROWS do
@@ -478,78 +485,11 @@ local function ensureWindow(hubStationGroupId)
                 false
             )
 
-        contentLayout:addItem(label)
+        layout:addItem(label)
 
         state.rows[rowIndex] = { label = label }
 
     end
-
-    -- Decision 121: LINES tab's icon-rich row pool -- one horizontal
-    -- boxLayout per row (label + waiting count + LINE_ROW_CARGO_SLOTS
-    -- icon/count pairs), exactly the same per-row structure the old
-    -- panel's own ensureDistributionWindow already proved live, just
-    -- rebuilt here for the new GUI's shared framework.
-    state.lineRows = {}
-
-    for rowIndex = 1, MAX_LINE_ROWS do
-
-        local rowPrefix = WINDOW_ID .. ".lineRow." .. tostring(rowIndex)
-
-        local rowLayout =
-            gui.boxLayout_create(rowPrefix .. ".row", "HORIZONTAL")
-
-        local labelView =
-            gui.textView_create(rowPrefix .. ".label", "", LINE_ROW_LABEL_WIDTH, false)
-
-        rowLayout:addItem(labelView)
-
-        local waitingView =
-            gui.textView_create(rowPrefix .. ".waiting", "", LINE_ROW_WAITING_WIDTH, false)
-
-        rowLayout:addItem(waitingView)
-
-        local cargoIcons = {}
-        local cargoCounts = {}
-
-        for cargoSlotIndex = 1, LINE_ROW_CARGO_SLOTS do
-
-            local iconView =
-                gui.imageView_create(
-                    rowPrefix .. ".cargoIcon." .. tostring(cargoSlotIndex),
-                    BLANK_CARGO_ICON
-                )
-
-            local countView =
-                gui.textView_create(
-                    rowPrefix .. ".cargoCount." .. tostring(cargoSlotIndex),
-                    "",
-                    LINE_ROW_CARGO_COUNT_WIDTH,
-                    false
-                )
-
-            pcall(iconView.setTransparent, iconView, true)
-            pcall(countView.setTransparent, countView, true)
-
-            rowLayout:addItem(iconView)
-            rowLayout:addItem(countView)
-
-            cargoIcons[cargoSlotIndex] = iconView
-            cargoCounts[cargoSlotIndex] = countView
-
-        end
-
-        contentLayout:addItem(rowLayout)
-
-        state.lineRows[rowIndex] = {
-            label = labelView,
-            waitingLabel = waitingView,
-            cargoIcons = cargoIcons,
-            cargoCounts = cargoCounts
-        }
-
-    end
-
-    layout:addItem(contentLayout)
 
     -- Decision 72: SETTINGS tab's one-time GUI-element experiment
     -- (slider/comboBox/toggleButton/imageView). Wrapped in this file's
@@ -611,6 +551,52 @@ function M.toggleVisibility(hubStationGroupId)
     state.visible = true
 
     selectTab(state.activeTabIndex, hubStationGroupId)
+
+end
+
+
+-- Decision 124: player's request, "open gui can now become the
+-- default when you click on the truck stations." Opens the window if
+-- it isn't already visible, but never closes it if it already is
+-- (unlike M.toggleVisibility, meant for a manual button click).
+-- Respects a manual close within the SAME selection -- does not fight
+-- the player if they close it and guiUpdate calls this again next
+-- tick on the same still-selected hub. Meant to be called every
+-- guiUpdate tick while a station is selected.
+function M.ensureVisible(hubStationGroupId)
+
+    if state.visible then
+        return
+    end
+
+    if state.closedByUser then
+        return
+    end
+
+    local window = ensureWindow(hubStationGroupId)
+
+    if window == nil then
+        return
+    end
+
+    state.visible = true
+
+    selectTab(state.activeTabIndex, hubStationGroupId)
+
+end
+
+
+-- Decision 124: called once per fresh station selection (not every
+-- guiUpdate tick) -- "a fresh selection means the player wants the
+-- window again, even if they closed it earlier," the exact same real
+-- precedent the old panel's own handleStationSelection already used
+-- for `distributionState.windowClosedByUser`. Resets `closedByUser`
+-- then reuses M.ensureVisible to actually open it.
+function M.onStationSelected(hubStationGroupId)
+
+    state.closedByUser = false
+
+    M.ensureVisible(hubStationGroupId)
 
 end
 

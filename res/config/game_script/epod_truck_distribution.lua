@@ -47,7 +47,7 @@ local vehicles = require("epod_td.vehicles")
 local stations = require("epod_td.stations")
 local route_injector = require("epod_td.route_injector")
 local line_splitter = require("epod_td.line_splitter")
-local fleet_allocator = require("epod_td.fleet_allocator")
+local hub_setup = require("epod_td.hub_setup")
 local terminal_allocator = require("epod_td.terminal_allocator")
 local managed_registry = require("epod_td.managed_registry")
 local settings = require("epod_td.settings")
@@ -59,9 +59,9 @@ local industry_naming = require("epod_td.industry_naming")
 local industry_recipes = require("epod_td.industry_recipes")
 local hub_registry = require("epod_td.hub_registry")
 local line_ownership = require("epod_td.line_ownership")
-local source_line_registry = require("epod_td.source_line_registry")
 local operation_lock = require("epod_td.operation_lock")
 local gui_manager = require("epod_td.gui_manager")
+local gui_central_raw = require("epod_td.gui_central_raw")
 local gui_experiment = require("epod_td.gui_experiment")
 local gui_debug_tests = require("epod_td.gui_debug_tests")
 local gui = require("gui")
@@ -590,69 +590,6 @@ end
 
 
 -- ============================================================
--- CARGO DISPLAY HELPERS
--- ============================================================
-
-local function formatDestinationLabel(
-    scanResult,
-    destinationStationGroup
-)
-
-    if scanResult == nil then
-        return "Waiting: ?"
-    end
-
-
-    if scanResult.error ~= nil then
-
-        return "Waiting: unavailable"
-
-    end
-
-
-    local destination =
-        demand.getDestination(
-            scanResult,
-            destinationStationGroup
-        )
-
-
-    if destination == nil then
-
-        return "Waiting: 0"
-
-    end
-
-
-    return "Waiting: "
-        .. tostring(
-            destination.total
-            or 0
-        )
-
-end
-
-
--- Cargo icon rows need the raw sorted list rather than a single
--- concatenated text string. Decision 121: thin wrapper over
--- demand.getSortedCargoTypesForDestination now that the sort itself
--- moved into demand.lua -- gui_tab_lines.lua (the new GUI's LINES tab)
--- calls that same module function directly, so this logic lives in
--- exactly one place instead of two drifting copies.
-local function getDestinationCargoTypes(
-    scanResult,
-    destinationStationGroup
-)
-
-    return demand.getSortedCargoTypesForDestination(
-        scanResult,
-        destinationStationGroup
-    )
-
-end
-
-
--- ============================================================
 -- EXPLICIT WINDOW POSITIONING
 --
 -- Confirmed live: the engine's default placement for a newly
@@ -760,219 +697,14 @@ end
 -- ============================================================
 -- SPLIT INTO LINES + ORGANIZE TERMINALS (Stage 1 + Stage 4)
 --
--- Combined into one always-visible button: creating the dedicated
--- per-destination lines (Stage 1) and spreading them across
--- terminals by demand (Stage 4, terminal_allocator.lua) neither one
--- touches vehicle cargo or moves a vehicle -- Stage 1 is purely
--- additive, and Stage 4 only ever writes a Line.Stop.terminal value.
--- Neither carries the still-open Bug A/B risk (PROGRESS.md) that
--- keeps "Assign & Balance Fleet" DEBUG-gated and separate, so
--- combining these two specifically (not that one) was the safe half
--- of the "combine what we know works" request.
---
--- Lines processed one at a time, each waiting for the previous
--- createLine callback, rather than firing several at once into a
--- situation only tested with a single line so far. Terminal
--- organizing runs only after every split line has been created,
--- since terminal_allocator.lua needs the full "● " line set to rank
--- by demand.
+-- Decision 122: the orchestration itself (splitAllManagedLines) moved
+-- to hub_setup.lua so the new GUI's OVERVIEW tab action button can
+-- call the exact same real sequence -- this is now a thin wrapper
+-- around hub_setup.splitStationLines, translating its
+-- onStatusUpdate(text) callback into this panel's own button-label
+-- widget. See hub_setup.lua for the real logic and its own header
+-- comment for the full history.
 -- ============================================================
-
-local function splitAllManagedLines(
-    stationGroupId,
-    managedLines,
-    index,
-    sourceLineIds,
-    onAllDone
-)
-
-    sourceLineIds =
-        sourceLineIds or {}
-
-    local lineInfo =
-        managedLines[index]
-
-    if lineInfo == nil then
-
-        logUi(
-            "SPLIT ALL: finished processing "
-                .. tostring(#managedLines)
-                .. " managed line(s). Organizing terminals..."
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.splitButtonLabel ~= nil
-        then
-
-            distributionState.textViews.splitButtonLabel:setText(
-                "[ Organizing terminals... (see log) ]",
-                WINDOW_WIDTH
-            )
-
-        end
-
-
-        -- LIVE-CONFIRMED BUG: without excluding the line(s) just
-        -- split, stockTakeExistingLoad (terminal_allocator.lua)
-        -- treats the ORIGINAL combined line -- still alive right now,
-        -- about to be deleted by a LATER "Assign & Balance Fleet"
-        -- click -- as real, permanent occupancy exactly like Grain.
-        -- That ties every terminal it touches with Grain's terminal
-        -- on line count, and the load tiebreak then picks Grain's
-        -- terminal for the first freshly-split candidate, doubling
-        -- them up unnecessarily. Player hit this live: Grain and the
-        -- highest-ranked new line shared terminal 1, the other 4 new
-        -- lines spread fine, and re-running the whole button a
-        -- SECOND time (after the source line had since been deleted
-        -- by a separate Assign & Balance click) "fixed" it --
-        -- coincidentally, not because retrying helped. Passing the
-        -- just-split source line IDs through so stock-take can
-        -- exclude them too (same treatment as already-managed lines)
-        -- fixes this without depending on deletion having already
-        -- happened.
-        local ok, err =
-            pcall(
-                terminal_allocator.spreadLinesAcrossTerminals,
-                stationGroupId,
-                sourceLineIds,
-
-                function(processedCount)
-
-                    if distributionState.textViews ~= nil
-                        and distributionState.textViews.splitButtonLabel ~= nil
-                    then
-
-                        distributionState.textViews.splitButtonLabel:setText(
-                            "[ Split & Organize Terminals (done: "
-                                .. tostring(processedCount)
-                                .. " line(s) -- see log) ]",
-                            WINDOW_WIDTH
-                        )
-
-                    end
-
-                    if onAllDone ~= nil then
-                        onAllDone()
-                    end
-
-                end
-            )
-
-        if not ok then
-
-            logUi(
-                "SPLIT ALL (terminal step) FAILED: "
-                    .. tostring(err)
-            )
-
-            if distributionState.textViews ~= nil
-                and distributionState.textViews.splitButtonLabel ~= nil
-            then
-
-                distributionState.textViews.splitButtonLabel:setText(
-                    "[ Split & Organize Terminals (crashed -- see log) ]",
-                    WINDOW_WIDTH
-                )
-
-            end
-
-            if onAllDone ~= nil then
-                onAllDone()
-            end
-
-        end
-
-        return
-
-    end
-
-
-    local realCount =
-        0
-
-    for _, destination
-        in ipairs(lineInfo.destinations or {})
-    do
-
-        if destination.stationGroup ~= stationGroupId then
-            realCount = realCount + 1
-        end
-
-    end
-
-
-    -- Player's idea: a genuine "coal -> steel -> hub" industry chain
-    -- must never be split -- doing so would break it into disconnected
-    -- hub<->coal and hub<->steel lines, destroying the production
-    -- sequence. Same proximity-based chain detection industry_naming
-    -- uses for its own line-naming (line_adopter.buildAdoptedLineName).
-    local okChain, chainName =
-        pcall(
-            industry_naming.buildChainName,
-            lineInfo.destinations,
-            stationGroupId
-        )
-
-    local isChainLine = okChain and chainName ~= nil
-
-    if realCount < 2 or isChainLine then
-
-        local reasonText
-
-        if isChainLine then
-            reasonText =
-                "detected as an industry chain line (\""
-                    .. tostring(chainName)
-                    .. "\") -- splitting would break the production sequence"
-        else
-            reasonText =
-                tostring(realCount) .. " real destination(s), nothing to split"
-        end
-
-        logUi(
-            "SPLIT ALL: skipping '"
-                .. tostring(lineInfo.name)
-                .. "' ("
-                .. reasonText
-                .. ")."
-        )
-
-        splitAllManagedLines(
-            stationGroupId,
-            managedLines,
-            index + 1,
-            sourceLineIds,
-            onAllDone
-        )
-
-        return
-
-    end
-
-
-    sourceLineIds[#sourceLineIds + 1] =
-        lineInfo.id
-
-
-    line_splitter.splitLineIntoDestinations(
-        stationGroupId,
-        lineInfo,
-
-        function(createdCount, totalCount)
-
-            splitAllManagedLines(
-                stationGroupId,
-                managedLines,
-                index + 1,
-                sourceLineIds,
-                onAllDone
-            )
-
-        end
-    )
-
-end
-
 
 local function handleSplitButtonClick()
 
@@ -988,9 +720,9 @@ local function handleSplitButtonClick()
 
     -- Decision 66's reentrancy guard originally only covered the
     -- one-click "Distribution Hub" setup sequence -- but this button
-    -- runs the exact same splitAllManagedLines/line_splitter machinery
-    -- that setup sequence chains, so it carries the identical overlap
-    -- risk (one run deleting/rewriting a line entity another run is
+    -- runs the exact same hub_setup.lua/line_splitter machinery that
+    -- setup sequence chains, so it carries the identical overlap risk
+    -- (one run deleting/rewriting a line entity another run is
     -- mid-scan against) if triggered concurrently with a hub setup, or
     -- with itself at another hub. Now shares the same flag.
     if operation_lock.isRunning() then
@@ -1006,59 +738,29 @@ local function handleSplitButtonClick()
 
     operation_lock.begin()
 
-
     local stationGroupId =
         distributionState.selectedStationGroupId
 
-
-    local ok, managedLines =
-        pcall(
-            vehicles.getManagedLinesForStation,
-            stationGroupId
-        )
-
-    if not ok or managedLines == nil then
-
-        operation_lock.finish()
-
-        logUi(
-            "SPLIT: could not read managed lines: "
-                .. tostring(managedLines)
-        )
-
-        return
-
-    end
-
-
-    logUi(
-        "SPLIT ALL: starting for "
-            .. tostring(#managedLines)
-            .. " managed line(s)."
-    )
-
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.splitButtonLabel ~= nil
-    then
-
-        distributionState.textViews.splitButtonLabel:setText(
-            "[ Splitting... (see log) ]",
-            WINDOW_WIDTH
-        )
-
-    end
-
-
-    splitAllManagedLines(
+    hub_setup.splitStationLines(
         stationGroupId,
-        managedLines,
-        1,
-        nil,
+
+        function(text)
+
+            if distributionState.textViews ~= nil
+                and distributionState.textViews.splitButtonLabel ~= nil
+            then
+
+                distributionState.textViews.splitButtonLabel:setText(
+                    text,
+                    WINDOW_WIDTH
+                )
+
+            end
+
+        end,
 
         function()
-
             operation_lock.finish()
-
         end
     )
 
@@ -1068,273 +770,12 @@ end
 -- ============================================================
 -- ASSIGN & BALANCE FLEET (config.DEBUG only)
 --
--- Combines Stage 2 (line_splitter.M.assignVehiclesAndRetireStops)
--- and Stage 3 (fleet_allocator.M.redistributeSpareVehiclesByDemand)
--- into one button, run back-to-back -- these were always meant to
--- be run as a pair (Stage 3 exists specifically to deal with the
--- spare fleet Stage 2's own retirement leaves behind), and having
--- them as two separate DEBUG buttons was exactly the kind of
--- confusing button sprawl this panel was cleaned up to avoid.
---
--- The old separate "Test Loaded Vehicle Move" diagnostic is gone
--- entirely, not just hidden: its purpose (checking whether setLine
--- reassignment is safe) is now something Stage 2/3 answer far more
--- thoroughly just by being run for real, across every managed line,
--- with visible in-game results -- keeping a redundant single-vehicle
--- test around after that would just be more clutter, not more
--- evidence.
---
--- Manually-triggered, not auto-run: this moves real vehicles off
--- the real production line AND rewrites that line's real route, so
--- it should only ever fire when the player deliberately asks for
--- it. See DECISIONS.md Decisions 20/21 and Outstanding Unknowns for
--- what is and is not yet proven about this.
+-- Decision 122: the orchestration itself (processSourceLineNext) moved
+-- to hub_setup.lua (M.assignAndBalanceStationLines) so the new GUI and
+-- the "Distribution Hub: ON" one-click setup sequence can call the
+-- exact same real logic this button always has. See hub_setup.lua for
+-- the full history and implementation.
 -- ============================================================
-
--- Decision 53 fix: a hub can legitimately have split more than one
--- original combined line (live-confirmed real case: Yarm East had
--- BOTH "Line 6" and "Line 7" split in the same click, since Line 7
--- genuinely touches Yarm East too as part of its real inter-hub
--- route). source_line_registry now records a SET per hub, not a
--- single value, so every recorded source line gets its own full
--- assign+balance+delete pass here, one at a time -- not just
--- whichever one happened to be split last.
-local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, totals, setDoneLabel, onAllDone)
-
-    local sourceLineId = sourceLineIds[index]
-
-    if sourceLineId == nil then
-        onAllDone()
-        return
-    end
-
-    local ok, err =
-        pcall(
-            line_splitter.assignVehiclesAndRetireStops,
-            sourceLineId,
-            hubStationGroupId,
-
-            function(assignedCount)
-
-                totals.assigned = totals.assigned + assignedCount
-
-                local ok2, err2 =
-                    pcall(
-                        fleet_allocator.redistributeSpareVehiclesByDemand,
-                        sourceLineId,
-                        hubStationGroupId,
-
-                        function(redistributedCount)
-
-                            totals.redistributed =
-                                totals.redistributed + redistributedCount
-
-                            -- Third step: if assign+balance left this
-                            -- source line with 0 vehicles and 0 real
-                            -- destinations, delete it -- it is now a
-                            -- degenerate hub-only loop serving
-                            -- nothing. deleteEmptySourceLine refuses
-                            -- to delete anything that still has
-                            -- either, so this is safe to always
-                            -- attempt rather than needing a separate
-                            -- confirmation click.
-                            local function finishSourceLine(deleted, reason)
-
-                                if deleted then
-
-                                    totals.deleted = totals.deleted + 1
-
-                                    source_line_registry.removeSourceLine(
-                                        hubStationGroupId,
-                                        sourceLineId
-                                    )
-
-                                elseif reason == "source-line-unreadable" then
-
-                                    -- Decision 61: this ID doesn't
-                                    -- correspond to a real line
-                                    -- anymore at all -- unlike
-                                    -- "still-has-vehicles"/
-                                    -- "still-has-destinations"
-                                    -- (a real line just not ready
-                                    -- yet), there's nothing left to
-                                    -- ever finish here. Forget it
-                                    -- now rather than burning a
-                                    -- full Stage 2/3 pass against
-                                    -- it, uselessly, every future
-                                    -- Assign & Balance click.
-                                    source_line_registry.removeSourceLine(
-                                        hubStationGroupId,
-                                        sourceLineId
-                                    )
-
-                                    totals.kept[#totals.kept + 1] =
-                                        tostring(sourceLineId)
-                                            .. " (stale registry entry -- forgotten)"
-
-                                else
-
-                                    totals.kept[#totals.kept + 1] =
-                                        tostring(sourceLineId)
-                                            .. " (" .. tostring(reason) .. ")"
-
-                                end
-
-                                processSourceLineNext(
-                                    sourceLineIds,
-                                    index + 1,
-                                    hubStationGroupId,
-                                    totals,
-                                    setDoneLabel,
-                                    onAllDone
-                                )
-
-                            end
-
-                            local ok3, err3 =
-                                pcall(
-                                    line_splitter.deleteEmptySourceLine,
-                                    sourceLineId,
-                                    hubStationGroupId,
-
-                                    function(deleted, reason)
-
-                                        -- Decision 65: "still-has-vehicles"
-                                        -- specifically means 0 real
-                                        -- destinations are left (the ONLY
-                                        -- other refusal reason,
-                                        -- "still-has-destinations", is a
-                                        -- different situation and is not
-                                        -- retried here) -- so any vehicle
-                                        -- still on this line has nowhere
-                                        -- left to legitimately go via the
-                                        -- normal demand-weighted pass.
-                                        -- Mop up any CONFIRMED-EMPTY
-                                        -- leftovers once, then retry the
-                                        -- delete, rather than leaving 1-3
-                                        -- trucks stuck looping a dead line
-                                        -- forever.
-                                        if not deleted and reason == "still-has-vehicles" then
-
-                                            local ok4, err4 =
-                                                pcall(
-                                                    fleet_allocator.forceDistributeRemainingSpares,
-                                                    sourceLineId,
-                                                    hubStationGroupId,
-
-                                                    function(distributedCount)
-
-                                                        totals.redistributed =
-                                                            totals.redistributed + distributedCount
-
-                                                        local ok5, err5 =
-                                                            pcall(
-                                                                line_splitter.deleteEmptySourceLine,
-                                                                sourceLineId,
-                                                                hubStationGroupId,
-                                                                finishSourceLine
-                                                            )
-
-                                                        if not ok5 then
-
-                                                            logUi(
-                                                                "ASSIGN & BALANCE (retry delete step) FAILED for line "
-                                                                    .. tostring(sourceLineId) .. ": "
-                                                                    .. tostring(err5)
-                                                            )
-
-                                                            finishSourceLine(false, "retry-delete-crashed")
-
-                                                        end
-
-                                                    end
-                                                )
-
-                                            if not ok4 then
-
-                                                logUi(
-                                                    "ASSIGN & BALANCE (force-distribute step) FAILED for line "
-                                                        .. tostring(sourceLineId) .. ": "
-                                                        .. tostring(err4)
-                                                )
-
-                                                finishSourceLine(false, reason)
-
-                                            end
-
-                                            return
-
-                                        end
-
-                                        finishSourceLine(deleted, reason)
-
-                                    end
-                                )
-
-                            if not ok3 then
-
-                                -- Decision 66: must still call onAllDone
-                                -- (not just log+setDoneLabel) -- otherwise
-                                -- a synchronous crash here would leave the
-                                -- caller's operation_lock guard stuck true
-                                -- forever, permanently disabling hub setup
-                                -- for the rest of the session.
-                                -- Stops processing further source lines
-                                -- for this hub, but still finishes the
-                                -- overall sequence.
-                                logUi(
-                                    "ASSIGN & BALANCE (delete step) FAILED for line "
-                                        .. tostring(sourceLineId) .. ": "
-                                        .. tostring(err3)
-                                )
-
-                                setDoneLabel(
-                                    "[ Assign & Balance Fleet (crashed -- see log) ]"
-                                )
-
-                                onAllDone()
-
-                            end
-
-                        end
-                    )
-
-                if not ok2 then
-
-                    logUi(
-                        "ASSIGN & BALANCE (balance step) FAILED for line "
-                            .. tostring(sourceLineId) .. ": "
-                            .. tostring(err2)
-                    )
-
-                    setDoneLabel(
-                        "[ Assign & Balance Fleet (crashed -- see log) ]"
-                    )
-
-                    onAllDone()
-
-                end
-
-            end
-        )
-
-    if not ok then
-
-        logUi(
-            "ASSIGN & BALANCE (assign step) FAILED for line "
-                .. tostring(sourceLineId) .. ": "
-                .. tostring(err)
-        )
-
-        setDoneLabel(
-            "[ Assign & Balance Fleet (crashed -- see log) ]"
-        )
-
-        onAllDone()
-
-    end
-
-end
 
 local function handleAssignAndBalanceButtonClick()
 
@@ -1363,7 +804,6 @@ local function handleAssignAndBalanceButtonClick()
 
     operation_lock.begin()
 
-
     if gui_debug_tests.getLabel("assignBalance") ~= nil then
 
         gui_debug_tests.getLabel("assignBalance"):setText(
@@ -1373,89 +813,26 @@ local function handleAssignAndBalanceButtonClick()
 
     end
 
-
     local hubStationGroupId =
         distributionState.selectedStationGroupId
 
-    -- Decision 46/53 fix: this used to look up config.SOURCE_LINE_NAME,
-    -- a single hardcoded line name ("Truck - CD - Hendon") that only
-    -- ever matched Hendon East's own original line, then a single
-    -- per-hub record that a second split at the same hub could
-    -- silently overwrite. Now reads every source line
-    -- line_splitter.lua has ever recorded for this hub.
-    local sourceLineIds =
-        source_line_registry.getSourceLines(
-            hubStationGroupId
-        )
-
-    if #sourceLineIds == 0 then
-
-        operation_lock.finish()
-
-        logUi(
-            "ASSIGN & BALANCE: no recorded source line for this hub -- "
-                .. "run \"Split Into Lines & Organize Terminals\" here "
-                .. "first."
-        )
-
-        if gui_debug_tests.getLabel("assignBalance") ~= nil then
-
-            gui_debug_tests.getLabel("assignBalance"):setText(
-                "[ Assign & Balance Fleet (no source line -- see log) ]",
-                WINDOW_WIDTH
-            )
-
-        end
-
-        return
-
-    end
-
-    local function setDoneLabel(text)
-
-        if gui_debug_tests.getLabel("assignBalance") ~= nil then
-
-            gui_debug_tests.getLabel("assignBalance"):setText(
-                text,
-                WINDOW_WIDTH
-            )
-
-        end
-
-    end
-
-    local totals = {
-        assigned = 0,
-        redistributed = 0,
-        deleted = 0,
-        kept = {}
-    }
-
-    processSourceLineNext(
-        sourceLineIds,
-        1,
+    -- Decision 122: orchestration itself now lives in hub_setup.lua
+    -- (M.assignAndBalanceStationLines) so both this button and the
+    -- "Distribution Hub: ON" one-click setup sequence call the exact
+    -- same real logic.
+    hub_setup.assignAndBalanceStationLines(
         hubStationGroupId,
-        totals,
-        setDoneLabel,
+
+        function(text)
+
+            if gui_debug_tests.getLabel("assignBalance") ~= nil then
+                gui_debug_tests.getLabel("assignBalance"):setText(text, WINDOW_WIDTH)
+            end
+
+        end,
 
         function()
-
             operation_lock.finish()
-
-            local keptText =
-                #totals.kept > 0
-                    and (" | kept: " .. table.concat(totals.kept, ", "))
-                    or ""
-
-            setDoneLabel(
-                "[ Assign & Balance Fleet (done: "
-                    .. tostring(totals.assigned) .. " assigned, "
-                    .. tostring(totals.redistributed) .. " balanced, "
-                    .. tostring(totals.deleted) .. " source line(s) deleted"
-                    .. keptText
-                    .. " -- see log) ]"
-            )
-
         end
     )
 
@@ -2355,33 +1732,6 @@ local function handleDedupeSharedRouteLinesButtonClick()
 end
 
 
--- Decision 120: the genuinely diagnostic/one-off DEBUG buttons that
--- used to live directly on this panel (behind the old "Show/Hide
--- Debug Tools" toggle) now live in their own "Debug Tests" window
--- (gui_debug_tests.lua), opened via a button on the new GUI's
--- SETTINGS tab. Registered here, once, right after every handler
--- above is defined -- gui_debug_tests.lua owns none of this logic
--- itself, it only knows how to build a button for whatever handler it
--- is handed, same "GUI calls into real modules, never duplicates
--- their logic" rule every gui_tab_*.lua file already follows.
-if config.DEBUG then
-
-    gui_debug_tests.registerActions({
-
-        { key = "assignBalance", label = "Assign & Balance Fleet (DEBUG)", handler = handleAssignAndBalanceButtonClick },
-        { key = "renameFleet", label = "Rename Fleet to Hub Identity (DEBUG)", handler = handleRenameFleetButtonClick },
-        { key = "showFleetPlan", label = "Show Fleet Plan (DEBUG)", handler = handleShowFleetPlanButtonClick },
-        { key = "dumpAllManagedLines", label = "Dump All Managed Lines (DEBUG)", handler = handleDumpAllManagedLinesButtonClick },
-        { key = "fleetBalanceReport", label = "Fleet Balance Report (DEBUG)", handler = handleFleetBalanceReportButtonClick },
-        { key = "cargoBalanceInspector", label = "Cargo Balance Inspector (DEBUG)", handler = handleCargoBalanceInspectorButtonClick },
-        { key = "industryDiscovery", label = "Industry Discovery (DEBUG)", handler = handleIndustryDiscoveryButtonClick },
-        { key = "dedupeSharedRouteLines", label = "Dedupe Shared Route Lines (DEBUG)", handler = handleDedupeSharedRouteLinesButtonClick }
-
-    })
-
-end
-
-
 -- ============================================================
 -- OPEN NEW GUI (config.DEBUG only, TEMPORARY)
 --
@@ -2429,6 +1779,51 @@ local function handleOpenRawUiExperimentButtonClick()
         )
 
     end
+
+end
+
+
+-- Decision 120: the genuinely diagnostic/one-off DEBUG buttons that
+-- used to live directly on this panel (behind the old "Show/Hide
+-- Debug Tools" toggle) now live in their own "Debug Tests" window
+-- (gui_debug_tests.lua), opened via a button on the new GUI's
+-- SETTINGS tab. Registered here, once, right after every handler
+-- above is defined -- gui_debug_tests.lua owns none of this logic
+-- itself, it only knows how to build a button for whatever handler it
+-- is handed, same "GUI calls into real modules, never duplicates
+-- their logic" rule every gui_tab_*.lua file already follows.
+--
+-- "Open Raw UI Experiment" moved in here (player: "didn't we remove
+-- the link to the Open Raw UI Experiment, add it to the Debug Tests
+-- list ;)") -- it used to sit on the old panel via
+-- handleOpenRawUiExperimentButtonClick above, but that whole panel
+-- stopped auto-opening in Decision 124, leaving the button
+-- unreachable. Same handler, just called from Debug Tests instead.
+--
+-- Decision 133: "openCentralRaw" removed -- gui_central_raw is now the
+-- window that auto-opens on station selection (see
+-- handleStationSelection/guiUpdate above), so a separate manual-toggle
+-- Debug Tests entry for it is no longer needed. "openLegacyCentral"
+-- added in its place, reusing handleOpenNewGuiButtonClick unchanged --
+-- keeps gui_manager (the old, proven 8-tab window) reachable as a
+-- fallback/comparison until gui_central_raw has proven itself across
+-- every tab live.
+if config.DEBUG then
+
+    gui_debug_tests.registerActions({
+
+        { key = "assignBalance", label = "Assign & Balance Fleet (DEBUG)", handler = handleAssignAndBalanceButtonClick },
+        { key = "renameFleet", label = "Rename Fleet to Hub Identity (DEBUG)", handler = handleRenameFleetButtonClick },
+        { key = "showFleetPlan", label = "Show Fleet Plan (DEBUG)", handler = handleShowFleetPlanButtonClick },
+        { key = "dumpAllManagedLines", label = "Dump All Managed Lines (DEBUG)", handler = handleDumpAllManagedLinesButtonClick },
+        { key = "fleetBalanceReport", label = "Fleet Balance Report (DEBUG)", handler = handleFleetBalanceReportButtonClick },
+        { key = "cargoBalanceInspector", label = "Cargo Balance Inspector (DEBUG)", handler = handleCargoBalanceInspectorButtonClick },
+        { key = "industryDiscovery", label = "Industry Discovery (DEBUG)", handler = handleIndustryDiscoveryButtonClick },
+        { key = "dedupeSharedRouteLines", label = "Dedupe Shared Route Lines (DEBUG)", handler = handleDedupeSharedRouteLinesButtonClick },
+        { key = "openRawUiExperiment", label = "Open Raw UI Experiment (TEST)", handler = handleOpenRawUiExperimentButtonClick },
+        { key = "openLegacyCentral", label = "Open Central Manager (Legacy)", handler = handleOpenNewGuiButtonClick }
+
+    })
 
 end
 
@@ -2481,148 +1876,15 @@ end
 
 
 -- ============================================================
--- NEW HUB SETUP SEQUENCE (Decision 62)
+-- DISTRIBUTION HUB ON/OFF TOGGLE
 --
--- Player's idea: turning a hub's Distribution Hub toggle ON for the
--- very first time shouldn't require then separately remembering to
--- click Split, Rename Fleet, and Assign & Balance in the right order
--- -- just chain the three existing, already-proven steps together.
--- No new logic: this calls the exact same module functions those
--- three buttons already call, just threaded through real callbacks
--- instead of each one updating its own separate button label.
---
--- Deliberately NOT a background/polling feature (raised live: not
--- everyone runs this mod on a bare vanilla setup, keep it minimal) --
--- this runs once, synchronously-chained, on the single moment the
--- player clicks ON, then reports a plain final status and stops.
--- Anything it can't finish immediately (e.g. a vehicle still
--- mid-delivery, same as Decision 61's loaded-vehicle safety check)
--- is just named in that final status -- the player can click Assign
--- & Balance again later if they want to chase it, exactly as before
--- this feature existed.
+-- Decision 122: the whole sequence (OFF cleanup, ON's Split -> Rename
+-- Fleet -> Assign & Balance chain) moved to hub_setup.lua
+-- (M.toggleDistributionHub) so the new GUI's HUBS tab can call the
+-- exact same real logic. This is now a thin wrapper translating its
+-- onStatusUpdate(text) callback into this panel's own button-label
+-- widget. See hub_setup.lua for the full history and implementation.
 -- ============================================================
-
-local function runNewHubSetupSequence(hubStationGroupId, onAllDone)
-
-    local ok, managedLines =
-        pcall(
-            vehicles.getManagedLinesForStation,
-            hubStationGroupId
-        )
-
-    if not ok or managedLines == nil then
-
-        logUi(
-            "DISTRIBUTION HUB SETUP FAILED: could not read managed lines: "
-                .. tostring(managedLines)
-        )
-
-        if onAllDone ~= nil then
-            onAllDone()
-        end
-
-        return
-
-    end
-
-    splitAllManagedLines(
-        hubStationGroupId,
-        managedLines,
-        1,
-        nil,
-
-        function()
-
-            local okRename, errRename =
-                pcall(
-                    fleet_naming.renameFleetToHubIdentity,
-                    hubStationGroupId,
-
-                    function(renamedCount)
-
-                        logUi(
-                            "DISTRIBUTION HUB SETUP: renamed "
-                                .. tostring(renamedCount)
-                                .. " vehicle(s)."
-                        )
-
-                        local sourceLineIds =
-                            source_line_registry.getSourceLines(hubStationGroupId)
-
-                        if #sourceLineIds == 0 then
-
-                            logUi(
-                                "DISTRIBUTION HUB SETUP COMPLETE for hub "
-                                    .. tostring(hubStationGroupId)
-                                    .. " (nothing needed splitting)."
-                            )
-
-                            if onAllDone ~= nil then
-                                onAllDone()
-                            end
-
-                            return
-
-                        end
-
-                        local totals = {
-                            assigned = 0,
-                            redistributed = 0,
-                            deleted = 0,
-                            kept = {}
-                        }
-
-                        processSourceLineNext(
-                            sourceLineIds,
-                            1,
-                            hubStationGroupId,
-                            totals,
-                            function() end,
-
-                            function()
-
-                                local keptText =
-                                    #totals.kept > 0
-                                        and (" -- still settling: " .. table.concat(totals.kept, ", "))
-                                        or ""
-
-                                logUi(
-                                    "DISTRIBUTION HUB SETUP COMPLETE: "
-                                        .. tostring(totals.assigned) .. " assigned, "
-                                        .. tostring(totals.redistributed) .. " balanced, "
-                                        .. tostring(totals.deleted) .. " source line(s) cleaned up"
-                                        .. keptText
-                                        .. "."
-                                )
-
-                                if onAllDone ~= nil then
-                                    onAllDone()
-                                end
-
-                            end
-                        )
-
-                    end
-                )
-
-            if not okRename then
-
-                logUi(
-                    "DISTRIBUTION HUB SETUP (rename step) FAILED: "
-                        .. tostring(errRename)
-                )
-
-                if onAllDone ~= nil then
-                    onAllDone()
-                end
-
-            end
-
-        end
-    )
-
-end
-
 
 local function handleAutoRedistributeToggleButtonClick()
 
@@ -2635,76 +1897,6 @@ local function handleAutoRedistributeToggleButtonClick()
             "DISTRIBUTION HUB: no hub is currently selected -- "
                 .. "select one first."
         )
-
-        return
-
-    end
-
-    if hub_registry.isEnabled(hubStationGroupId) then
-
-        hub_registry.disable(hubStationGroupId)
-
-        logUi(
-            "DISTRIBUTION HUB: turned OFF for hub "
-                .. tostring(hubStationGroupId)
-        )
-
-        -- Decision 64: strip the "● " prefix back off the station
-        -- name, mirroring the ON branch below. Only touches it if the
-        -- prefix is actually there, so this is safe to run even on a
-        -- hub whose name was never changed by this mod.
-        do
-
-            local currentName =
-                stations.getRawEntityName(hubStationGroupId)
-
-            if currentName ~= nil
-                and currentName:sub(1, 4) == "● "
-            then
-
-                pcall(
-                    stations.setEntityName,
-                    hubStationGroupId,
-                    currentName:sub(5)
-                )
-
-            end
-
-        end
-
-        -- Decision 60: clean up empty lines this hub claimed while it
-        -- was enabled -- otherwise they just sit there forever as
-        -- orphaned clutter (exactly what happened with Thatcham
-        -- Sidings). Only ever deletes lines with 0 vehicles.
-        pcall(
-            line_splitter.deleteEmptyOwnedLines,
-            hubStationGroupId,
-
-            function(deletedCount)
-
-                if deletedCount > 0 then
-
-                    logUi(
-                        "DISTRIBUTION HUB: cleaned up "
-                            .. tostring(deletedCount)
-                            .. " empty line(s) this hub left behind."
-                    )
-
-                end
-
-            end
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.autoRedistributeButtonLabel ~= nil
-        then
-
-            distributionState.textViews.autoRedistributeButtonLabel:setText(
-                autoRedistributeLabelText(hubStationGroupId),
-                WINDOW_WIDTH
-            )
-
-        end
 
         return
 
@@ -2727,100 +1919,28 @@ local function handleAutoRedistributeToggleButtonClick()
 
     operation_lock.begin()
 
-    -- Decision 62: turning ON now also runs the full first-time setup
-    -- sequence (Split -> Rename Fleet -> Assign & Balance) rather than
-    -- just flipping the flag and leaving the player to click each of
-    -- those three separately.
-    hub_registry.enable(hubStationGroupId)
+    hub_setup.toggleDistributionHub(
+        hubStationGroupId,
 
-    -- Decision 64: mark the station itself as a converted hub, same
-    -- "● " convention already used for managed lines -- requested
-    -- live so a converted hub is visible at a glance (station list,
-    -- map) without opening this panel. setName is documented
-    -- entity-agnostic and already proven on vehicles/lines elsewhere
-    -- in this codebase; this is the first use on a station. Only
-    -- renames if not already prefixed, so re-enabling an
-    -- already-renamed hub doesn't double up the bullet.
-    do
+        function(text)
 
-        local currentName =
-            stations.getRawEntityName(hubStationGroupId)
+            if distributionState.textViews ~= nil
+                and distributionState.textViews.autoRedistributeButtonLabel ~= nil
+            then
 
-        if currentName ~= nil
-            and currentName:sub(1, 4) ~= "● "
-        then
-
-            pcall(
-                stations.setEntityName,
-                hubStationGroupId,
-                "● " .. currentName
-            )
-
-        end
-
-    end
-
-    logUi(
-        "DISTRIBUTION HUB: turned ON for hub "
-            .. tostring(hubStationGroupId)
-            .. " -- setting it up now."
-    )
-
-    if distributionState.textViews ~= nil
-        and distributionState.textViews.autoRedistributeButtonLabel ~= nil
-    then
-
-        distributionState.textViews.autoRedistributeButtonLabel:setText(
-            "[ Setting up Distribution Hub... (see log) ]",
-            WINDOW_WIDTH
-        )
-
-    end
-
-    local ok, err =
-        pcall(
-            runNewHubSetupSequence,
-            hubStationGroupId,
-
-            function()
-
-                operation_lock.finish()
-
-                if distributionState.textViews ~= nil
-                    and distributionState.textViews.autoRedistributeButtonLabel ~= nil
-                then
-
-                    distributionState.textViews.autoRedistributeButtonLabel:setText(
-                        autoRedistributeLabelText(hubStationGroupId),
-                        WINDOW_WIDTH
-                    )
-
-                end
+                distributionState.textViews.autoRedistributeButtonLabel:setText(
+                    text,
+                    WINDOW_WIDTH
+                )
 
             end
-        )
 
-    if not ok then
+        end,
 
-        operation_lock.finish()
-
-        logUi(
-            "DISTRIBUTION HUB SETUP FAILED: "
-                .. tostring(err)
-        )
-
-        if distributionState.textViews ~= nil
-            and distributionState.textViews.autoRedistributeButtonLabel ~= nil
-        then
-
-            distributionState.textViews.autoRedistributeButtonLabel:setText(
-                "[ Distribution Hub (setup crashed -- see log) ]",
-                WINDOW_WIDTH
-            )
-
+        function()
+            operation_lock.finish()
         end
-
-    end
+    )
 
 end
 
@@ -2942,6 +2062,10 @@ local function ensureDistributionWindow()
     -- display; the entity ID is dev-only detail, kept in the
     -- [TD-UI] log line instead of the visible panel.
 
+    -- Decision 124: "Split Into Lines & Organize Terminals" button
+    -- removed from here -- double-up with the new GUI's OVERVIEW tab
+    -- action slot 1 (Decision 122, same hub_setup.splitStationLines
+    -- call), and this panel no longer auto-opens anyway (Decision 124).
     distributionState.textViews = {
 
         summary =
@@ -2950,42 +2074,14 @@ local function ensureDistributionWindow()
                 "Station: N/A",
                 WINDOW_WIDTH,
                 false
-            ),
-
-        -- Content widget for the split button below. gui.lua's
-        -- button:onClick() is unverified in this mod (never used
-        -- before this), but it's the same shared callback-table
-        -- pattern as window:onClose(), which was confirmed working
-        -- live -- reasonable confidence, not proof.
-        splitButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".splitButtonLabel",
-                "[ Split Into Lines & Organize Terminals ]",
-                WINDOW_WIDTH,
-                false
             )
 
     }
 
 
-    local splitButton =
-        gui.button_create(
-            WINDOW_ID .. ".splitButton",
-            distributionState.textViews.splitButtonLabel
-        )
-
-    splitButton:onClick(
-        handleSplitButtonClick
-    )
-
-    distributionState.splitButton =
-        splitButton
-
-
     local fixedViews = {
 
-        distributionState.textViews.summary,
-        splitButton
+        distributionState.textViews.summary
 
     }
 
@@ -3000,11 +2096,18 @@ local function ensureDistributionWindow()
     -- SETTINGS tab -- see Decision 120. "Apply Fleet Plan (DEBUG)" was
     -- deleted outright rather than moved: Decision 84 already
     -- surfaced the same action on the SERVICES tab, so the copy here
-    -- was pure duplication. Auto Redistribute / Open New GUI / Open
-    -- Raw UI Experiment stay on THIS panel -- real operational
-    -- controls or meta-tools, not diagnostics -- "Spread Lines Across
-    -- Terminals" stays folded into the always-visible "Split Into
-    -- Lines & Organize Terminals" button above.
+    -- was pure duplication. Decision 124: "Distribution Hub" (Auto
+    -- Redistribute) removed here too -- double-up with the new GUI's
+    -- OVERVIEW tab action slot 3 and HUBS tab action slot 1 (Decision
+    -- 122). Open New GUI stays -- a real meta-tool, not a diagnostic --
+    -- though this whole panel no longer auto-opens (Decision 124), so
+    -- it's effectively unreachable until the panel is fully retired.
+    -- "Open Raw UI Experiment" moved off this dead button into Debug
+    -- Tests (see handleOpenRawUiExperimentButtonClick's registration
+    -- above) since this panel can no longer be opened to click it.
+    -- "Spread Lines Across Terminals" stays folded into the (also
+    -- removed) "Split Into Lines & Organize Terminals" button's own
+    -- history.
     if config.DEBUG then
 
 
@@ -3015,39 +2118,6 @@ local function ensureDistributionWindow()
         -- with zero sign of the bug, far stronger evidence than the
         -- original dedicated single-run test. route_injector.
         -- runBugBTestStep remains callable manually if ever needed.
-
-        -- Auto Redistribute stays always visible (outside the debug-
-        -- tools gate above) -- a real operational per-hub toggle, not
-        -- a diagnostic.
-
-        -- Initial label reflects whatever was actually persisted
-        -- (settings.lua), not a hardcoded "OFF" -- the toggle should
-        -- show its real state immediately on window creation,
-        -- including after a save/reload.
-        distributionState.textViews.autoRedistributeButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".autoRedistributeButtonLabel",
-                autoRedistributeLabelText(distributionState.selectedStationGroupId),
-                WINDOW_WIDTH,
-                false
-            )
-
-        local autoRedistributeButton =
-            gui.button_create(
-                WINDOW_ID .. ".autoRedistributeButton",
-                distributionState.textViews.autoRedistributeButtonLabel
-            )
-
-        autoRedistributeButton:onClick(
-            handleAutoRedistributeToggleButtonClick
-        )
-
-        distributionState.autoRedistributeButton =
-            autoRedistributeButton
-
-        fixedViews[#fixedViews + 1] =
-            autoRedistributeButton
-
 
         -- Test Vehicle Rename/Colour button removed here -- its
         -- question (does setName/setColor work on a vehicle entity)
@@ -3081,35 +2151,6 @@ local function ensureDistributionWindow()
 
         fixedViews[#fixedViews + 1] =
             openNewGuiButton
-
-
-        -- Decision 75/76: same always-visible treatment as Open New
-        -- GUI above -- a real operational experiment, not a
-        -- diagnostic. Built entirely on the raw api.gui.comp.* system
-        -- (see gui_experiment.lua); this button itself is a normal
-        -- gui.lua button like every other on this panel, since it
-        -- only ever calls a plain Lua function (toggleVisibility) --
-        -- no GUI object crosses between the two systems here.
-        local rawUiExperimentButtonLabel =
-            gui.textView_create(
-                WINDOW_ID .. ".rawUiExperimentButtonLabel",
-                "[ Open Raw UI Experiment (TEST) ]",
-                WINDOW_WIDTH,
-                false
-            )
-
-        local rawUiExperimentButton =
-            gui.button_create(
-                WINDOW_ID .. ".rawUiExperimentButton",
-                rawUiExperimentButtonLabel
-            )
-
-        rawUiExperimentButton:onClick(
-            handleOpenRawUiExperimentButtonClick
-        )
-
-        fixedViews[#fixedViews + 1] =
-            rawUiExperimentButton
 
 
     end
@@ -3622,386 +2663,26 @@ local function updateDistributionWindow()
     end
 
 
-    -- --------------------------------------------------------
-    -- MANAGED LINE / DESTINATION ROWS
-    --
-    -- Rows are consumed sequentially from the shared flat pool:
-    -- a line's name row, its info row, then its destination rows,
-    -- then straight on to the next line's name row -- no reserved
-    -- per-line sub-block, so a sparsely-served line leaves no gap
-    -- before the next line's content. See MAX_TOTAL_ROWS above.
-    -- --------------------------------------------------------
-
-    local rowCursor =
-        1
-
-    local function nextRow()
-
-        if rowCursor > MAX_TOTAL_ROWS then
-            return nil
-        end
-
-        local row =
-            distributionState.rows[
-                rowCursor
-            ]
-
-        rowCursor =
-            rowCursor + 1
-
-        return row
-
-    end
-
-    local function renderManagedLineRows()
-
-        for lineIndex, lineInfo
-            in ipairs(
-                managedLines
-            )
-        do
-
-            if lineIndex > MAX_MANAGED_LINES then
-                return
-            end
-
-
-            -- Two-row card per line: name alone, then vehicle/
-            -- waiting counts. Confirmed live that cramming name +
-            -- vehicles + waiting onto one row wrapped ugly once a
-            -- line name was long ("Truck - CD - Hendon | Vehicles:
-            -- 50 | Waiting: 526" wrapped mid-number). Splitting
-            -- avoids that regardless of name length, without
-            -- needing to widen the whole window again. The line
-            -- entity ID is dev-only detail; it's dropped from this
-            -- player-facing text and logged instead, same treatment
-            -- as the station entity ID elsewhere in this file.
-            -- "Trucks" renamed to "Vehicles": the network-discovery
-            -- logic doesn't actually care that these happen to be
-            -- trucks, so the label shouldn't bake that assumption
-            -- in either.
-
-            local nameRow =
-                nextRow()
-
-            if nameRow == nil then
-                return
-            end
-
-
-            local countsRow =
-                nextRow()
-
-            if countsRow == nil then
-                return
-            end
-
-
-            local lineWaiting =
-                0
-
-            if lineInfo.demand ~= nil then
-
-                lineWaiting =
-                    lineInfo.demand.totalWaiting
-                    or 0
-
-            end
-
-
-            logUi(
-                "line="
-                    .. tostring(lineInfo.name)
-                    .. " id="
-                    .. tostring(lineInfo.id)
-            )
-
-
-            -- Every line shown in this panel has already passed
-            -- getManagedLinesForStation's road/stop-matching check,
-            -- so it is "managed" here regardless of whether this
-            -- mod created it (line_splitter.lua's own "● " lines) or
-            -- it already existed in the player's save (e.g. "Grain").
-            -- The bullet used to only appear on mod-created lines'
-            -- real TF2 names; requested live to mark every line the
-            -- same way for visual consistency. This is DISPLAY ONLY
-            -- -- it does not rename the underlying TF2 line -- so
-            -- lines that already carry the bullet in their real name
-            -- are not double-prefixed.
-            local displayLineName =
-                tostring(lineInfo.name)
-
-            if displayLineName:sub(1, 4) ~= "● " then
-                displayLineName = "● " .. displayLineName
-            end
-
-            nameRow.label:setText(
-                displayLineName,
-                WINDOW_WIDTH
-            )
-
-
-            countsRow.label:setText(
-
-                tostring(
-                    lineInfo.vehicleCount
-                    or 0
-                )
-                .. " vehicles   |   "
-                .. tostring(
-                    lineWaiting
-                )
-                .. " waiting",
-
-                WINDOW_WIDTH
-
-            )
-
-
-            if lineInfo.destinations ~= nil then
-
-                -- A destination's "-> Name | Waiting" row, or the
-                -- hub's own "<- Hendon East | Waiting" row, is only
-                -- ever worth showing if the relevant station has
-                -- actually produced/received something at some
-                -- point in its history -- not just "currently 0."
-                -- LIVE-CONFIRMED via stations.getItemTotals: 5 real
-                -- town destinations (Queens Road, Alexander Road,
-                -- The Grove, Park Avenue, Highfield Road) all show
-                -- itemsLoaded._sum == 0 across their whole history
-                -- (structurally pure drop-off points, so their "<-"
-                -- row can never be anything but 0), while
-                -- Barrow-in-Furness Transfer shows itemsLoaded._sum
-                -- == 13661 GRAIN (a real producer, just currently
-                -- between deliveries) -- its "<-" row stays. The
-                -- hub-return bucket can be fed by more than one real
-                -- destination on a multi-stop line, so it is only
-                -- hidden if EVERY real destination on this line has
-                -- itemsLoaded._sum == 0 -- otherwise a genuine
-                -- (if currently quiet) producer elsewhere on the
-                -- line would be masked.
-                local hubReturnHasNeverProduced = true
-
-                for _, otherDestination in ipairs(lineInfo.destinations) do
-
-                    if otherDestination.stationGroup ~= stationGroupId then
-
-                        local otherTotals =
-                            stations.getItemTotals(otherDestination.stationGroup)
-
-                        if otherTotals.loaded > 0 then
-                            hubReturnHasNeverProduced = false
-                        end
-
-                    end
-
-                end
-
-
-                local visibleDestinationCount = 0
-
-                for _, destination
-                    in ipairs(
-                        lineInfo.destinations
-                    )
-                do
-
-                    local isHubReturnRow =
-                        destination.stationGroup == stationGroupId
-
-                    local skipRow = false
-
-                    if isHubReturnRow then
-
-                        skipRow = hubReturnHasNeverProduced
-
-                    else
-
-                        local destinationTotals =
-                            stations.getItemTotals(destination.stationGroup)
-
-                        skipRow = destinationTotals.unloaded == 0
-
-                    end
-
-                    if not skipRow then
-
-                    visibleDestinationCount =
-                        visibleDestinationCount + 1
-
-                    if visibleDestinationCount
-                        > MAX_DESTINATIONS_PER_LINE
-                    then
-                        break
-                    end
-
-
-                    local destRow =
-                        nextRow()
-
-                    if destRow == nil then
-                        return
-                    end
-
-
-                    local labelText =
-                        formatDestinationLabel(
-                            lineInfo.demand,
-                            destination.stationGroup
-                        )
-
-                    local cargoTypes =
-                        getDestinationCargoTypes(
-                            lineInfo.demand,
-                            destination.stationGroup
-                        )
-
-
-                    -- Plain ASCII arrows, not the ↔/● glyphs proven
-                    -- safe in native TF2 line names: this text
-                    -- renders through gui.textView_create inside our
-                    -- own custom window, a different rendering path
-                    -- that has never been glyph-tested, so this
-                    -- sticks to characters known to render anywhere.
-                    -- "->" = cargo waiting at the hub bound for this
-                    -- destination; "<-" = cargo waiting at this
-                    -- destination bound back for the hub (previously
-                    -- labelled with a "(return)" text suffix on the
-                    -- hub's own bucket instead -- see vehicles.lua).
-                    local directionArrow =
-                        destination.stationGroup == stationGroupId
-                            and "<-"
-                            or "->"
-
-                    destRow.label:setText(
-
-                        "    "
-                        .. directionArrow
-                        .. " "
-                        .. tostring(
-                            destination.name
-                        ),
-
-                        ROW_LABEL_WIDTH
-
-                    )
-
-
-                    destRow.waitingLabel:setText(
-                        labelText,
-                        WAITING_LABEL_WIDTH
-                    )
-
-
-                    for cargoSlotIndex = 1,
-                        MAX_CARGO_TYPES_PER_DESTINATION
-                    do
-
-                        local iconView =
-                            destRow.cargoIcons[
-                                cargoSlotIndex
-                            ]
-
-                        local countView =
-                            destRow.cargoCounts[
-                                cargoSlotIndex
-                            ]
-
-                        local cargo =
-                            cargoTypes[
-                                cargoSlotIndex
-                            ]
-
-
-                        if cargo == nil then
-
-                            iconView:setImage(BLANK_CARGO_ICON)
-                            iconView:setTransparent(true)
-                            countView:setTransparent(true)
-                            countView:setText("", 70)
-
-                        else
-
-                            local iconPath =
-                                demand.getCargoTypeIconPath(
-                                    cargo.cargoType
-                                )
-
-
-                            if iconPath == nil then
-
-                                -- Icon lookup failed (or has not
-                                -- been proven yet) -- fall back to
-                                -- a readable text label rather than
-                                -- an invisible or broken icon.
-                                iconView:setImage(BLANK_CARGO_ICON)
-                                iconView:setTransparent(true)
-
-                                countView:setTransparent(false)
-                                countView:setText(
-                                    demand.getCargoTypeDisplayName(
-                                        cargo.cargoType
-                                    )
-                                    .. ": "
-                                    .. tostring(cargo.count),
-                                    200
-                                )
-
-                            else
-
-                                iconView:setImage(iconPath)
-                                iconView:setTransparent(false)
-
-                                countView:setTransparent(false)
-                                countView:setText(
-                                    tostring(cargo.count),
-                                    70
-                                )
-
-                            end
-
-                        end
-
-                    end
-
-                    end
-
-                end
-
-            end
-
-        end
-
-    end
-
-    renderManagedLineRows()
-
-
-    logUi(
-        "entity="
-        .. tostring(
-            selectedEntityId
-        )
-        .. " stationGroup="
-        .. tostring(
-            stationGroupId
-        )
-        .. " managedLines="
-        .. tostring(
-            managedLineCount
-        )
-        .. " managedTrucks="
-        .. tostring(
-            managedTruckCount
-        )
+    -- Decision 123: player's own request, "remove the lines from the
+    -- pannel" -- the full per-line/destination breakdown (with cargo
+    -- icons) that used to render here via renderManagedLineRows/
+    -- nextRow moved to the new GUI's LINES tab (gui_tab_lines.lua,
+    -- Decision 121) and is now fully redundant on this legacy panel.
+    -- renderManagedLineRows/nextRow/formatDestinationLabel/
+    -- getDestinationCargoTypes were deleted outright (Decision 123) --
+    -- this just shows a pointer instead.
+    distributionState.rows[1].label:setText(
+        "See the new DD Central Manager -> LINES tab for full line/destination detail.",
+        WINDOW_WIDTH
     )
-
 
     distributionState.dirty =
         false
 
     distributionState.guiUpdateCounter =
         0
+
+    return
 
 end
 
@@ -4173,10 +2854,19 @@ local function handleStationSelection(value)
     distributionState.dirty =
         true
 
-
-    ensureDistributionWindow()
-
-    updateDistributionWindow()
+    -- Decision 124: the old panel's own ensureDistributionWindow()/
+    -- updateDistributionWindow() calls that used to sit here (the real
+    -- trigger that auto-opened this panel on every station click) were
+    -- removed -- player's request, "open gui can now become the
+    -- default when you click on the truck stations." The new GUI
+    -- briefly owned that same auto-open role (Decision 133).
+    --
+    -- Decision 134: removed again -- player's explicit preference,
+    -- "I'd prefer this [a toolbar button] then the player can decide
+    -- when they want to use the mod." gui_central_raw now opens only
+    -- via its own toolbar button injected into the game's "gameInfo"
+    -- bar (see gui_central_raw.lua's ensureToolbarButton) -- nothing
+    -- needs calling from here at all anymore.
 
 end
 
@@ -5114,27 +3804,36 @@ local function guiUpdate()
     -- handles hubStationGroupId == nil gracefully).
     pcall(gui_manager.refresh, distributionState.selectedStationGroupId)
 
+    -- Decision 145: gui_lines_window.lua deleted outright -- confirmed
+    -- genuinely unreachable since Decision 142 removed its last caller
+    -- (OVERVIEW's old "Open Lines" button). No remaining code anywhere
+    -- could ever call its toggleVisibility, so there was nothing left
+    -- refreshing for.
+
+    -- Decision 131/133/134: the raw-system Central Manager, now the
+    -- real primary window -- opened via its own toolbar button in the
+    -- game's "gameInfo" bar (gui_central_raw.lua's ensureToolbarButton,
+    -- called from inside its own M.refresh). Refreshed the same
+    -- unconditional way as gui_manager above so both the toolbar button
+    -- and the window's content stay current with nothing selected too.
+    pcall(gui_central_raw.refresh, distributionState.selectedStationGroupId)
+
 
     if distributionState.selectedEntityId == nil then
         return
     end
 
 
-    ensureDistributionWindow()
-
-
-    distributionState.guiUpdateCounter =
-        distributionState.guiUpdateCounter + 1
-
-
-    if distributionState.dirty
-        or distributionState.guiUpdateCounter
-            >= AUTO_REFRESH_GUI_UPDATES
-    then
-
-        updateDistributionWindow()
-
-    end
+    -- Decision 124: the new GUI briefly auto-opened here too (via
+    -- M.ensureVisible), same as the old panel always did (Decision
+    -- 133 repointed it from gui_manager to gui_central_raw).
+    --
+    -- Decision 134: removed -- player's explicit preference for a
+    -- toolbar-button, opt-in open instead (see the matching comment in
+    -- handleStationSelection above). gui_central_raw.refresh is still
+    -- called unconditionally above this point (outside this early
+    -- return) so its toolbar button keeps working and its content
+    -- stays current whenever the player does open it themselves.
 
 end
 

@@ -31,7 +31,10 @@ local state = {
     window = nil,
     selectedHubId = nil,
     hubContentLabel = nil,
-    sliderValueLabel = nil
+    sliderValueLabel = nil,
+    visibilityTestPanelA = nil,
+    visibilityTestPanelB = nil,
+    visibilityTestShowingA = true
 }
 
 
@@ -257,6 +260,59 @@ local function buildWindow()
     end)
 
     root:addItem(checkBox)
+
+    -- ========================================================
+    -- VISIBILITY PROBE (unrelated to Decision 129/130)
+    --
+    -- Decision 130 only proved `setVisible` is absent from gui.lua's
+    -- OWN wrapper table (game.gui) -- it never tested whether the RAW
+    -- api.gui.comp.* system (this file, proven safe/working since
+    -- Decision 75) exposes a working setVisible on an ordinary CHILD
+    -- component while its parent window stays open. This window's own
+    -- `window:setVisible(...)` call two lines down proves setVisible
+    -- exists on api.gui.comp.Window -- untested whether it also works
+    -- on a plain Component/BoxLayout child. If it does, LINES could
+    -- come back into a single window as a real show/hide panel instead
+    -- of its own separate window. Demo-only, logs the pcall result
+    -- either way so this is conclusive from the log alone.
+    -- ========================================================
+
+    local panelALayout = api.gui.layout.BoxLayout.new("VERTICAL")
+    local panelA = api.gui.comp.Component.new("")
+    panelA:setLayout(panelALayout)
+    panelALayout:addItem(api.gui.comp.TextView.new("PANEL A -- visible by default"))
+    root:addItem(panelA)
+    state.visibilityTestPanelA = panelA
+
+    local panelBLayout = api.gui.layout.BoxLayout.new("VERTICAL")
+    local panelB = api.gui.comp.Component.new("")
+    panelB:setLayout(panelBLayout)
+    panelBLayout:addItem(api.gui.comp.TextView.new("PANEL B -- hidden by default"))
+    root:addItem(panelB)
+    state.visibilityTestPanelB = panelB
+
+    local okInitialHide, errInitialHide = pcall(panelB.setVisible, panelB, false, false)
+    log.info("GUI EXPERIMENT (visibility probe): initial panelB:setVisible(false) ok=" .. tostring(okInitialHide) .. " err=" .. tostring(errInitialHide))
+
+    local visibilityToggleButton = api.gui.comp.Button.new(api.gui.comp.TextView.new("Toggle Panel A/B (setVisible test)"), false)
+    visibilityToggleButton:addStyleClass("EpodTdPrimaryButton")
+
+    visibilityToggleButton:onClick(function()
+
+        state.visibilityTestShowingA = not state.visibilityTestShowingA
+
+        local okA, errA = pcall(state.visibilityTestPanelA.setVisible, state.visibilityTestPanelA, state.visibilityTestShowingA, false)
+        local okB, errB = pcall(state.visibilityTestPanelB.setVisible, state.visibilityTestPanelB, not state.visibilityTestShowingA, false)
+
+        log.info(
+            "GUI EXPERIMENT (visibility probe): toggled, showingA=" .. tostring(state.visibilityTestShowingA)
+            .. " panelA setVisible ok=" .. tostring(okA) .. " err=" .. tostring(errA)
+            .. " panelB setVisible ok=" .. tostring(okB) .. " err=" .. tostring(errB)
+        )
+
+    end)
+
+    root:addItem(visibilityToggleButton)
 
     -- Styled action button.
     local actionButton = api.gui.comp.Button.new(api.gui.comp.TextView.new("Test Action"), false)

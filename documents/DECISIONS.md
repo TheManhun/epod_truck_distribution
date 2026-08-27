@@ -2289,6 +2289,503 @@ Reverted immediately: `contentLayout` (holding both row pools) now gets added DI
 
 **Net result of this whole decision**: the LINES tab (full icon parity, its own row pool, `demand.getSortedCargoTypesForDestination`) is real, kept, and should work once reloaded. Real scrolling in this window remains unsolved -- a sufficiently long hub's content will still just make the window grow tall, same limitation as the old panel has always had. If scrolling is worth another attempt later, the raw `api.gui.comp.ScrollArea` (real, more capable API, used successfully by two independent real mods) would need to live in a window built ENTIRELY on the raw system from the start (like `gui_experiment.lua`) rather than mixed into this gui.lua-built one -- not something to retrofit onto "DD Central Manager" piecemeal.
 
+## Decision 122 follow-up — LIVE-CONFIRMED BUG: LINES tab content pushed off-screen by leftover scroll-era row counts
+
+### What happened
+
+Player, testing after the OVERVIEW/HUBS migration work: "the lines are not showing in gui." Real screenshot showed the LINES tab correctly selected (tab bar active state working), but a completely blank content area -- no header text, no rows, nothing.
+
+### Root cause
+
+When the scroll area attempt (Decision 121's own follow-up) was reverted, `MAX_ROWS` (raised 24 -> 60) and `MAX_LINE_ROWS` (48) were left at their scroll-era values -- both were only sized that large on the assumption a scroll area would absorb the extra height. Without one, all 60+48 = 108 rows are permanently present in the window's layout with no way to scroll to what doesn't fit on screen. On the LINES tab specifically, the (blank, since LINES doesn't use it) 60-row plain pool sits ABOVE the real content in the layout -- enough accumulated height from 60 blank rows to push the actual LINES data below the visible window frame entirely. Every other tab's content lives in the SAME `state.rows` pool near the top, so they were unaffected -- this bug was specific to the tab whose real content sits in the second, later pool.
+
+### Fix
+
+Reverted `MAX_ROWS` back to 24 (the original, long-proven value from before any of this session's scroll work) and set `MAX_LINE_ROWS` to 32 -- matching the OLD panel's own long-proven `MAX_TOTAL_ROWS` ceiling for this exact same per-row-icon use case, not the scroll-era 48. Also fixed the window's header text, which still said "HUBS/ACTIVITY/SETTINGS still placeholders" despite HUBS getting real content earlier in this same session.
+
+### Consequence
+
+Not yet re-tested. If a hub has enough lines to exceed 32 rows' worth of content, LINES will now truncate (same accepted tradeoff every other tab's row pool already has) rather than push content off-screen -- truncating visibly is a far better failure mode than disappearing entirely.
+
+## Decision 123 — Removed the per-line/destination view from the old panel; LINES rows moved ahead of plain rows in the new GUI
+
+### What happened
+
+Player, after confirming the LINES tab fix worked: "remove the lines from the pannel and try make them show higher in gui." Two clear, separate asks.
+
+### Decision
+
+**Removed from the old panel**: the full per-line/destination breakdown (`renderManagedLineRows`/`nextRow`, the entire reason this panel originally existed) no longer renders -- the refresh function now shows one line pointing at the new GUI's LINES tab and returns immediately. `renderManagedLineRows`/`nextRow` and their only other callers, the now-fully-dead `formatDestinationLabel`/`getDestinationCargoTypes` helpers, were deleted outright rather than left as dead code (the per-row icon WIDGET pool in `ensureDistributionWindow` was left allocated, unused -- deleting that too means restructuring the window-creation function itself for no real benefit before the whole panel is retired anyway).
+
+**LINES rows moved first** in the new GUI's shared `contentLayout` (`gui_manager.lua`), ahead of the plain `state.rows` pool every other tab uses. Native TF2 UI components can't be added/removed on demand, so both pools are ALWAYS physically present regardless of the active tab -- whichever pool comes second sits behind a wall of the first pool's blank rows on any tab that doesn't use it. This was a real tradeoff, not a free fix: LINES was chosen to go first because Decision 123's own panel cleanup (above) just made it the ONLY place the old panel's core content exists anymore -- the other 7 tabs now sit behind ~32 blank LINES rows instead of 0 when LINES has nothing to show for the focused hub.
+
+### Consequence
+
+Not yet live-tested. Watch for: LINES content appearing near the top of the window as intended, and whether the ~32-row blank prefix on the other 7 tabs (when LINES is empty for that hub) reads as a real problem in practice or is unnoticeable -- if it turns out visible/annoying, the next lever to pull is shrinking `MAX_LINE_ROWS` further, not re-reordering (LINES earning the "first" slot is a considered choice, not incidental).
+
+## Decision 124 — New GUI becomes the default on station selection; old panel no longer auto-opens; Distribution Hub toggle added to OVERVIEW
+
+### What happened
+
+Player, looking at the LINES tab working: "the pannel could just about be removed... open gui can now become the default when you click on the truck stations. We should have Distribution Hub On/off toggle on the Overview page." Three concrete asks.
+
+### Decision
+
+**New GUI auto-opens on selection, old panel no longer does.** Added `gui_manager.M.onStationSelected(hubStationGroupId)` (resets `closedByUser` then opens) and `M.ensureVisible(hubStationGroupId)` (opens once per guiUpdate tick if not already visible/closed, never fights a manual close), mirroring the exact real precedent already in `handleStationSelection` for the old panel's own `windowClosedByUser` reset-on-fresh-selection. The old panel's `ensureDistributionWindow()`/`updateDistributionWindow()` calls were removed from both `handleStationSelection` and `guiUpdate()` -- the actual real trigger turned out to be in `handleStationSelection`, not `guiUpdate`, as first assumed; both call sites needed fixing.
+
+**Old panel double-ups removed**: "Split Into Lines & Organize Terminals" and "Distribution Hub" (Auto Redistribute) buttons deleted from the old panel's `ensureDistributionWindow` -- both now have working twins in the new GUI (OVERVIEW tab slots 1 and 3) and the panel itself no longer auto-opens anyway. `handleSplitButtonClick`/`handleAutoRedistributeToggleButtonClick` (their thin wrappers) and `handleOpenNewGuiButtonClick`/`handleOpenRawUiExperimentButtonClick` (still wired to the two remaining meta-tool buttons) are left in place -- the whole panel is now unreachable in normal play regardless, so touching it further is pure cleanup, not risk-reduction.
+
+**Distribution Hub toggle added to OVERVIEW** (action slot 3), calling the same `hub_setup.toggleDistributionHub` HUBS tab's own toggle already uses. Deliberately kept on BOTH tabs, not moved -- OVERVIEW is the natural landing page per hub, HUBS is where a player sees every enabled hub at once, and two tabs within the SAME window offering the same action costs nothing (only one tab is ever visible at a time) -- unlike the old-panel-vs-new-GUI double-up this whole cleanup arc has been removing.
+
+### Consequence
+
+Not yet live-tested. The old panel ("Truck Distribution") and its remaining "Open New GUI"/"Open Raw UI Experiment" buttons are now effectively unreachable in normal play -- nothing calls `ensureDistributionWindow()` anymore. This is intentional and matches the player's own framing ("could just about be removed") but is worth flagging explicitly: if either of those two meta-tools is ever needed again, they'll need a new home (e.g. an action button somewhere in the new GUI) before the old panel's code is ever actually deleted.
+
+## Decision 125 — Collapsing unused rows via `maxSize`, so a short tab isn't stuck behind the OTHER pool's blank rows
+
+### What happened
+
+Player, seeing the old panel fully gone (confirming Decision 124 worked) and now on OVERVIEW: its real content (~6 rows) sat behind all 32 blank LINES rows -- the exact tradeoff flagged as "a real, deliberate tradeoff, not a free fix" in Decision 123's own note, now visibly confirmed. Player: "1st one needs a lot of work on layout... you got your new tricks to try... let's see if we can make it readable."
+
+### Why reordering again wasn't the answer
+
+Swapping the two row pools back (plain rows first, LINES second) would only move the exact same problem onto LINES instead of OVERVIEW/HUBS/SERVICES/FLEET/TERMINALS/CARGO/ACTIVITY/SETTINGS -- 1 tab traded for 7. Shrinking either pool's row count trades against real content: this save's own "Poole Sidings" hub has 20 managed lines, so SERVICES/FLEET already need 20+ rows just for that one table, and LINES needs even more per line (each with several destination rows). Neither pool can be shrunk far without breaking real, already-tested content.
+
+### Decision
+
+Tried a genuinely different fix instead of reordering or resizing: collapse a row's actual on-screen height to (near) zero when it goes completely unused, rather than leaving it as visible blank space. Two pieces:
+
+1. **New style class** `!EpodTdCollapsedRow` (`epod_td_stylesheet.lua`) setting `maxSize = {2000, 0}` -- the wiki-documented `maxSize` property (player-supplied UI-scripting page), applied via the SAME real `setStyleClassList` mechanism already proven working in this codebase since Decision 76/80.
+2. **`wrapTrackedWidget`** (`gui_manager.lua`) -- every row's tab-facing fields (`.label`, `.waitingLabel`, `.cargoIcons[n]`, `.cargoCounts[n]`) are now thin proxies exposing the exact same `setText`/`setStyleClassList`/`setTransparent`/`setImage` methods the tabs already call, but marking the row's own `_touched` flag true on any call. `clearRow`/`clearLineRow` reset `_touched` back to false at the very end of clearing (their own blanking calls go through the same wrapper and would otherwise mark themselves "touched"). A new `applyRowCollapseState()` runs once, right after the active tab's `refresh()` returns, and applies `EpodTdCollapsedRow` to every row still `_touched == false` -- i.e. genuinely untouched by the tab this frame. Entirely self-contained in `gui_manager.lua` + the stylesheet; no `gui_tab_*.lua` file needed to change, since the proxy is a drop-in replacement for the raw widget reference each tab already holds.
+
+A LINES row's own horizontal `boxLayout` can't be style-classed directly (`gui.lua`'s boxLayout wrapper has no `setStyleClassList` -- only true Components do, per the base game's own `res/scripts/gui.lua`), so every child widget inside an unused line row (label, waiting, all 3 icon/count pairs) gets collapsed individually, on the theory that a box layout's own height typically follows its tallest child.
+
+### Consequence
+
+Not yet live-tested -- genuinely unproven whether `maxSize` actually forces the widget height down the way the wiki describes for THIS widget type in THIS game version. Deliberately lower-risk than the scrollArea attempt (Decision 121) though: if `maxSize` doesn't work as hoped, the worst case is unused rows look exactly as they already do today (a blank line taking normal height) -- nothing can newly disappear that would otherwise show, unlike scrollArea which made real content vanish. Watch for: whether OVERVIEW's content now sits near the top of the window, and whether real content (touched rows) still displays completely normally with no stray collapsing.
+
+## Decision 126 — OVERVIEW's layout gap fixed by reordering (not collapsing); banner cleanup; dynamic hub/station title; horizontal action buttons
+
+### What happened
+
+Player, after confirming the old panel is fully gone: "Maybe we remove the top banner Stufff (Test)... Maybe the Top should be Distribution Hub - Hub name (if its not Set to be Distribution it defaults to Truck Station - Station name) since it open when you select other stations haha, also the buttons can they be in a line along the top?" Also showed OVERVIEW still buried behind a huge blank gap -- Decision 125's `maxSize` collapse experiment had visibly made no difference at all.
+
+### Decision
+
+**Decision 125 reverted.** `maxSize = {_, 0}` did not shrink the widgets it was applied to -- OVERVIEW's content sat exactly as far down as before. Removed the tracking-wrapper mechanism (`wrapTrackedWidget`, `applyRowCollapseState`) and the `_touched` bookkeeping entirely; rows are back to plain widget references.
+
+**Real fix: reordered the row pools back** (plain rows first, LINES rows second) -- the exact opposite of Decision 123. Reasoning changed since then: the new GUI now opens by default on every station click (Decision 124), always landing on OVERVIEW first. Prioritizing the tab everyone sees immediately over LINES (a tab a player deliberately clicks into) is the better trade in practice. LINES goes back to sitting behind ~24 blank rows, same position it was in right after Decision 121, before this whole reordering saga started.
+
+**Banner cleanup**: window title changed from `"DD Central Manager (TEST)"` to a plain `"Central Manager"`; the header row's static `"DD Central Manager -- ACTIVITY still a placeholder"` dev note replaced with a new `describeHeader(hubStationGroupId)` function, refreshed every `M.refresh` call: `"Distribution Hub - <name>"` if `hub_registry.isEnabled` is true for the focused station, else `"Truck Station - <name>"` -- makes sense of why the window now opens for literally any selected station, not just configured hubs. `window:setTitle()` was deliberately NOT used for this (unverified whether it's safe to call every refresh) -- the update rides the same already-proven plain-textView-row path every other row already uses.
+
+**Action buttons laid out horizontally**: the 8-slot action-button pool now sits in a `gui.boxLayout_create(..., "HORIZONTAL")` row (same proven pattern as the tab row above it) instead of stacked one per line. Each label's width dropped from the full window width to a fixed 260px so 2-3 real buttons can sit side by side; a tab using more than that, or with longer text, will just widen the row (and window) to fit -- same auto-sizing-to-content behavior already seen with LINES' own rows.
+
+### Consequence
+
+Not yet live-tested. Watch for: OVERVIEW's content now sitting near the top; the header row correctly distinguishing an enabled hub from a plain station; whether 3 side-by-side 260px action buttons actually fit readably or need further width tuning.
+
+## Decision 127 — Second, simpler attempt at collapsing the inactive row pool (UNPROVEN)
+
+### What happened
+
+Player, after confirming OVERVIEW now shows immediately: "Now do the same for line[s] haha :D." LINES still sits behind ~24 blank plain rows (Decision 126's reordering only ever helps ONE of the two pools at a time -- fixing OVERVIEW necessarily put LINES back where OVERVIEW used to be).
+
+### Decision
+
+Rather than swap the order again (which would just move the problem back onto OVERVIEW), tried a second, simpler version of Decision 125's collapse idea. Two changes from the first attempt:
+
+1. **Style class strengthened**: `EpodTdCollapsedRow` now sets `size`, `minSize`, AND `maxSize` all to `{0, 0}`, not just `maxSize` alone -- on the theory that a TextView's own reported/preferred size is what the layout actually consults, and `maxSize` alone never bound tightly enough to override it.
+2. **Whole-pool collapse instead of per-row tracking**: exactly ONE of the two pools is ever relevant to a given tab -- only LINES uses `state.lineRows`, every other tab uses only `state.rows`. `applyInactivePoolCollapse(activeTab)` (`gui_manager.lua`) just collapses the ENTIRE inactive pool at once, no per-row `_touched` bookkeeping needed (Decision 125's whole wrapper/proxy mechanism is gone). Runs after `clearAllRows`/`clearAllLineRows` reset both pools to normal, but BEFORE the active tab's own `refresh()` -- the active pool stays normal so the tab can write real content into it as usual; the inactive pool gets collapsed and the tab never touches it again this frame.
+
+If this works, pool ORDER stops mattering at all -- both OVERVIEW and LINES (and every other tab) would show immediately regardless of which pool was built first. If it doesn't, this is harmless (same "no worse than status quo" property Decision 125 already established) and the row-pool order from Decision 126 remains the fallback that's still in effect underneath.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 128 — Collapse attempts abandoned; widened LINES labels instead (player's own idea)
+
+### What happened
+
+Player, testing Decision 127: "there still massive gap at top, maybe the names of the lines can go wider .. this migh allow more lines to show :) we have the space." Confirmed live: `size`/`minSize`/`maxSize` all `{0,0}` made zero visible difference, same as `maxSize` alone did in Decision 125. Two independent property combinations have now both failed to shrink this widget type in this game version.
+
+### Decision
+
+**Stopped trying to collapse unused rows.** Removed `applyInactivePoolCollapse` (`gui_manager.lua`) and the `EpodTdCollapsedRow` style class (`epod_td_stylesheet.lua`) entirely rather than leave a third guess or dead CSS around -- if this is ever revisited it needs real new evidence, not another property-combination guess.
+
+**Took the player's own suggested angle instead**: rather than shrinking blank rows, shrink how much space each REAL row needs. `LINE_ROW_LABEL_WIDTH` raised 260 -> 480 (`gui_manager.lua`, mirrored in `gui_tab_lines.lua`'s own copy of the constant, used wherever it calls `setText` directly). A long chain line's name (e.g. "Hessle Farm -> Looe Alcohol distillery -> Bath Food processing plant <-> Upper St Albans") was wrapping across 3 display lines at 260px; wider fits more of it per line, so more real destination rows become visible within the same `MAX_LINE_ROWS` budget without changing the pool size or order at all. The window already auto-widens to fit whichever tab's content needs the most horizontal space (established behavior since LINES' rows were first built), so this doesn't distort the OTHER tabs.
+
+### Consequence
+
+Not yet live-tested. Player explicitly flagged their own test environment is 4K and wants a lower-resolution check before trusting this value generally -- a wide window that looks fine at 4K could plausibly run off-screen or feel cramped at 1080p in a way it doesn't at higher resolutions. Genuinely open item, not assumed fine.
+
+## Decision 129 — LINES moved to its own standalone window, ending the row-pool-sharing saga
+
+### What happened
+
+Player, after widening the LINES label still didn't fix the gap: "still massive space up top.. why so complex haha." Fair question -- five decisions in a row (121/123/125/126/127/128) had all been variations on making two row pools coexist inside one window without one permanently pushing the other down, and none of the collapse attempts worked.
+
+### Root cause, stated plainly
+
+This UI toolkit cannot hide or remove a widget once created (the long-standing "native TF2 UI component IDs can't be recreated on demand" rule this whole codebase is built around). "DD Central Manager" had TWO row pools -- the plain one every other tab uses, and LINES' own icon-rich one -- and BOTH were always physically present in the window regardless of which tab was active. Whichever pool was built first in the layout permanently sat in front of the other, for any tab that didn't use it. Reordering only ever moved which tab suffered; two different attempts at shrinking the unused one via style properties (`maxSize` alone, then `size`/`minSize`/`maxSize` together) both had zero visible effect, live-confirmed twice.
+
+### Decision
+
+Stopped trying to make two pools share one window. LINES now lives in its own standalone window (`gui_lines_window.lua`), the exact same pattern `gui_debug_tests.lua` already uses -- opened via a new "[ Open Lines ]" button (OVERVIEW tab, action slot 4), not a tab inside "DD Central Manager" at all anymore. It owns its own dedicated row pool with nothing else ever competing for space in that window, so the gap problem cannot recur structurally, not just by tuning around it.
+
+`gui_tab_lines.lua`'s own rendering logic is completely unchanged -- `gui_lines_window.lua` just calls `tab_lines.refresh(nil, hubStationGroupId, nil, lineRows)` directly (the function only ever reads `hubStationGroupId` and `lineRows`, so `rows`/`actionButtons` being `nil` is fine). `gui_manager.lua` is simplified back down to a single row pool, added straight to `layout` -- the `contentLayout` wrapper Decision 121's scrollArea experiment introduced is gone too, since there's no second pool left to wrap alongside. Refreshed independently every `guiUpdate` tick, same call site as `gui_manager.refresh`.
+
+### Consequence
+
+Not yet live-tested. Watch for: the "Open Lines" button actually opening a separate window; that window showing content immediately (not needing a second click); and confirming the main "DD Central Manager" window still behaves correctly now that LINES' tab button and pool are gone (7 tabs instead of 8).
+
+## Decision 130 — Checked whether `setVisible` could have solved Decision 129's problem without a separate window; confirmed it can't; applied the other, real suggestions
+
+### What happened
+
+Player relayed an external analysis (correctly re-diagnosing Decision 129's root cause independently) proposing a different fix: wrap each row pool in its own container and toggle `container:setVisible(bool)` when switching tabs, keeping everything in one window instead of splitting LINES out. Player: "Lines in its own tab is a little dodgy, not really classy layout.. does this above info help in any ways?"
+
+### Checked against real evidence, not assumption
+
+`gui_tab_settings.lua`'s `dumpGameGuiModule()` has been logging the ENTIRE real `game.gui` table's contents every time the new GUI opens, all session -- real, live data already sitting in this session's own log, not something that needed a new test. Checked it directly:
+
+- Every `component_*` entry that actually exists: `component_addNavigation`, `component_create`, `component_setLayout`, `component_setStyleClassList`, `component_setToolTip`, `component_setTransparent` -- exactly the same list `gui.lua`'s wrapper already exposes, confirming gui.lua wraps 100% of the real component-level surface, nothing held back.
+- Every `boxLayout_*` entry: only `boxLayout_create` and `boxLayout_addItem`.
+- A `setVisible` DOES exist in `game.gui` -- but sitting directly between `setMissionComplete`, `setPlaylistOverride`, `setTaskProgress`, `showTask`, and `stopAction`. It belongs to the mission/tutorial task-tracker overlay, not general component visibility.
+
+**There is no `component_setVisible` or `boxLayout_setVisible` anywhere in the real API** -- not in `gui.lua`'s wrapper, not in the raw `game.gui` table it wraps. The proposed code would have failed exactly like the Decision 125/127 `maxSize` attempts did: `pcall` silently swallowing an "attempt to call nil value" error, doing nothing.
+
+### Decision
+
+Decision 129 (LINES as its own standalone window) stands -- not a workaround chosen out of laziness, but the only mechanism actually proven to isolate content in this codebase, confirmed by direct evidence rather than left as an assumption. The real diagnosis in that external analysis was correct; its proposed fix just doesn't exist in this game's real API. If a single unified window is wanted later, the only remaining real avenue is a genuine native `TabWidget` (TECHNICAL_RESEARCH.md -- documented, never tried) -- separate, bigger, unproven-in-this-mod territory, not a quick fix.
+
+**The rest of that analysis's suggestions were real and independent of the broken mechanism**, and got applied:
+
+- Dropped the "Waiting: " prefix on destination rows (`gui_tab_lines.lua`) -- the line's own header already states its total, repeating the word on every row was clutter.
+- Summary row ("N vehicles | N waiting") and destination waiting numbers now use `EpodTdMutedText` instead of default bright text.
+- Column widths retuned now that LINES has its own window and doesn't need to stay wide for any other tab's sake: label 480 -> 350, waiting 90 -> 60, cargo count 70 -> 45 (both `gui_tab_lines.lua` and `gui_lines_window.lua` updated together -- these are duplicated constants by necessity, one file builds the widgets, the other renders into them, and they must match exactly).
+- "DD Central Manager"'s tab bar given tighter padding and a smaller font size (`epod_td_stylesheet.lua`) -- both real, already-proven mechanisms in this file (`padding`, `fontSize`), no new API risk.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 131 — Proved `setVisible` works on a raw child component (not just a whole Window); built a scoped raw-system Central Manager proof to test merging LINES back into one window
+
+### What happened
+
+Player pushed back on Decision 129's two-separate-windows result: "didn't we remove the link to the Open Raw UI Experiment, add it to the Debug Tests list ;)" plus screenshots showing "Central Manager" and "LINES" as two visibly separate floating windows, and "we surely can get it into the GUI."
+
+### Re-examined the setVisible question -- new evidence Decision 130 missed
+
+Decision 130 checked `game.gui` (gui.lua's own wrapper table) and correctly found no generic visibility setter there. But `gui_experiment.lua` -- the raw `api.gui.comp.*` window, running safely all session -- already calls `window:setVisible(not currentlyVisible, false)` on a real `api.gui.comp.Window`. That's a DIFFERENT object system from `game.gui`; Decision 130 never actually tested it. Also found: the base game's own construction and finance menus fire real `tabWidget.currentChanged` events (`contexthelper.lua`, `guidesystem.lua`), meaning native `TabWidget` is a heavily-used, core engine component, not an edge case.
+
+Added a small, isolated probe to `gui_experiment.lua`: two demo panels, one hidden by default, one "Toggle Panel A/B (setVisible test)" button calling `panelA:setVisible(...)`/`panelB:setVisible(...)` on ordinary `api.gui.comp.Component` children (not the whole window), every attempt logged via `pcall`. **Live-confirmed working**: screenshots showed Panel A's text replaced by Panel B's text after the toggle click, and `stdout.txt` showed five consecutive toggles all `ok=true err=nil` for both panels.
+
+Cross-checked against the official bundled API reference (`api.gui.md`, shipped with the "Auto Line Namer" workshop mod, `tf2-api/docs/modules/api.gui.md`) -- confirms `comp.Component:setVisible(visible, emitSignal)` on the BASE component class (every raw widget has it), `comp.Component:addStyleClass(class)`/`removeStyleClass(class)` (singular, not gui.lua's list-based `setStyleClassList`), `comp.TextView:setText()` (no width parameter), `comp.Component:setMinimumSize(size)`/`setMaximumSize(size)` (taking a real `util.Size.new(w,h)`), and `comp.Window:onClose(callback)`/`close()` as real native calls. Also verified the player-relayed LineManager mod snippets (gameInfo-bar injection, nested-BoxLayout column trick) against the actual cached workshop file (`D:\Steam\steamapps\workshop\content\1066780\2581894757\res\config\game_script\linemanager.lua`) -- byte-for-byte real, not fabricated, and confirms LineManager never mixes `gui.lua` with the raw system either (no `require("gui")` anywhere in it), reinforcing that Decision 73's crash was specifically about MIXING the two systems, not raw being unsafe on its own.
+
+### Decision
+
+This unlocks a real path to merge LINES back into ONE window as a genuine show/hide panel instead of a separate window -- but every `gui_tab_*.lua` file is written against gui.lua's method shapes (`label:setText(text, width)`, `pcall(label.setStyleClassList, label, {...})`), which don't exist verbatim on raw components. Rather than rewrite all 8 tabs, built `raw_gui_compat.lua`: a compatibility layer exposing gui.lua's exact public shape (`window_create`/`boxLayout_create`/`textView_create`/`imageView_create`/`button_create`, plus a new `container_create` for tab-panel Components) backed entirely by the raw system, so existing tab modules run UNCHANGED against it. `setStyleClassList(list)` is built on top of raw's single-class `addStyleClass`/`removeStyleClass` by tracking currently-applied classes per wrapper and diffing. Fixed-width columns (used throughout `gui_tab_lines.lua`) are approximated via `setMinimumSize`/`setMaximumSize` since raw `TextView:setText` takes no width argument.
+
+Given the size of a full 8-tab migration, chose the scoped option (player's explicit choice over "full migration now" and "not yet") -- built `gui_central_raw.lua`, a SEPARATE, parallel window (opened only from Debug Tests, per Decision 124's "tests/debugs go there" rule) reusing `gui_tab_overview.lua` and `gui_tab_lines.lua` completely unchanged, with OVERVIEW and LINES as two real Component panels toggled via `setVisible` instead of a shared, clear-and-refill row pool. `gui_manager.lua` and `gui_lines_window.lua` are both untouched -- the real, live Central Manager keeps working exactly as it does today regardless of how this proof goes.
+
+### Consequence
+
+**Live-confirmed working.** Player tested: OVERVIEW and LINES tabs genuinely switch within the one "Central Manager (RAW PROOF)" window, screenshots show clean content on both tabs with no leftover blank space from the other tab's pool. Player's reaction: "success ;)" followed immediately by a request to extend it -- turn each line's name into a clickable button that expands its destination detail in place, and paginate if the managed-lines list is too long for one page.
+
+## Decision 132 — LINES accordion + pagination, built on Decision 131's proven `setVisible`
+
+### What happened
+
+Following Decision 131's live success, player asked: "So the line names could become little buttons, then it shows more detail on the same page form all these tests we have done? and if list too long it could ex[t]end to (page 2) and so on?" -- directly building on the just-proven mechanism.
+
+### Decision
+
+Rewrote `gui_tab_lines.lua`'s rendering from a flat "print every line and every destination into one shared pool" design into an accordion: each managed line is now a permanent header row (a real clickable button showing `[+]`/`[-]` + the line's name, with its "N vehicles | N waiting" summary always visible alongside it) plus a detail panel of destination rows, `setVisible`-collapsed unless that specific line is the one currently expanded. Only one line expands at a time, tracked by `state.expandedLineKey` -- keyed by the line's real entity id (not pool-slot index), so it survives page/hub switches correctly instead of pointing at "whatever now sits in slot 3." A pool of `MAX_LINE_GROUPS_PER_PAGE` (8) line-groups is pre-built once; a hub with more managed lines than that gets Prev/Next pagination controls (`state.currentPage`) instead of an ever-taller window. Both interaction states live inside `gui_tab_lines.lua` itself -- same precedent as `gui_tab_settings.lua` owning its own experimental-widget state -- since they're UI-only (what the player clicked), not simulation state.
+
+`gui_central_raw.lua`'s `buildLinesPanel` was rewritten to build this new nested pool shape (header button + summary label + collapsible detail `container_create` panel, per group) instead of the old flat row list, using the same "wire onClick once at build time, dispatch through a `.handler` field reassigned every refresh" pattern every other button pool in this codebase already uses.
+
+**`gui_lines_window.lua` -- the currently-live, real standalone Lines window -- was also ported**, not left behind: it was still built on `require("gui")` (gui.lua), which has no `setVisible` at all (Decision 130), so leaving it unchanged would have made its calls into the new accordion-shaped `gui_tab_lines.lua` fail silently (caught by its own `pcall`, but visibly broken -- the real window players actually use). Swapped its require to `raw_gui_compat.lua` and rebuilt its row-pool construction to match `gui_central_raw.lua`'s new grouped shape exactly -- the same low-risk swap `raw_gui_compat.lua` was designed for, since `gui_lines_window.lua` never called anything beyond gui.lua's shape to begin with.
+
+### Consequence
+
+**Live-confirmed working.** Player tested against Upper St Albans (19 managed lines, needs Prev/Next): expand/collapse via the header button worked, the previously-expanded line correctly collapsed when a different one was clicked, and Page 2/3 navigation worked. Player's reaction: "this is looking amazing... can we put it into main GUI?" plus "the spacing needs a little work but looks perfect" -- the visible gap where an expanded line's unused destination slots still took up space.
+
+Fixed the spacing note as part of the same pass, before the bigger migration below: each destination row is now ALSO individually wrapped in its own `container_create` container (not just the detail panel as a whole), `setVisible`-hidden unless that specific row is actually populated -- so a line with only 1-2 real destinations no longer reserves visible space for the other 4-5 unused slots in its pool.
+
+## Decision 133 — Ported the remaining 6 tabs; the raw-system window is now the one that auto-opens
+
+### What happened
+
+Immediately after Decision 132's live success, player asked directly: "can we put it into main GUI?"
+
+### Decision
+
+Read all 6 remaining `gui_tab_*.lua` files (Hubs, Services, Fleet, Terminals, Cargo, Activity, Settings) to confirm they all fit the same shape already proven safe for OVERVIEW and LINES: plain `M.refresh(rows, hubStationGroupId, actionButtons)`, calling only `setText(text, width)` / `setStyleClassList(list)` on whatever they're handed, nothing gui.lua-specific baked in. The one exception: `gui_tab_settings.lua` also exposes `M.build(layout)` (Decision 72's one-off Slider/ComboBox/ImageView experiment), which hardcodes `require("gui")` internally rather than receiving it as a dependency -- calling it against a raw-built layout would fail (its objects have no `._raw` field raw_gui_compat's `addItem` expects). Since that experiment already answered its own question (ImageView-in-gui.lua-tree is safe; `dumpGameGuiModule`'s findings are long since captured in DECISIONS.md/TECHNICAL_RESEARCH.md), chose not to invoke `M.build` at all in the new window rather than adapt it.
+
+Rewrote `gui_central_raw.lua` around one generic `buildSimplePanel(actionButtonCount)` helper (a small action-button-slot pool plus a `MAX_ROWS` plain-text-row pool) shared by every tab except LINES, replacing the bespoke `buildOverviewPanel` from Decision 131 -- OVERVIEW turned out to need exactly the same generic shape, just with 3 action-button slots instead of 0-2. `ACTION_BUTTON_COUNTS`, keyed by each tab module's own table reference (not a fragile index), records how many slots each tab actually claims. `TABS` now lists all 9: Overview, Lines, Hubs, Services, Fleet, Terminals, Cargo, Activity, Settings. `M.refresh`/`selectTab` dispatch generically -- LINES gets its own branch (different refresh signature, `state.lineGroups`/`state.linesPagination` instead of `rows`/`actionButtons`), everything else goes through `state.simplePanels[tabIndex]`.
+
+Repointed the REAL auto-open path: `epod_truck_distribution.lua`'s `handleStationSelection` and `guiUpdate` now call `gui_central_raw.onStationSelected`/`gui_central_raw.ensureVisible` (added to `gui_central_raw.lua`, matching `gui_manager.lua`'s own contract exactly) instead of `gui_manager`'s. `gui_manager.lua` and `gui_lines_window.lua` are NOT deleted -- kept as a reachable fallback: `gui_manager`'s window was retitled "Central Manager (Legacy)" (was going to collide with the new window's "Central Manager" title otherwise) and its existing `handleOpenNewGuiButtonClick` handler -- previously stranded on the now-unreachable old panel -- was registered into Debug Tests as "Open Central Manager (Legacy)". The Debug Tests "Open Central Manager (RAW PROOF)" entry from Decision 131 was removed (no longer needed now that it auto-opens) along with its now-dead handler function.
+
+### Consequence
+
+**LIVE-CONFIRMED CRASH, then fixed.** Player reported the window simply stopped opening at all ("gui doesnt open now haha"). The auto-open call sites had no error logging (neither the new ones nor, it turned out, the original gui_manager-era ones they were copied from) -- added logging first, which surfaced the real error: `raw_gui_compat.lua:105: sol: no matching function call takes this number of arguments and the specified types`, from `api.gui.util.Size.new(width, 0)`. Root cause: the tab bar computes each label's width as `WINDOW_WIDTH / #TABS` -- `560 / 2` (Decision 131's two-tab proof) is `280.0`, a "whole" float that coerces to an int argument fine, but `560 / 9` (Decision 133's nine-tab version) is `62.222...`, which has no valid int conversion. This never showed up until the tab count actually grew past a number that divides evenly. Fixed once, at the source, in `applyFixedWidth` (`math.floor(width + 0.5)` before every `Size.new` call) rather than requiring every division at every call site to remember to round -- protects `gui_lines_window.lua` and any future caller too, not just this one path.
+
+Also revealed a real, general Lua lesson worth keeping: `pcall(f, a, b)` evaluates `a` and `b` (the arguments) BEFORE calling `pcall` itself -- if building an argument (here, `Size.new(width, 0)`) throws, the exception happens outside pcall's protection entirely, escaping to whatever OUTER pcall happens to be listening, however far up the call stack that is. This is why the error surfaced as "ensureVisible FAILED" at the call site in `epod_truck_distribution.lua`, not inside any of this file's own internal `pcall(... setMinimumSize ...)` wrappers, which never got a chance to run.
+
+## Decision 134 — Toolbar button replaces auto-open; two more live-confirmed bugs found and fixed
+
+### What happened
+
+Once Decision 133's crash was fixed, player asked to change the opening behavior entirely rather than just confirm the fix: "maybe we take advantage of this and set it to a button in tool bar? (i'd prefer this then the player can decide when they want to use the mod and tune it)." Consistent with this player's standing preference for player-driven, opt-in tooling over anything that acts or appears on its own.
+
+### Decision
+
+Removed the auto-open calls from both `handleStationSelection` and `guiUpdate` entirely (no hybrid -- player chose toolbar-only over toolbar-plus-auto-open when asked). Added `ensureToolbarButton()` to `gui_central_raw.lua`, injecting a small "DD" button directly into the game's own bottom `"gameInfo"` bar -- the exact technique verified against LineManager's real cached source earlier this session (`api.gui.util.getById("gameInfo"):getLayout():addItem(...)`, a divider/button/divider trio), not just the player-relayed claim. Runs from inside `M.refresh` every tick until it succeeds once (`gameInfo` might not exist on the very first ticks), guarded by `state.toolbarButtonAdded` so it's a no-op after that. `state.lastHubStationGroupId` is now tracked on every refresh (regardless of visibility) specifically so the button's `onClick` -- which fires independently of the guiUpdate tick -- knows which station to open the window against.
+
+**Player then reported the window's native X close button did nothing.** Root cause: per the official docs, `comp.Window:addHideOnCloseHandler()` "Adds a default handler for onClose that hides the window when it is closed" -- meaning hiding-on-close is opt-in, not automatic, for a raw Window. This window's own `onClose(fn)` callback (tracking `state.closedByUser`) was firing correctly the whole time, but nothing had ever told the actual native window to disappear. `gui_experiment.lua`'s window already calls `addHideOnCloseHandler()` and works fine -- `raw_gui_compat.lua`'s `M.window_create` just never made the same call. Fixed by adding it there, universally, for every window this compat layer builds.
+
+**Player also asked for the window to open top-left and lock to roughly half the screen's width**, so switching tabs/pages (a wide SERVICES row, a LINES page with more destinations) stops resizing the whole window. Added real `setPosition`/`setMinimumSize`/`setMaximumSize` wrapper methods to `raw_gui_compat.lua` (confirmed real via the official docs: `comp.Window:setPosition(x,y)`, `comp.Component:setMinimumSize`/`setMaximumSize` on the base class). Screen dimensions come from `game.gui.getContentRect("mainView")` -- the same call `guidesystem.lua` (shipped base-game code) itself uses for screen-relative positioning, confirmed to return an INDEX-based `{x,y,width,height}` table (`[3]`=width, `[4]`=height) by that same shipped file's own `screenSize[3]`/`screenSize[4]` usage -- a genuinely different shape from the raw system's own named-field `Component:getContentRect()` (`.x`/`.y`), so the two must not be confused. Window is positioned at `(20, 20)` and its width locked to half the real screen width (min = max = that value), height left free between 0 and 85% of screen height.
+
+### Consequence
+
+Not yet live-tested. Three fixes bundled into one pass: toolbar button replacing auto-open, the X close button, and position/width locking. Worth checking each independently -- the toolbar button appears and toggles the window, X actually closes it now, and the window opens top-left at a stable ~50%-screen width that doesn't jump around when switching tabs or LINES pages.
+
+## Decision 135 — Reopen bug fixed (setVisible replaces close()); button-stretch width bug fixed; screen-lock diagnostics added
+
+### What happened
+
+Player tested Decision 134's three fixes: toolbar button worked, X closed the window -- but "after closeing the 1st time, DD refused to reopen." Separately, the width lock didn't visibly work: "the width is too much still .. maybe the buttons on 1st page too wide? ... the width seems to be locked but way too wide."
+
+### Decision
+
+**Reopen bug, root-caused**: `M.toggleVisibility`'s hide path called `window:close()` -- a genuinely destructive close, not a reversible hide (unlike `setVisible`). The next toggle-on call's `ensureWindow` saw `state.window ~= nil` and returned that same now-dead window reference immediately, with nothing left to actually make visible again. Rewrote `M.toggleVisibility` to toggle via `window:setVisible(...)` instead -- the exact mechanism `gui_experiment.lua`'s own toggle already uses successfully, and the same one the whole LINES accordion is built on. Also removed `ensureWindow`'s `if state.closedByUser then return nil end` guard -- that made sense under `gui_manager.lua`'s destroy-and-rebuild model, not this window's build-once-toggle-via-setVisible model, where it was actively blocking the second open.
+
+**Width bug, root-caused**: constraining a button's inner LABEL width does nothing to the BUTTON widget itself -- inside a horizontal row, an unconstrained button stretches to fill available space. This is exactly why three ~260px-intended action buttons spanned the entire (very wide) window evenly. Added `setMaximumSize` calls directly on every button in `gui_central_raw.lua` (action buttons, tab buttons, LINES header buttons, LINES Prev/Next) rather than only their labels.
+
+**Window-level lock, made diagnosable rather than re-guessed**: realized wrapping an already-`pcall`'d wrapper method in another `pcall` always reports `ok=true` trivially, regardless of whether the real underlying call succeeded -- a genuine trap in this codebase's own established pattern. Changed `raw_gui_compat.lua`'s `setMinimumSize`/`setMaximumSize` to return their own `ok, err` instead of swallowing it, and added log lines reporting the actual `game.gui.getContentRect("mainView")` values and whether the resulting `setMinimumSize`/`setMaximumSize` calls genuinely succeeded -- rather than guess a third time whether the 50%-width lock is actually being applied.
+
+### Consequence
+
+Not yet live-tested. The reopen fix and button-width fix are both root-caused against confirmed mechanisms (setVisible, per-widget size caps) and should hold. The window-level lock's actual effect is still an open question -- the new log lines (`GUI CENTRAL RAW: screenRect lookup ...` and `GUI CENTRAL RAW: width lock ...`) will show definitively whether it's applying a sane half-screen value or failing silently, without needing another round of guessing.
+
+**Update from the actual log**: `screenRect lookup ok=true value=... [1]=0 [2]=0 [3]=3840 [4]=2400` and `width lock halfScreenWidth=1920 maxHeight=2040 setMinimumSize ok=true ... setMaximumSize ok=true ...` -- the diagnostic worked exactly as intended: correct real screen dimensions (3840x2400), correct computed half-width (1920), and both calls genuinely reported success. Yet the player's screenshot still showed the window spanning the full screen. Conclusion: `setMinimumSize`/`setMaximumSize` on this Window type are accepted by the API (no error) but do not actually constrain its rendered size -- likely a manual-resize-range hint rather than a layout-affecting bound, given this engine's own Window class. See Decision 136 for the follow-up.
+
+## Decision 136 — setSize instead of setMinimumSize/setMaximumSize; tab bar shortened to codes plus a section heading
+
+### What happened
+
+Following Decision 135's diagnostic, player confirmed: "the width is still 100% again be nice if it was 50-75%." Also flagged the tab bar was unreadable ("see the button names are cut off maybe we make a set of icons the name of the section could be a heading top of each page (under the tab buttons) Big bold letters") and asked directly whether FLEET is redundant with SERVICES.
+
+### Decision
+
+**Width**: switched from `setMinimumSize`/`setMaximumSize` to `comp.Window:setSize(size)` -- a direct "set the current size to this" call (confirmed real in the official docs) rather than a negotiated range, which Decision 135's own log proved this window type doesn't respect for its actual rendered size. Locked to 60% of real screen width (player revised their ask to "50-75%", so 60% sits comfortably inside that with room either way) via the same `game.gui.getContentRect("mainView")` read. Kept the `setMinimumSize`/`setMaximumSize` calls alongside `setSize` rather than removing them -- both still report success with no observed downside, and might still matter for manual-resize bounds even though they don't drive the initial rendered size.
+
+**Tab bar readability**: rather than build real icon assets (a genuine content-creation task, not a code change -- this mod has no bundled generic UI icon set, only real cargo-type icons pulled from the base game), shortened each tab button to a fixed 3-letter code (`TAB_SHORT_LABELS`: OVW/LNS/HUB/SVC/FLT/TRM/CGO/ACT/SET) and added a new, separate, always-visible heading (`state.sectionHeadingLabel`, styled via a new `EpodTdSectionHeading` class at `fontSize = 26`) directly under the tab row, showing the ACTIVE tab's real full name (`getLabel()`, untouched everywhere else -- log messages still read correctly). This fixes the cut-off problem regardless of whatever the actual rendered tab-button width ends up being, sidestepping the still-unresolved question of whether button-level `setMaximumSize` genuinely constrains anything either (Decision 135's fix for button-stretching hadn't been independently re-confirmed at this point).
+
+**FLEET vs SERVICES**: not resolved here -- flagged back to the player rather than unilaterally removed, since there's a real (if narrow) distinction worth weighing: SERVICES shows current-vs-Planner's-target-vs-delta (a staffing/allocation view), FLEET shows current-vehicles-vs-waiting-cargo with an explicit "idle" flag (a utilization view) -- a line could sit exactly at its planner target (delta=0) while still being genuinely idle (nothing waiting to carry), a case SERVICES' own columns don't surface. Whether that distinction is worth a whole separate tab, now that screen space is under real pressure, is a scope call for the player to make, not something to decide unasked.
+
+### Consequence
+
+Not yet live-tested. If `setSize` behaves the same as `setMinimumSize`/`setMaximumSize` did (accepted, no visible effect), the next real lead would be `setResizable(false)` plus investigating whether TF2 windows only respect an explicitly-set size if applied AFTER the window has been shown at least once, or whether this Window type simply always sizes to fit content regardless -- both untested theories, not yet acted on.
+
+## Decision 137 — FLEET dropped; its idle signal folded into SERVICES
+
+### What happened
+
+Following up on the FLEET-vs-SERVICES question raised in Decision 136, player decided directly: "Im all for dropping the Fleet page. Less the better ;)" and specifically asked for FLEET's idle flag to move into SERVICES as a visual marker, framed as part of a broader goal -- "make it less cluttered with smart visuals to bring it to life."
+
+### Decision
+
+Removed `tab_fleet` from `gui_central_raw.lua`'s `TABS` list, its require, and its `TAB_SHORT_LABELS` entry -- `gui_tab_fleet.lua` itself is untouched and NOT deleted, since `gui_manager.lua` (the "Central Manager (Legacy)" fallback) still lists it as one of its own 8 tabs and must keep working unmodified.
+
+Folded FLEET's one genuinely distinct signal into `gui_tab_services.lua`: a line with nothing waiting to carry (`lineInfo.waiting == 0`) is now flagged with a plain `"! "` ASCII marker prefix and a new `EpodTdIdleText` style (a distinct red, `{0.95, 0.35, 0.35, 1}`) -- deliberately NOT reusing the `"\xE2\x97\x8f "` glyph every managed line's real name already carries (that marker means something else to the player; reusing it here for an unrelated condition would be confusing). Idle takes visual priority over the existing "short of planner target" warning (a line can be exactly at its target and still idle -- these are genuinely different conditions, not duplicates, so both get checked independently even though only one style applies at a time).
+
+This is a text-based stand-in, not the real icon the player asked for ("an icon (red dot) even to indicate its idol[e]") -- deferred pending the player's own custom icon assets (research in progress on the exact technical requirements: format, size, path convention for a mod's own bundled textures, since this mod has so far only ever referenced base-game icon paths, never shipped its own).
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 138 — Real tab icons wired in; PNG converted to the confirmed-safe TGA format
+
+### What happened
+
+Player had already made 6 custom tab icons (Overview, Hubs, Fleet, Terminals, Activity, Settings) in `res/textures/ui/` before the icon-format research (Decision 137's write-up) had even been relayed back, and asked to check the folder.
+
+### Decision
+
+Found the icons were `.png`, 32x32, 8-bit grayscale -- exactly the right size/color-depth per the confirmed research, just the wrong container format (no shipped mod anywhere was found using `.png` for `ImageView.new`, only `.tga`). Rather than risk shipping an unconfirmed format, converted all 6 losslessly to matching 8-bit grayscale, top-left-origin, uncompressed `.tga` files -- no image-editing tool was available in this environment (no Python, no ImageMagick), so wrote the 18-byte TGA header and raw pixel bytes directly via a small PowerShell script using .NET's built-in `System.Drawing.Bitmap` to decode the source PNGs. Verified byte-correct: file size exactly 18 + (32*32) = 1042 bytes, header fields decoded and cross-checked by hand (image type 3, width/height 32, bit depth 8, descriptor 0x20 for top-left origin).
+
+Wired real icons into `gui_central_raw.lua`'s tab bar via a new `TAB_ICON_PATHS` table (keyed by tab module, same pattern as `ACTION_BUTTON_COUNTS`/`TAB_SHORT_LABELS`) -- a tab with an icon gets an `ImageView`-based button (capped to 40x40 via `TAB_ICON_BUTTON_SIZE`) instead of the short-text button from Decision 136; a tab without one (LINES/SERVICES/CARGO don't have icons yet) falls back to the existing short-text code unchanged, so a partial icon set never breaks anything. Active/inactive state for icon tabs is conveyed entirely by the button's own background style (`EpodTdTabActive`/`EpodTdTabInactive`) -- there's no text to prefix with "> " the way text tabs get.
+
+**Caught a real bug while wiring this up, before it ever ran**: icon tabs deliberately leave `state.tabButtonLabels[index]` as `nil` (no text label exists to update). `selectTab`'s per-tab loop was iterating via `ipairs(state.tabButtonLabels)` -- `ipairs` stops dead at the first `nil` hole in a sequence, and since tab 1 (OVERVIEW) now has an icon, the ENTIRE loop would have silently executed zero times the moment any tab before the last one got an icon, breaking active/inactive styling for every tab, not just icon ones. Fixed by iterating `ipairs(TABS)` instead (always fully populated) and reading `state.tabButtonLabels[index]` inside the loop, only touching it when non-nil.
+
+### Consequence
+
+**Live-confirmed working.** Player: "they look great ;)" -- screenshot showed 5 real icons rendering cleanly as white glyphs on the tab buttons' colored background (confirms the grayscale-icon convention does get tinted/colored by the UI, not rendered flat gray). Player then made icons for the remaining 3 tabs (LINES/SERVICES/CARGO), again as `.png` -- same conversion applied, all 8 tabs now have a real icon, `TAB_SHORT_LABELS` no longer actively used by any tab but left in place as a fallback safety net.
+
+## Decision 139 — 8-tabs-to-4 consolidation, batch 1 (the cheap wins)
+
+### What happened
+
+Following the tab-consolidation critique (which split the proposal into cheap UI moves vs. real new logic vs. genuinely new features), player agreed with the suggested order and said "lets go with this plan start part 1."
+
+### Decision
+
+Three low-risk items landed together:
+
+- **ACTIVITY dropped** from `gui_central_raw.lua`'s `TABS`, same treatment as FLEET (Decision 137) -- removed from the require list, `TABS`, `TAB_SHORT_LABELS`, `TAB_ICON_PATHS`. It was always a placeholder ("not built yet," its own header comment), so nothing real is lost. `gui_tab_activity.lua` stays untouched for `gui_manager.lua`'s Legacy fallback.
+- **Terminal number folded into LINES' summary line** -- `gui_tab_lines.lua` now requires `lines.lua` and calls the same `lines.getStopTerminal(lineInfo.id, hubStationGroupId)` TERMINALS already uses, with the same confirmed `+1` display offset (Decision 21). Summary line reads "N vehicles | N waiting | T2" instead of needing a separate page to look this up. `LINE_SUMMARY_WIDTH` widened 200 -> 260 in all three places it must match exactly (`gui_tab_lines.lua`, `gui_central_raw.lua`, `gui_lines_window.lua`) to fit the extra text.
+- **Green "Distribution Hub - X" banner removed**, folded into the same heading that already names the active section (Decision 136) -- one row instead of two, reading e.g. "LINES | Distribution Hub - Upper St Albans". New `describeSectionHeading(tabIndex, hubStationGroupId)` combines the tab name with the existing `describeHeader` hub description, joined with " | " (plain ASCII, already proven throughout this codebase's own "N vehicles | N waiting" text) rather than an untested glyph like an em dash -- only "\xE2\x97\x8f" and the arrow character have ever been confirmed to render in this font. Moved the update call from `selectTab` (fired only on tab switch) into `M.refresh` (fires every tick) so the heading's hub name stays correct if the player selects a different station on the map without switching tabs -- the old two-row version had this same tick-level update on the banner already; folding into one row had to preserve that or the heading would go stale between tab switches.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 140 — Cargo icons on LINES fixed (setImage needed a second argument all along)
+
+### What happened
+
+Player, testing batch 1 of the tab consolidation, flagged separately: "things to note when working on the lines pages, we lost the icons" -- a screenshot of an expanded line's destination rows showed only bare numbers, no cargo-type icons, next to each waiting count.
+
+### Decision
+
+Checked real shipped-mod usage (TPF2-Timetables, AI Builder -- the same cached-file verification standard used throughout this session) for `comp.ImageView:setImage`. Every single confirmed real call passes TWO arguments: `imageView:setImage(path, bool)` -- e.g. `x:setImage("ui/timetable_line.tga", false)`. `raw_gui_compat.lua`'s `setImage` wrapper was calling it with only one. Against a strict sol2 binding this is almost certainly the exact "no matching function call" class of error Decision 134 already found for `Size.new` with wrong argument types -- silently swallowed by this method's own internal `pcall`, meaning the icon was likely NEVER actually updated past its initial blank placeholder image on any row, from the moment the raw port first built these rows (Decision 131/132), not a new regression from today's batch-1 work. Fixed by always passing a second argument (`false`, matching the large majority of real confirmed usages -- the exact meaning of that argument is unconfirmed, plausibly a resize/rescale flag, but shipped mods are consistent enough on the value to copy with confidence).
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 141 — TERMINALS dropped, confirmed redundant by the player after seeing real T-numbers on LINES
+
+### What happened
+
+Player tested Decision 139's terminal-number addition to LINES (screenshot confirmed real T2/T3/T4/etc. values on every line's summary) and confirmed directly: "safe to remove the terminals tab now too ;)".
+
+### Decision
+
+Removed `tab_terminals` from `gui_central_raw.lua`'s `TABS`, `TAB_SHORT_LABELS`, `TAB_ICON_PATHS`, and its require -- same treatment as FLEET (Decision 137) and ACTIVITY (Decision 139). `gui_tab_terminals.lua` stays untouched, still used by `gui_manager.lua`'s "Central Manager (Legacy)" fallback. Window is down to 6 tabs now: Overview, Lines, Hubs, Services, Cargo, Settings -- two away from the agreed 4-tab target (Services -> Lines and Hubs -> Overview are batches 2/3, not yet started).
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 142 — "Re-Organize Terminals" moved from OVERVIEW onto LINES
+
+### What happened
+
+Player: "we still want the resort terminals button, but that could go onto the Lines page, logical sense ;)" -- following naturally from LINES now showing each line's own terminal number (Decision 139) and TERMINALS being dropped entirely (Decision 141).
+
+### Decision
+
+Moved the action wholesale: `gui_tab_overview.lua`'s old slot 2 ("Re-Organize Terminals," `terminal_allocator.spreadLinesAcrossTerminals`) removed outright, its `require("epod_td.terminal_allocator")` removed with it. Distribution Hub toggle renumbered from slot 3 down to slot 2 to fill the gap -- OVERVIEW now claims 2 action-button slots, not 3 (`gui_central_raw.lua`'s `ACTION_BUTTON_COUNTS[tab_overview]` updated to match). Also removed OVERVIEW's long-dead "Open Lines" slot 4 block and its `gui_lines_window` require while in there -- LINES has been a real tab since Decision 131, so a button opening a whole separate window for it stopped making sense a while ago, and the slot was never even allocated (`ACTION_BUTTON_COUNTS[tab_overview]` has been 2-3 for a while, never 4).
+
+`gui_tab_lines.lua` gained the same operation_lock-guarded sequence, unchanged in substance, just relocated and re-logged under "LINES TAB:". Since LINES is built by `buildLinesPanel` rather than the generic `buildSimplePanel` every other tab uses, it never had its own action-button pool at all -- added one (`LINES_ACTION_BUTTON_COUNT = 1`, `state.linesActionButtons`) using the exact same "wire onClick once at build time, dispatch through a `.handler` field reassigned every refresh" pattern every other action-button pool in this codebase already uses. `M.refresh`'s LINES branch now clears and passes this real pool through as `tab_lines.refresh`'s 3rd argument, which had always been hardcoded `nil` before (that parameter existed in the function signature from the start but nothing ever used it).
+
+**Note**: `gui_lines_window.lua` -- the old standalone Lines window -- is now GENUINELY unreachable, not just redundant: nothing anywhere calls its `M.toggleVisibility()` anymore (confirmed via search, the "Open Lines" button removed here was its last caller). Left as-is rather than updated to match this new action-button pool, since there's no way to ever reach it to notice the difference -- flagged as a real candidate for deletion in a future cleanup pass, not touched now.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 143 — Clickable hub list on OVERVIEW; HUBS tab dropped
+
+### What happened
+
+Player: "Lets Move Hubs to main page .. have them Listed (maybe ad button) but only the one selected showing is green? other buttons darker or something... you decide on the ability and the design.. if you select a different hub then its data takes over the GUI." This is the exact feature flagged as an open design question in `IDEAS.md` ("Clickable Hub List on Overview") -- the map-vs-GUI-selection precedence question raised there needed answering before writing any code, not guessed at.
+
+### Decision
+
+**The design question, resolved**: introduced `state.viewedHubStationGroupId`, a GUI-owned "currently viewed hub" independent of the map. Every `M.refresh(hubStationGroupId)` call compares the incoming (raw, map-driven) `hubStationGroupId` against `state.lastMapHubStationGroupId` (the last raw value seen) -- if it changed, a genuine new map click happened and `viewedHubStationGroupId` is cleared (map wins). If unchanged, whatever the player chose via the GUI wins (`effectiveHubStationGroupId = state.viewedHubStationGroupId or hubStationGroupId`), and everything downstream (heading, active tab's refresh) uses that effective value instead of the raw one.
+
+**Two real bugs caught and fixed before ever running**, both stemming from stale/wrong values feeding this new precedence check:
+- The tab bar's own `button:onClick` closures were capturing `hubStationGroupId` from `ensureWindow`'s parameter at window-BUILD time (once, ever) -- harmless before this decision (the next guiUpdate tick's real refresh always overwrote it), but would now make every tab click look like a fresh map selection, silently discarding an active hub-switch. Fixed to read `state.lastMapHubStationGroupId` live instead.
+- The toolbar button's reopen handler was passing `state.lastHubStationGroupId` (the EFFECTIVE, possibly-switched value) back into `M.toggleVisibility` -- would have corrupted `lastMapHubStationGroupId` tracking by overwriting the raw signal with an effective one. Fixed to pass `state.lastMapHubStationGroupId` (the raw one) instead.
+
+**The hub list itself**: moved wholesale from the now-dropped `gui_tab_hubs.lua` into a new `renderHubButtons` function in `gui_tab_overview.lua`, reading the same `hub_registry.getEnabledHubs()` + `stations.getEntityName()` HUBS always used. Renders unconditionally, even with no hub selected at all, so a player can pick their very first hub straight from this list. Styling reuses the tab bar's own proven `EpodTdTabActive`/`EpodTdTabInactive` classes verbatim -- the exact green-vs-dark look already live-confirmed working, no new style risk. `gui_tab_overview.lua` never touches `gui_central_raw.lua`'s state directly -- it's handed a plain `onSwitchHub` callback (wrapping `switchViewedHub`) and calls that when a hub button is clicked, keeping the established "GUI tabs only render" boundary intact.
+
+**Structural changes to support this**: OVERVIEW moved off the generic `buildSimplePanel` onto its own bespoke `buildOverviewPanel` (mirroring how LINES already has its own `buildLinesPanel`) -- extracted the action-button-row-building logic out of `buildSimplePanel` into a shared `buildActionButtons(panelLayout, count)` helper so both panel builders use the identical, already-proven button-pool pattern rather than duplicating it. New `MAX_HUB_BUTTONS = 12` pre-allocated pool (generous headroom over the 3 hubs seen in testing so far; no pagination built for this list since it wasn't asked for and the exact same Prev/Next pattern LINES already proves out could be added later if a save ever actually needs it).
+
+**HUBS tab dropped** the same way as FLEET/ACTIVITY/TERMINALS -- its only two jobs (list enabled hubs, toggle Distribution Hub) are both now covered on OVERVIEW (the hub list here, the toggle since Decision 124). `gui_tab_hubs.lua` stays untouched for the Legacy fallback. Window is down to 5 tabs: Overview, Lines, Services, Cargo, Settings -- exactly the agreed 4-tab target plus Settings kept separate, matching the original consolidation proposal.
+
+### Consequence
+
+Not yet live-tested. This is the biggest single change of the consolidation -- worth specifically checking: clicking a hub in the list actually switches every tab's content (not just Overview's own rows), the active hub reads visibly green vs the others dark, and that selecting a genuinely different station on the map correctly overrides an in-GUI hub choice rather than the two fighting each other.
+
+## Decision 144 — Hub-list spacing gap fixed (same root cause, same fix, as the LINES accordion)
+
+### What happened
+
+Player tested Decision 143 live: hub switching worked exactly as designed (Upper St Albans shown green/active, Poole Sidings/Lower Wendover dark/inactive, clicking one takes over the whole window) -- "does as expected perfectly" -- but flagged a large visible gap between the 3 real hub rows and the info content below.
+
+### Decision
+
+Same root cause as the LINES accordion's own spacing bug (Decision 132): `MAX_HUB_BUTTONS` pre-allocates 12 button slots, but blanking an unused slot's TEXT was the only thing being done to it -- a button's height doesn't collapse just because its label is empty, so all 9 unused slots were still taking up their normal row height below the 3 real hubs. Applied the exact same already-proven fix: `slot.button:setVisible(false)` on unused slots, `setVisible(true)` when a real hub occupies that slot -- collapsing them to true zero height instead of blank space, the same mechanism the LINES destination rows already rely on.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 145 — SERVICES merged into LINES; window down to the agreed 4 tabs plus Settings
+
+### What happened
+
+Player, comparing LINES and SERVICES side-by-side live, proposed combining them (with a detailed structure: target/delta folded into LINES' own rows, Apply Fleet Plan to LINES, Build Supply Chains to CARGO, full diagnostic table preserved behind Debug/Diagnostics) and asked for feedback. Agreed with the direction. Follow-up request: color the delta number itself red (negative) / white (zero) / green (positive), independent of the rest of the line's summary text.
+
+### Decision
+
+**Delta coloring, confirmed and built**: a style class colors an entire TextView's string, never a sub-span within one -- confirmed by every prior styling use in this codebase (whole-row coloring only). The old single `summaryLabel` ("N vehicles | N waiting | T2") was split into three separately-colorable widgets (`vehiclesLabel`, `deltaLabel`, `waitingTerminalLabel`) so the delta number specifically could carry its own style independent of its neighbors. Two new classes added: `EpodTdDeltaNegative` (red) and `EpodTdDeltaPositive` (green); zero delta gets no class at all (default/unstyled text already reads bright near-white in this window, satisfying "white" without inventing a third class).
+
+**Real planner integration, not just a UI move**: `gui_tab_lines.lua` now requires `planner.lua` and `dispatcher.lua`. Confirmed via direct source read that `planner.calculateTargetAllocation`'s result entries carry `id = candidate.id` -- the SAME id space `vehicles.getManagedLinesForStation`'s own `lineInfo.id` uses (already proven compatible, since `dispatcher.applyPlan` has been moving real vehicles by this exact id for a long time). Computed once per refresh (not once per line) into a `planByLineId` lookup table, then read per line when rendering -- `delta = target - current` (planner.lua's own established convention: positive means short of target).
+
+**Actions relocated, not duplicated**: "Apply Fleet Plan" moved wholesale from SERVICES into LINES' own action-button pool (`LINES_ACTION_BUTTON_COUNT` 1 -> 2, alongside Decision 142's Re-Organize Terminals). "Build Supply Chains" moved wholesale into CARGO (`gui_tab_cargo.lua` gained its first-ever action-button slot) -- player's own framing, "that's a cargo/supply-network action, not fleet/line management," and CARGO already surfaces the exact under-served-cargo signal the action addresses.
+
+**Diagnostic table preserved without building anything new**: checked what Debug Tests' existing "Show Fleet Plan (DEBUG)" button already does -- it calls `planner.logTargetAllocation(hubStationGroupId, hubName)`, which already logs the exact same Current/Target/Waiting/Delta breakdown SERVICES showed live, per hub. Nothing needed building; this was already reachable.
+
+**SERVICES dropped** from `gui_central_raw.lua`'s `TABS` -- same Legacy-fallback treatment as FLEET/ACTIVITY/TERMINALS/HUBS (`gui_tab_services.lua` untouched, still one of `gui_manager.lua`'s 8 tabs). Window is now exactly the agreed target: Overview, Lines, Cargo, Settings -- four tabs plus Settings kept separate, matching the original consolidation proposal precisely.
+
+**`gui_lines_window.lua` deleted outright** (not just left dormant) -- confirmed genuinely unreachable since Decision 142 removed its last caller (OVERVIEW's old "Open Lines" button), re-confirmed via a fresh search before deleting. Its own refresh call and require removed from `epod_truck_distribution.lua`.
+
+### Consequence
+
+Not yet live-tested. Worth specifically checking: the delta numbers show the right sign/color for lines genuinely over/under their planner target, Apply Fleet Plan on LINES and Build Supply Chains on CARGO both fire correctly, and that dropping SERVICES didn't leave any stray reference (the Legacy "Central Manager (Legacy)" fallback should be completely unaffected, still showing SERVICES as its own tab unchanged).
+
+## Decision 146 — "Push Full Reallocation" button on LINES
+
+### What happened
+
+Player, pleased with the merged LINES/SERVICES view, asked for one more thing: "the only thing missing is maybe Push for realocation manual button?" Asked to clarify against the existing Apply Fleet Plan button before building anything; confirmed it should be a stronger/full version of it, for a hub with many small imbalances scattered across different lines rather than one big one (exactly what the screenshot showed: Poole Sidings at +1/-2/0/+1/+1/0/+1/-1 across 8 lines on one page).
+
+### Decision
+
+**Checked what could go wrong before building it**: `dispatcher.lua`'s own header confirms `MAX_MOVES_PER_RUN`/`MAX_ATTEMPTS_PER_RUN` were added specifically to avoid "rebalanc[ing] an entire fleet in one blind click," and -- more importantly -- per-vehicle and per-line-direction cooldowns (Decisions 32/33) exist because rapid repeated runs caused REAL, OBSERVED flapping (a line's correction reversing itself one run later, using different trucks). A naive "just call applyPlan in a loop until nothing moves" button would immediately run into these cooldowns after the first pass and could look broken (stopping early) without the player understanding why -- or worse, if built by bypassing the cooldowns instead of respecting them, could reintroduce the exact flapping problem those decisions fixed.
+
+**Built to chain, not bypass**: new `runPushIteration` in `gui_tab_lines.lua` calls `dispatcher.applyPlan` recursively -- each next call only fires from INSIDE the previous call's own `onComplete`, so it only ever starts once the prior run has genuinely, fully finished (the same reentrancy guard that would refuse an overlapping call is never even triggered, since there's never an overlap). Neither the per-run move/attempt caps nor the cooldowns are bypassed -- a line/vehicle touched in pass 1 correctly sits out pass 2, which is exactly why the chain stops naturally once nothing NEW is eligible, rather than needing to be told to stop. A hard `MAX_PUSH_ITERATIONS = 5` ceiling still applies regardless (5 passes x up to 5 moves = up to 25 vehicles per click, a real step up from a single Apply Fleet Plan click without being unbounded). The completion log explicitly notes early stops may just mean "still cooling down, see Decisions 32/33" rather than "nothing left to fix," so this isn't a silent surprise if it stops after 1-2 passes.
+
+Added as LINES' 3rd action-button slot (`LINES_ACTION_BUTTON_COUNT` 2 -> 3), alongside Re-Organize Terminals and Apply Fleet Plan.
+
+### Consequence
+
+Not yet live-tested. Worth specifically checking: does it actually run multiple passes on a hub with scattered small deltas (like Poole Sidings), and does it correctly decline to move the same lines/vehicles a second time within one click (proving the cooldown really does apply mid-chain, not just across separate manual clicks).
+
+## Decision 147 — Blank delta explained: not every managed line is on THIS hub's fleet plan
+
+### What happened
+
+Player noticed a real gap: one line ("Poole Sidings ↔ St Albans Quarry - St Albans + ...") showed no delta number at all while every other line on the page had one.
+
+### Decision
+
+Root-caused against the real source rather than guessed: `planner.calculateTargetAllocation`'s own `collectManagedLineCandidates` excludes any line where `line_ownership.isOwnedByOther(lineId, hubStationGroup)` is true, or where the line doesn't resolve to exactly one non-hub destination -- criteria stricter than `vehicles.getManagedLinesForStation`'s own (looser) rules for which lines appear in the LINES list at all. A line touching two hub-adjacent areas (matching this line's own name) is the most likely case: it's genuinely owned by a DIFFERENT hub, so ITS planner run calculates the target once, rather than this hub double-counting it. Not a bug -- correct, existing, deliberate exclusion logic that simply wasn't visible before target/delta existed anywhere in the UI.
+
+Since a blank cell reads as a rendering glitch rather than "not applicable," `gui_tab_lines.lua`'s delta rendering now shows `"n/a"` (muted style) instead of an empty string whenever `planByLineId` has no entry for that line.
+
+### Consequence
+
+Not yet live-tested.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

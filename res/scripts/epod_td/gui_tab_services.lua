@@ -227,7 +227,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
     local rowIndex = 1
 
     rows[rowIndex].label:setText(
-        "Service                              Current  Target  Waiting  Delta",
+        "   Service                           Current  Target  Waiting  Delta",
         560
     )
     pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdTableHeader" })
@@ -244,23 +244,47 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
                 and ("+" .. tostring(lineInfo.delta))
                 or tostring(lineInfo.delta)
 
+        -- Decision 137: FLEET's one distinct signal (a line with
+        -- nothing waiting to carry -- genuinely idle, not just short of
+        -- its planner target) folded in here rather than kept as its
+        -- own tab ("less the better," player's own words). A line can
+        -- sit exactly at target (delta=0) while still being idle, so
+        -- this is a real, separate condition from the delta check
+        -- below, not a duplicate of it. Plain "! " ASCII marker rather
+        -- than reusing "\xE2\x97\x8f " (the "*" line-name marker
+        -- managed_registry.lua already gives every line) -- that glyph
+        -- already means something else to the player, so reusing it
+        -- here for a completely different meaning would be confusing.
+        -- Real icon-based version (a small red-dot image) to follow
+        -- once the player's own custom mod icon assets exist.
+        local isIdle = lineInfo.waiting == 0
+        local idleMarker = isIdle and "! " or "  "
+
         rows[rowIndex].label:setText(
-            string.format(
-                "%-36s %7d %7d %8d %7s",
-                stripManagedLineMarker(tostring(lineInfo.name)):sub(1, 36),
-                lineInfo.currentVehicleCount,
-                lineInfo.targetVehicleCount,
-                lineInfo.waiting,
-                deltaText
-            ),
+            idleMarker
+                .. string.format(
+                    "%-36s %7d %7d %8d %7s",
+                    stripManagedLineMarker(tostring(lineInfo.name)):sub(1, 36),
+                    lineInfo.currentVehicleCount,
+                    lineInfo.targetVehicleCount,
+                    lineInfo.waiting,
+                    deltaText
+                ),
             560
         )
 
-        -- delta = target - current (planner.lua): positive means this
-        -- service is short of the fleet it needs -- the row worth a
-        -- player's attention first.
-        if lineInfo.delta > 0 then
+        -- Idle takes priority over the understaffed warning below --
+        -- a line with nothing to carry is worth a player's attention
+        -- first, regardless of whether it also happens to be short of
+        -- its planner target.
+        if isIdle then
 
+            pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdIdleText" })
+
+        elseif lineInfo.delta > 0 then
+
+            -- delta = target - current (planner.lua): positive means
+            -- this service is short of the fleet it needs.
             pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdWarningText" })
 
         end
