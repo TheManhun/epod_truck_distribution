@@ -60,6 +60,7 @@ local industry_recipes = require("epod_td.industry_recipes")
 local hub_registry = require("epod_td.hub_registry")
 local line_ownership = require("epod_td.line_ownership")
 local operation_lock = require("epod_td.operation_lock")
+local truck_station_finder = require("epod_td.truck_station_finder")
 local gui_manager = require("epod_td.gui_manager")
 local gui_central_raw = require("epod_td.gui_central_raw")
 local gui_experiment = require("epod_td.gui_experiment")
@@ -969,6 +970,427 @@ end
 
 
 -- ============================================================
+-- TRUCK STATION SURVEY (config.DEBUG only)
+--
+-- First real, live test of a global station enumeration approach
+-- researched (not yet tried in THIS codebase) for the "list every
+-- truck station, let the player pick which become hubs, flag the
+-- ones servicing a factory" idea (documents/IDEAS.md, TECHNICAL_
+-- RESEARCH.md). api.engine.system.stationSystem.forEach is confirmed
+-- documented AND confirmed live-used in a real shipped mod (AI
+-- Builder, workshop id 2820656841) -- but every other piece here
+-- (station.cargo, station.carriers.ROAD, station.stationGroup) is
+-- new to THIS mod's own live testing, so this is a pure read-only
+-- probe: enumerate, filter, log counts + a full per-station dump to
+-- a report file. Moves nothing, creates nothing, changes nothing.
+-- ============================================================
+
+local function handleTruckStationSurveyButtonClick()
+
+    local output = {}
+
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "TRUCK STATION SURVEY"
+    output[#output + 1] = "========================================"
+
+    local totalStations = 0
+    local truckStations = 0
+    local componentNilCount = 0
+    local entityNilCount = 0
+    local cargoTrueCount = 0
+    local roadTrueCount = 0
+    local seenGroups = {}
+    local rows = {}
+    local diagRows = {}
+    local getLineStopsSampleCount = 0
+    local townDiagCount = 0
+
+    local ok, err =
+        pcall(function()
+
+            api.engine.system.stationSystem.forEach(
+                function(stationEntity)
+
+                    totalStations = totalStations + 1
+
+                    local station =
+                        safeGetComponent(
+                            stationEntity,
+                            api.type.ComponentType.STATION
+                        )
+
+                    local entity
+                    pcall(function() entity = game.interface.getEntity(stationEntity) end)
+
+                    if station == nil then
+                        componentNilCount = componentNilCount + 1
+                    end
+
+                    if entity == nil then
+                        entityNilCount = entityNilCount + 1
+                    end
+
+                    -- Two guesses at the real field names already
+                    -- proved wrong live (first run: guessed "carriers"
+                    -- on the raw STATION component -- not there; second
+                    -- run: guessed it on game.interface.getEntity()
+                    -- instead -- still 0 results). Rather than guess a
+                    -- third time against secondhand mod source, dump
+                    -- the REAL top-level keys of both objects for the
+                    -- first few stations so the actual field names can
+                    -- be read directly off this game version.
+                    if #diagRows < 8 then
+
+                        local componentKeys = {}
+                        local entityKeys = {}
+
+                        if station ~= nil then
+                            pcall(function()
+                                for k, _ in pairs(station) do
+                                    componentKeys[#componentKeys + 1] = tostring(k)
+                                end
+                            end)
+                        end
+
+                        if entity ~= nil then
+                            pcall(function()
+                                for k, _ in pairs(entity) do
+                                    entityKeys[#entityKeys + 1] = tostring(k)
+                                end
+                            end)
+                        end
+
+                        diagRows[#diagRows + 1] =
+                            "  station#" .. tostring(stationEntity)
+                                .. " | STATION component keys: [" .. table.concat(componentKeys, ", ") .. "]"
+                                .. " | getEntity keys: [" .. table.concat(entityKeys, ", ") .. "]"
+
+                        if station ~= nil and station.cargo ~= nil then
+                            diagRows[#diagRows + 1] =
+                                "    STATION.cargo = " .. tostring(station.cargo)
+                        end
+
+                        if entity ~= nil and entity.cargo ~= nil then
+                            diagRows[#diagRows + 1] =
+                                "    getEntity().cargo = " .. tostring(entity.cargo)
+                        end
+
+                        if entity ~= nil and entity.carriers ~= nil then
+                            local carrierParts = {}
+                            pcall(function()
+                                for k, v in pairs(entity.carriers) do
+                                    carrierParts[#carrierParts + 1] = tostring(k) .. "=" .. tostring(v)
+                                end
+                            end)
+                            diagRows[#diagRows + 1] =
+                                "    getEntity().carriers = {" .. table.concat(carrierParts, ", ") .. "}"
+                        end
+
+                    end
+
+                    local isCargo = lines.safeField(station, "cargo") == true
+
+                    local carriers = entity ~= nil and entity.carriers or nil
+                    local isRoad = type(carriers) == "table" and carriers.ROAD == true
+
+                    if isCargo then
+                        cargoTrueCount = cargoTrueCount + 1
+                    end
+
+                    if isRoad then
+                        roadTrueCount = roadTrueCount + 1
+                    end
+
+                    if not isCargo or not isRoad then
+                        return
+                    end
+
+                    -- Confirmed by this probe's own diagnostic dump:
+                    -- game.interface.getEntity()'s key list includes
+                    -- "stationGroup" directly -- the raw STATION
+                    -- component (docs: only "cargo" + "terminals") was
+                    -- never going to have it, same root cause as the
+                    -- earlier "carriers" miss.
+                    local stationGroupId = entity ~= nil and entity.stationGroup or nil
+
+                    if type(stationGroupId) ~= "number"
+                        or stationGroupId < 0
+                        or seenGroups[stationGroupId]
+                    then
+                        return
+                    end
+
+                    seenGroups[stationGroupId] = true
+                    truckStations = truckStations + 1
+
+                    local name = "?"
+                    pcall(function() name = stations.getEntityName(stationGroupId) or "?" end)
+
+                    local isHub = false
+                    pcall(function() isHub = hub_registry.isEnabled(stationGroupId) end)
+
+                    local industryName = nil
+                    local townId = nil
+                    local townName = nil
+
+                    pcall(function()
+
+                        local groupEntity = game.interface.getEntity(stationGroupId)
+
+                        if groupEntity ~= nil and groupEntity.position ~= nil then
+                            local _, foundName = industry_naming.findNearestIndustry(groupEntity.position)
+                            industryName = foundName
+                        end
+
+                    end)
+
+                    -- Use "entity" (the per-STATION getEntity result,
+                    -- already fetched above for stationEntity) rather
+                    -- than a station-GROUP-level getEntity call -- the
+                    -- first attempt at this read the group-level entity
+                    -- and got "town=nil" on all 86 rows live, even
+                    -- though the earlier diagnostic dump clearly showed
+                    -- "town" present as a key on the per-STATION result
+                    -- specifically. The field apparently only lives at
+                    -- the individual-station level, not the group.
+                    if entity ~= nil and entity.town ~= nil then
+
+                        townId = entity.town
+                        pcall(function() townName = stations.getEntityName(townId) end)
+
+                        if townDiagCount < 8 then
+
+                            townDiagCount = townDiagCount + 1
+
+                            diagRows[#diagRows + 1] =
+                                "  station#" .. tostring(stationEntity)
+                                    .. " entity.town = " .. tostring(townId)
+                                    .. " (type=" .. type(townId) .. ")"
+                                    .. " -> resolved name: " .. tostring(townName)
+
+                        end
+
+                    end
+
+                    -- NEW, unproven-in-this-mod query: lineSystem.
+                    -- getLineStops(stationGroupEntity) is documented
+                    -- ("Gets all lines stopping at a station group",
+                    -- returns {{lineEntity, stopIndex},...}) but never
+                    -- called anywhere in this codebase before. Vehicle
+                    -- counting itself (vehicles.getVehiclesForLine) IS
+                    -- already proven live elsewhere in this mod -- only
+                    -- the station-group -> line-entity lookup is new.
+                    -- Dedupe by line entity (a line could theoretically
+                    -- stop twice at the same group) before counting.
+                    local lineCount = 0
+                    local vehicleCount = 0
+
+                    local lineStopsOk, lineStopsErr =
+                        pcall(function()
+
+                            local lineStops = api.engine.system.lineSystem.getLineStops(stationGroupId)
+
+                            -- Confirmed live: this returns "userdata",
+                            -- not a plain "table" (unlike this mod's
+                            -- OWN usual game.interface.* calls) -- same
+                            -- family of engine-side array-like object
+                            -- AI Builder always runs through its own
+                            -- deepClone() before iterating. It still
+                            -- supports pairs()/ipairs() via metatable,
+                            -- so iterate directly rather than gating on
+                            -- type() -- that gate was the actual bug
+                            -- last run (silently returned before ever
+                            -- trying to iterate).
+                            local seenLines = {}
+                            local sampleEntries = {}
+
+                            for _, stopPair in pairs(lineStops) do
+
+                                local lineEntity =
+                                    (type(stopPair) == "table" and stopPair[1])
+                                        or (type(stopPair) == "number" and stopPair)
+                                        or nil
+
+                                if #sampleEntries < 3 then
+                                    sampleEntries[#sampleEntries + 1] =
+                                        tostring(stopPair) .. " (type=" .. type(stopPair) .. ")"
+                                end
+
+                                if type(lineEntity) == "number" and not seenLines[lineEntity] then
+
+                                    seenLines[lineEntity] = true
+                                    lineCount = lineCount + 1
+
+                                    local ok2, vehicleIds = pcall(vehicles.getVehiclesForLine, lineEntity)
+
+                                    if ok2 and vehicleIds ~= nil then
+                                        vehicleCount = vehicleCount + #vehicleIds
+                                    end
+
+                                end
+
+                            end
+
+                            if getLineStopsSampleCount < 6 then
+
+                                getLineStopsSampleCount = getLineStopsSampleCount + 1
+
+                                diagRows[#diagRows + 1] =
+                                    "  getLineStops(groupId=" .. tostring(stationGroupId) .. ") -> type="
+                                        .. type(lineStops) .. " lineCount=" .. tostring(lineCount)
+                                        .. " entries=[" .. table.concat(sampleEntries, "; ") .. "]"
+
+                            end
+
+                        end)
+
+                    if not lineStopsOk and getLineStopsSampleCount < 6 then
+
+                        getLineStopsSampleCount = getLineStopsSampleCount + 1
+
+                        diagRows[#diagRows + 1] =
+                            "  getLineStops(groupId=" .. tostring(stationGroupId) .. ") FAILED: " .. tostring(lineStopsErr)
+
+                    end
+
+                    rows[#rows + 1] =
+                        string.format(
+                            "  [%s] %-40s groupId=%-10s lines=%-3s trucks=%-3s town=%-20s%s",
+                            isHub and "HUB" or "   ",
+                            tostring(name):sub(1, 40),
+                            tostring(stationGroupId),
+                            tostring(lineCount),
+                            tostring(vehicleCount),
+                            tostring(townName):sub(1, 20),
+                            industryName ~= nil
+                                and ("  <-- near industry: " .. tostring(industryName))
+                                or ""
+                        )
+
+                end
+            )
+
+        end)
+
+    if not ok then
+
+        logUi("TRUCK STATION SURVEY FAILED: " .. tostring(err))
+        output[#output + 1] = "SURVEY FAILED: " .. tostring(err)
+        writeReportFile("epod_td_truck_station_survey.txt", output)
+
+        return
+
+    end
+
+    output[#output + 1] =
+        "Total stations seen by stationSystem.forEach: " .. tostring(totalStations)
+    output[#output + 1] =
+        "STATION component nil count: " .. tostring(componentNilCount)
+    output[#output + 1] =
+        "getEntity() nil count: " .. tostring(entityNilCount)
+    output[#output + 1] =
+        "station.cargo == true count: " .. tostring(cargoTrueCount)
+    output[#output + 1] =
+        "getEntity().carriers.ROAD == true count: " .. tostring(roadTrueCount)
+    output[#output + 1] =
+        "Truck (cargo + ROAD) stations, deduped by stationGroup: " .. tostring(truckStations)
+    output[#output + 1] = "----------------------------------------"
+    output[#output + 1] = "DIAGNOSTIC (first 8 stations, raw field dump):"
+
+    for _, row in ipairs(diagRows) do
+        output[#output + 1] = row
+    end
+
+    output[#output + 1] = "----------------------------------------"
+
+    for _, row in ipairs(rows) do
+        output[#output + 1] = row
+    end
+
+    writeReportFile("epod_td_truck_station_survey.txt", output)
+
+    logUi(
+        "TRUCK STATION SURVEY: " .. tostring(totalStations) .. " station(s) total, "
+            .. tostring(truckStations) .. " truck station(s) -- see epod_td_truck_station_survey.txt"
+    )
+
+end
+
+
+-- ============================================================
+-- CAMERA FOCUS TEST (config.DEBUG only)
+--
+-- Player's question: can clicking a station name in the truck-station
+-- list move the game camera there? Real, working reference code found
+-- in two other installed Workshop mods (see IDEAS.md's "Click-to-
+-- Locate" entry): game.gui.setCamera({x, y, z, angle, pitch}), fed a
+-- plain entity .position array -- the exact same shape this codebase
+-- already reads everywhere via game.interface.getEntity(id).position.
+-- Never called from THIS mod before -- this is the one-off live probe
+-- to confirm it actually works fired from our own GUI/Debug Tests
+-- context, before wiring it into the truck-station list's rows.
+--
+-- Targets whatever station is currently selected on the map, falling
+-- back to the first result of truck_station_finder.scan() (already
+-- proven live, Decisions 148-151) if nothing is selected, so this is
+-- runnable with zero setup.
+-- ============================================================
+
+local function handleCameraFocusTestButtonClick()
+
+    local targetStationGroupId = distributionState.selectedStationGroupId
+
+    if targetStationGroupId == nil then
+
+        local ok, list = pcall(truck_station_finder.scan)
+
+        if ok and list ~= nil and list[1] ~= nil then
+            targetStationGroupId = list[1].stationGroupId
+        end
+
+    end
+
+    if targetStationGroupId == nil then
+
+        logUi("CAMERA FOCUS TEST: no station selected and no truck station found to test with.")
+        return
+
+    end
+
+    local okEntity, entity = pcall(game.interface.getEntity, targetStationGroupId)
+
+    if not okEntity or entity == nil or entity.position == nil then
+
+        logUi("CAMERA FOCUS TEST: could not read a position for stationGroupId " .. tostring(targetStationGroupId))
+        return
+
+    end
+
+    local pos = entity.position
+    local okName, name = pcall(stations.getEntityName, targetStationGroupId)
+
+    logUi(
+        "CAMERA FOCUS TEST: attempting to move camera to "
+            .. (okName and tostring(name) or ("stationGroupId " .. tostring(targetStationGroupId)))
+            .. " at position (" .. tostring(pos[1]) .. ", " .. tostring(pos[2]) .. ", " .. tostring(pos[3]) .. ")"
+    )
+
+    local okCamera, err =
+        pcall(
+            game.gui.setCamera,
+            { pos[1], pos[2], pos[3], -4.77, 0.2 }
+        )
+
+    if not okCamera then
+        logUi("CAMERA FOCUS TEST: game.gui.setCamera FAILED: " .. tostring(err))
+    else
+        logUi("CAMERA FOCUS TEST: game.gui.setCamera call completed without error -- check in-game whether the view actually moved.")
+    end
+
+end
+
+
+-- ============================================================
 -- DUMP ALL MANAGED LINES (config.DEBUG only)
 --
 -- Requested live as a direct alternative to screenshots, which kept
@@ -1820,6 +2242,8 @@ if config.DEBUG then
         { key = "cargoBalanceInspector", label = "Cargo Balance Inspector (DEBUG)", handler = handleCargoBalanceInspectorButtonClick },
         { key = "industryDiscovery", label = "Industry Discovery (DEBUG)", handler = handleIndustryDiscoveryButtonClick },
         { key = "dedupeSharedRouteLines", label = "Dedupe Shared Route Lines (DEBUG)", handler = handleDedupeSharedRouteLinesButtonClick },
+        { key = "truckStationSurvey", label = "Truck Station Survey (DEBUG)", handler = handleTruckStationSurveyButtonClick },
+        { key = "cameraFocusTest", label = "Camera Focus Test (DEBUG)", handler = handleCameraFocusTestButtonClick },
         { key = "openRawUiExperiment", label = "Open Raw UI Experiment (TEST)", handler = handleOpenRawUiExperimentButtonClick },
         { key = "openLegacyCentral", label = "Open Central Manager (Legacy)", handler = handleOpenNewGuiButtonClick }
 

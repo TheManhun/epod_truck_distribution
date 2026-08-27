@@ -2786,6 +2786,150 @@ Since a blank cell reads as a rendering glitch rather than "not applicable," `gu
 
 Not yet live-tested.
 
+## Decision 148 — Global truck-station enumeration proven live, two wrong field guesses corrected
+
+### What happened
+
+Player wants a GUI feature: list every truck station on the map, let the player pick which become Distribution Hubs, and flag ones already servicing a factory -- instead of the current one-at-a-time map-click flow. Before touching any GUI code, built a read-only DEBUG probe (`handleTruckStationSurveyButtonClick`, "Truck Station Survey (DEBUG)") and tested it live on the player's "Europe large map - RandomSeed 1 final" savegame (workshop id 3262940081, a 250-in-game-year established map, 223 total stations) -- the actual scale test this feature needs before being trusted, not a fresh/small save.
+
+### Decision
+
+`api.engine.system.stationSystem.forEach(fn)` is confirmed **live-working in this mod** (not just documented, not just seen in a reference mod) -- correctly enumerated all 223 stations on the first run.
+
+Two secondhand-source guesses about WHICH object carries which field were both wrong, and both corrected by adding a raw diagnostic dump (top-level keys of both objects, for real stations) rather than guessing a third time:
+
+- **Wrong guess #1**: assumed `carriers` (needed to filter road-only cargo stations) was a field of the raw `STATION` component (`api.engine.getComponent(id, ComponentType.STATION)`), matching a reference mod's usage. Live result: 223 stations, 0 truck stations -- `carriers` is NOT on that component (official docs list only `cargo` and `terminals` for `Station`). It IS on `game.interface.getEntity(id)`'s result instead.
+- **Wrong guess #2**: after fixing `carriers`, assumed `stationGroup` (needed to map a station to the hub-registry id) was ALSO readable off the raw `STATION` component, same as this mod's own existing `resolveStationGroup` helper does elsewhere. Still 0 truck stations. The diagnostic dump's own printed `getEntity keys: [...]` list showed `stationGroup` present on `game.interface.getEntity(id)`'s result, not the raw component -- switched to reading it from there and the count went from 0 to a real 86.
+- Also discovered: the raw `STATION` component is NOT enumerable via `pairs()` (`pairs(station)` returns zero keys) even though named-field access (`station.cargo`) works fine -- it's an opaque userdata/proxy, not a plain table. Anything read off it going forward must be a specific, individually-confirmed field name, never assumed present via inspection.
+
+Final confirmed-working recipe, entirely from `game.interface.getEntity(stationEntity)` (NOT the raw `STATION` component) for `cargo`/`carriers.ROAD`/`stationGroup`, combined with `api.engine.system.stationSystem.forEach` for enumeration and this mod's own already-proven `industry_naming.findNearestIndustry(position)` for the factory-adjacency flag: **86 real truck stations found out of 223 total, 60 flagged as adjacent to a named industry** (real matches -- e.g. "Wiveliscombe Coal mine #2", "Braintree Oil refinery" -- not noise), 0 currently Hubs (fresh save, expected).
+
+### Consequence
+
+The full enumerate → filter → factory-flag pipeline for the planned "truck station list" GUI feature is now live-proven at real late-game scale, not just theorized. `documents/TECHNICAL_RESEARCH.md`'s matching row corrected to reflect the two real field-location fixes. The DEBUG probe (`handleTruckStationSurveyButtonClick` in `epod_truck_distribution.lua`) stays in place, read-only, as the reference implementation for whenever the actual GUI list gets built -- not yet started.
+
+## Decision 149 — Per-station line/truck counts proven live: `getLineStops` returns iterable userdata, not a table, and its entries are plain line entities
+
+### What happened
+
+Player wants the planned truck-station list (Decision 148) to show each station's line count and allocated-truck count, sorted with city-adjacent stations first. Extended the same DEBUG probe to compute both per station via `api.engine.system.lineSystem.getLineStops(stationGroupEntity)` (documented, "gets all lines stopping at a station group", claimed to return `{{lineEntity, stopIndex},...}`) combined with this mod's own already-proven `vehicles.getVehiclesForLine(lineId)`. First live run on the same 250-year save: **every single one of the 86 truck stations reported `lines=0, trucks=0`** -- implausible on an established economy, so treated as a silent failure rather than a real result.
+
+### Decision
+
+Root-caused with an error-capturing + shape-dumping diagnostic pass rather than guessing again: `getLineStops` returns a value whose Lua `type()` is `"userdata"`, not `"table"` -- the code's own `if type(lineStops) ~= "table" then return end` guard was silently bailing out before ever attempting to iterate it. This matches a pattern already visible in AI Builder's reference source, which always runs this exact call through its own `deepClone()` before iterating -- direct evidence this return value needs special handling, missed on the first pass. Fixed by iterating directly via `pairs()` regardless of `type()`, catching per-station `pcall` errors, and dumping the first few raw entries -- which also corrected a second wrong assumption: entries are plain line-entity numbers, NOT `{lineEntity, stopIndex}` pairs as the doc text implied. Re-run after the fix produced real, varied, plausible numbers across all 86 stations (0 to 5 lines, 0 to 41 trucks), including two genuinely idle 0/0 stations.
+
+### Consequence
+
+Both queries needed for the planned Overview-page truck-station list (line count, truck count) are now live-proven together with the enumeration/filter/factory-flag pipeline from Decision 148, all on the same real 250-year save. The "sort city-adjacent stations first" piece is expected to be simpler still -- `entity.town` was already visible, unused, in Decision 148's own key dump -- but has not yet been read or tested. Ready to design the actual Overview list UI next.
+
+## Decision 150 — Town name resolution proven live: `entity.town` lives on the per-STATION entity, not the station-group entity, and resolves via the existing name helper
+
+### What happened
+
+Last piece needed for the planned Overview truck-station list: a city/town name per station, to sort city-adjacent stations to the top. `entity.town` had already been spotted, unused, in Decision 148's own diagnostic key dump. First live attempt read it off `game.interface.getEntity(stationGroupId)` (the station-GROUP-level entity, already being fetched in the same probe for the industry-proximity check) -- result: `town=nil` on all 86 rows, no exceptions thrown.
+
+### Decision
+
+Same family of bug as Decision 148/149 (assuming a field lives on the wrong object): `town` is only present on the PER-STATION `getEntity()` result (the individual `stationEntity` handed to `stationSystem.forEach`'s callback), not on the station-GROUP-level entity fetched separately for the industry check. Confirmed by reusing the per-station `entity` variable already in scope from earlier in the same probe instead of a second group-level fetch. Live re-run produced real town ids (e.g. `56732`) resolving via this mod's own existing, already-proven `stations.getEntityName(entityId)` (itself just `game.interface.getName`) straight to real names -- "Bedford", "Marlow", "Reading", "Wiveliscombe" -- with no new name-resolution logic needed at all.
+
+### Consequence
+
+All data needed for the planned Overview-page truck-station list is now live-proven on the same real 250-year save: enumeration, truck/road filter, hub-id mapping, line count, truck count, factory-adjacency flag, and now town name. Nothing left to research -- next step is designing and building the actual list UI, not further probing. General lesson reinforced across Decisions 148-150: on this API, never assume a field's home object from a reference mod or official doc text alone -- confirm which specific object (raw component vs. per-entity `getEntity()` vs. group-level `getEntity()`) actually carries it, live, before relying on it.
+
+## Decision 151 — Truck-station list built on OVERVIEW: new `truck_station_finder.lua`, 10-per-page browser, per-row "Make Hub" button
+
+### What happened
+
+With every field proven live (Decisions 148-150), player asked for the actual feature: "put it on the front page at the bottom showing only 10 stations per page, and it has basic info like City Name - How many lines - Trucks allocated to station, with the ones with cities at top" plus a convert-to-hub button per row. Player also confirmed Settings stays as a tab for now -- the separate "Settings as a popup icon" idea raised earlier is explicitly deferred, not part of this change.
+
+### Decision
+
+New module `truck_station_finder.lua`: `M.scan()` is a production version of the DEBUG probe, using ONLY the field/object combinations Decisions 148-150 proved correct (never the raw `STATION` component, always `game.interface.getEntity()`; `getLineStops` iterated via `pairs()`). Sorted by town name (grouping stations by city, per the player's "cities at top" request), then by truck count descending, then station name, as the tiebreakers.
+
+Deliberately NOT called on every `guiUpdate` tick -- a full-map scan is real work (223 stations, each with a line-stop walk and an industry-proximity search). `gui_tab_overview.lua` caches the last scan result in module-level state and only re-scans on: first render this session, an explicit new `[ Refresh ]` button click, or automatically right after a "Make Hub" click's `hub_setup.toggleDistributionHub` sequence completes (so a just-converted row updates immediately without a manual refresh).
+
+UI reuses existing proven pieces rather than inventing new ones: `gui_central_raw.lua`'s `buildOverviewPanel` gained a `MAX_TRUCK_STATION_ROWS_PER_PAGE = 10` row pool (info label + a "Make Hub"/"HUB" button per row) and a Prev/Next/pageLabel pagination row, both built the exact same way LINES' own accordion/pagination already works. The generic tab-refresh dispatch in `M.refresh` now passes these two new pools plus the Refresh button through to every simple tab's `M.refresh` (harmless extra arguments for tabs that don't declare them, same existing convention `state.hubButtons`/`switchViewedHub` already used). Clicking "Make Hub" reuses the exact same `hub_setup.toggleDistributionHub` + `operation_lock` guard every other hub-mutating action in this window already goes through -- no new mutation path. A station already converted shows a non-clickable "[ HUB ]" badge (styled like the tab bar's active state) rather than a toggle -- turning a hub back OFF deliberately stays on the existing Overview/Hubs toggle, not duplicated here.
+
+### Consequence
+
+Not yet live-tested. Next step is opening the Central Manager in-game on the same 250-year save and confirming the list renders, paginates through all ~86 stations, and a real "Make Hub" click runs the full setup sequence correctly from this new entry point.
+
+## Decision 152 — OVERVIEW window overflowed the screen after the truck-station list shipped: 18 permanently-blank rows were silently holding full height all along
+
+### What happened
+
+Player tested Decision 151 live: the truck-station list itself rendered correctly (city/name/lines/trucks/Make Hub, real data), but the whole Central Manager window ballooned past the screen edges -- overlapping the game's own top and bottom bars, pagination row pushed off-screen. Player: "we broke it haha".
+
+### Decision
+
+Root-caused rather than just shrinking the new list to make it fit: this window has never been able to scroll (`ScrollArea` proven broken back in Decision 75/76's own research), so total content height is a hard budget, not something the window can absorb. OVERVIEW's plain-row pool (`MAX_ROWS = 24`, shared with every simple tab) has silently been oversized for OVERVIEW specifically since Decision 143 -- OVERVIEW only ever fills 6 of those 24 rows (hub name, managed lines, vehicles, waiting, terminals, auto-redistribute), but `clearRows` only ever blanks the other 18 to `""` every refresh, never hides them, so they've held their full row height the entire time. This was never visible before because total content still happened to fit; adding Decision 151's list (heading + Refresh row + 10 station rows + pagination row) was what finally pushed it over. Exact same root cause, same fix, as two earlier spacing bugs in this same window: the hub-button pool (Decision 144) and the LINES accordion's destination rows (Decision 132) -- a pre-allocated pool blanked but not hidden always burns its full height regardless of how much of it is actually used.
+
+Fixed with the same proven pattern: a new `setRowsVisibleUpTo(rows, usedCount)` in `gui_tab_overview.lua`, called at the end of every `M.refresh` path (both the "no hub selected" 1-row case and the normal 6-row case), `setVisible(false)`-ing everything beyond whatever was actually used that frame. Net effect: -18 rows reclaimed against +12 rows added by the new list, a net reduction in OVERVIEW's total height versus before Decision 151 existed at all.
+
+### Consequence
+
+**LIVE-CONFIRMED FIXED**: player re-tested, window fits back on screen with hub-name-area content, the full truck-station list (10 rows, city/name/lines/trucks/Make Hub), and pagination ("Page 1 / 9 (86)") all visible together. General lesson, now confirmed a third time in this same window: any pre-allocated widget pool in a non-scrolling layout MUST hide its unused slots, not just blank their text -- there is no longer any excuse to add a new pool here without applying this pattern from the start.
+
+## Decision 153 — Truck-station list: prioritize multi-line stations, and make a blocked "Make Hub" click visible instead of silent
+
+### What happened
+
+Two player requests after confirming the list itself displays correctly: (1) "Maybe we should priorit[iz]e ones with more than one line?", and (2) "the make hub button didnt work (if it was meant to haha)" -- clicked "[ Make Hub ]" on a real station and observed no visible change at all.
+
+### Decision
+
+**Sorting**: `truck_station_finder.lua`'s sort now compares `lineCount` (descending) immediately after the city-name grouping, before the existing vehicle-count tiebreaker -- multi-line stations (better hub candidates -- more existing traffic to take over) now surface first within each city.
+
+**Silent "Make Hub" click**: root-caused as a real, pre-existing UX gap rather than a new bug: every hub-mutating action in this window (Split, Assign & Balance, the existing Distribution Hub toggle, Chain Builder, Push Full Reallocation) shares ONE `operation_lock`, and a blocked click is normally SUPPOSED to be silent-but-safe -- `log.info`-only, by design, matching how OVERVIEW's own two existing action buttons already behave when busy (Decision-era pattern: rewrite the button's own text to say so). This row never got that same busy-state treatment, so a blocked click and a genuinely broken one looked IDENTICAL to the player -- no way to tell which had happened without reading the console log. Fixed: the row now checks `operation_lock.isRunning()` the same way `entry.isHub` is already checked, showing `[ Busy... ]` (handler cleared) instead of `[ Make Hub ]` whenever another hub operation is running. Also wrapped the `hub_setup.toggleDistributionHub` call itself in an explicit `pcall` (previously uncaught inside the row's handler) and added a log line the moment a click is actually accepted, so a genuine crash now surfaces distinctly from lock contention instead of both failing identically silently.
+
+### Consequence
+
+**LIVE-CONFIRMED**: it actually worked the whole time. Re-tested on "Barking Cargo Station" -- real result: `Managed lines: 3`, `Total vehicles: 15`, `Total waiting: 136`, `Auto Redistribute: ON`, row shows `[ HUB ]`, OVERVIEW's own heading now reads "Distribution Hub - Barking Cargo Station". The original click was never blocked or broken -- the whole Split -> Rename Fleet -> Assign & Balance sequence just resolves within a tick or two, so the button jumped straight from "Make Hub" to "HUB" with no visible in-between frame at all. See Decision 154 for the follow-up fix (instant click feedback).
+
+## Decision 154 — Instant "Building Hub..." feedback on click, not dependent on the next refresh tick
+
+### What happened
+
+Player, after Decision 153 confirmed the conversion genuinely works: "when you press the button it seems like nothing is happening, maybe on click it changes to 'Building Hub'". Correct read of the actual cause -- Decision 153's own `[ Busy... ]` state exists but only ever gets drawn on the NEXT `M.refresh` tick's `operation_lock.isRunning()` check; if the whole real operation finishes before that next tick runs, the busy state is never actually rendered at all.
+
+### Decision
+
+Set the row's own `hubButtonLabel` text directly to `"[ Building Hub... ]"` synchronously, inside the click handler itself, immediately after the `operation_lock.isRunning()` guard passes and before `operation_lock.begin()`/`hub_setup.toggleDistributionHub` are even called -- not relying on the next tick's re-render to reflect it. This guarantees an instant response to the click regardless of how many ticks the real work takes to resolve.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 155 — `game.gui.setCamera` LIVE-CONFIRMED working from this mod's own DEBUG button
+
+### What happened
+
+Player asked whether clicking a station in the GUI could move the game camera there. `IDEAS.md`'s "Click-to-Locate" entry already had a strong lead from real reference-mod code (`game.gui.setCamera({x, y, z, angle, pitch})`), but untested in THIS mod. Built a one-off "Camera Focus Test (DEBUG)" button (`handleCameraFocusTestButtonClick`, `epod_truck_distribution.lua`) that targets the currently-selected station (or the first result of `truck_station_finder.scan()` if nothing's selected), reads its position via `game.interface.getEntity(id).position`, and calls `game.gui.setCamera({pos[1], pos[2], pos[3], -4.77, 0.2})` -- the exact hardcoded angle/pitch values the reference mod used.
+
+### Decision
+
+**LIVE-CONFIRMED**: player pressed it and the camera flew directly to Barking Cargo Station with a clean, close, station-level view -- "BINGO". No tuning needed; the reference mod's hardcoded `-4.77, 0.2` angle/pitch already gives a usable view straight away. Both remaining open questions from the `IDEAS.md` entry are resolved: it works fired from this mod's own DEBUG/GUI context, and the values needed no adjustment.
+
+### Consequence
+
+Ready to wire into the actual truck-station list -- next step is turning each row's station-name label into a real clickable button using this exact same call, per the player's original request (name = navigate, "Make Hub" stays a separate, deliberately safe button). `IDEAS.md`'s "Click-to-Locate" entry to be trimmed down to just that remaining wiring step once done.
+
+## Decision 156 — Click-to-Locate wired into the real truck-station list rows
+
+### What happened
+
+Immediate follow-up to Decision 155's confirmed proof: wired the same `game.gui.setCamera` call into every row of the actual OVERVIEW truck-station list, not just the DEBUG probe.
+
+### Decision
+
+Each row's info text (`gui_central_raw.lua`'s `infoLabel`) is now wrapped in its own real button (`infoButton`), the same "TextView wrapped in a Button" pattern LINES' accordion header rows already use -- a completely separate widget and handler field (`row.locateHandler`) from `hubButton`/`row.handler`, per the player's own explicit framing: "I'd keep Make Hub as a separate button so clicking the name is always safe/navigation-only." Clicking a station name reads a FRESH position at click time (`game.interface.getEntity(stationGroupId).position`, not a cached one from scan time) and calls `game.gui.setCamera({pos[1], pos[2], pos[3], -4.77, 0.2})` -- exactly Decision 155's proven call and hardcoded angle/pitch. Deliberately routes through no `operation_lock` at all -- this is pure navigation, can never be "busy" or blocked, unlike every hub-mutating action in this window.
+
+`gui_tab_overview.lua`'s row-rendering loop now also shows/hides `infoButton` in step with `hubButton` for the "entry == nil" (unused pool slot) case, and gives it the `EpodTdTabInactive` style class so it visually reads as clickable rather than plain static text.
+
+### Consequence
+
+**LIVE-CONFIRMED**: player tested the real list rows directly -- "the links worked perfectly". Click-to-Locate is complete: station names in the truck-station list jump the camera there, "Make Hub" stays fully separate, both proven live on the real 250-year save. `IDEAS.md`'s "Click-to-Locate" entry removed per its own maintenance rule (implemented and successfully tested).
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

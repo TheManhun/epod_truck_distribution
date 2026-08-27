@@ -159,6 +159,19 @@ local LINES_ACTION_BUTTON_COUNT = 3
 -- ever actually has more than this many hubs.
 local MAX_HUB_BUTTONS = 12
 
+-- Decision 151: player's request ("put it on the front page at the
+-- bottom showing only 10 stations per page") -- a full-map truck-
+-- station browser at the bottom of OVERVIEW, below the existing hub
+-- list. Same "reasonable ceiling, not exact-fit" pool sizing and same
+-- Prev/Next pagination pattern as LINES (MAX_LINE_GROUPS_PER_PAGE)
+-- and the earlier hub-button pool above -- 10 rows per page, matching
+-- the player's own number, reached across as many pages as
+-- truck_station_finder.scan() actually finds (86 on the test save,
+-- so 9 pages of 10).
+local MAX_TRUCK_STATION_ROWS_PER_PAGE = 10
+local TRUCK_STATION_LABEL_WIDTH = 380
+local TRUCK_STATION_HUB_BUTTON_WIDTH = 140
+
 -- Decision 136: player's request -- full tab names ("OVERVIEW",
 -- "TERMINALS", "ACTIVITY"...) were getting cut off regardless of
 -- however wide each tab button actually ends up. Short, fixed-width-
@@ -460,7 +473,10 @@ function M.refresh(hubStationGroupId)
         effectiveHubStationGroupId,
         panelState.actionButtons,
         state.hubButtons,
-        switchViewedHub
+        switchViewedHub,
+        state.truckStationRows,
+        state.truckStationPagination,
+        state.truckStationRefreshButton
     )
 
     if not ok then
@@ -680,6 +696,170 @@ local function buildOverviewPanel(panelId, actionButtonCount)
         rows[rowIndex] = { label = label }
 
     end
+
+    -- Decision 151: truck-station browser at the bottom of OVERVIEW.
+    -- Heading + a dedicated Refresh button (a full-map scan is real
+    -- work -- truck_station_finder.scan() is never called automatically
+    -- on every guiUpdate tick, only on this explicit click, same
+    -- "player-triggered, not silently-continuous" philosophy every
+    -- other hub-mutating/expensive action in this window already
+    -- follows), then a MAX_TRUCK_STATION_ROWS_PER_PAGE pool of rows
+    -- (info label + a per-row "Make Hub"/"HUB" button), then the same
+    -- Prev/Next pagination pattern LINES already proved out.
+    local truckStationHeadingRow = gui.boxLayout_create(nil, "HORIZONTAL")
+
+    local truckStationHeading = gui.textView_create(nil, "TRUCK STATIONS", WINDOW_WIDTH - 140, false)
+    pcall(truckStationHeading.setStyleClassList, truckStationHeading, { "EpodTdTableHeader" })
+    truckStationHeadingRow:addItem(truckStationHeading)
+
+    local refreshButtonLabel = gui.textView_create(nil, "[ Refresh ]", 130, false)
+    local refreshButton = gui.button_create(nil, refreshButtonLabel)
+    pcall(refreshButton.setMaximumSize, refreshButton, 130, 2000)
+
+    refreshButton:onClick(function()
+
+        if state.truckStationRefreshButton ~= nil and state.truckStationRefreshButton.handler ~= nil then
+
+            local ok, err = pcall(state.truckStationRefreshButton.handler)
+
+            if not ok then
+                log.info("GUI CENTRAL RAW: truck station Refresh failed: " .. tostring(err))
+            end
+
+        end
+
+    end)
+
+    truckStationHeadingRow:addItem(refreshButton)
+    panelLayout:addItem(truckStationHeadingRow)
+
+    state.truckStationRefreshButton = { label = refreshButtonLabel, button = refreshButton, handler = nil }
+
+    state.truckStationRows = {}
+
+    for stationSlotIndex = 1, MAX_TRUCK_STATION_ROWS_PER_PAGE do
+
+        local rowLayout = gui.boxLayout_create(nil, "HORIZONTAL")
+
+        -- Decision 155/156: the info text is now a real button, not a
+        -- plain TextView -- player's request, click the station NAME
+        -- to jump the camera there (game.gui.setCamera, LIVE-CONFIRMED
+        -- working from this mod's own DEBUG probe). Deliberately a
+        -- SEPARATE widget/handler from hubButton below -- player's own
+        -- framing, "I'd keep Make Hub as a separate button so clicking
+        -- the name is always safe/navigation-only" -- so a mis-click on
+        -- the name can never accidentally trigger a real hub mutation.
+        local infoLabel = gui.textView_create(nil, "", TRUCK_STATION_LABEL_WIDTH, false)
+        local infoButton = gui.button_create(nil, infoLabel)
+        pcall(infoButton.setMaximumSize, infoButton, TRUCK_STATION_LABEL_WIDTH, 2000)
+
+        infoButton:onClick(function()
+
+            local slot = state.truckStationRows[stationSlotIndex]
+
+            if slot ~= nil and slot.locateHandler ~= nil then
+
+                local ok, err = pcall(slot.locateHandler)
+
+                if not ok then
+                    log.info("GUI CENTRAL RAW: truck station row " .. tostring(stationSlotIndex) .. " locate handler failed: " .. tostring(err))
+                end
+
+            end
+
+        end)
+
+        rowLayout:addItem(infoButton)
+
+        local hubButtonLabel = gui.textView_create(nil, "", TRUCK_STATION_HUB_BUTTON_WIDTH, false)
+        local hubButton = gui.button_create(nil, hubButtonLabel)
+        pcall(hubButton.setMaximumSize, hubButton, TRUCK_STATION_HUB_BUTTON_WIDTH, 2000)
+
+        hubButton:onClick(function()
+
+            local slot = state.truckStationRows[stationSlotIndex]
+
+            if slot ~= nil and slot.handler ~= nil then
+
+                local ok, err = pcall(slot.handler)
+
+                if not ok then
+                    log.info("GUI CENTRAL RAW: truck station row " .. tostring(stationSlotIndex) .. " handler failed: " .. tostring(err))
+                end
+
+            end
+
+        end)
+
+        rowLayout:addItem(hubButton)
+
+        local rowContainer = gui.container_create("centralRaw.truckStationRow." .. tostring(stationSlotIndex))
+        rowContainer:setLayout(rowLayout)
+        panelLayout:addItem(rowContainer)
+
+        state.truckStationRows[stationSlotIndex] = {
+            container = rowContainer,
+            infoLabel = infoLabel,
+            infoButton = infoButton,
+            hubButton = hubButton,
+            hubButtonLabel = hubButtonLabel,
+            handler = nil,
+            locateHandler = nil
+        }
+
+    end
+
+    local truckStationPaginationRow = gui.boxLayout_create(nil, "HORIZONTAL")
+
+    local truckStationPrevLabel = gui.textView_create(nil, "[ Prev ]", 100, false)
+    local truckStationPrevButton = gui.button_create(nil, truckStationPrevLabel)
+    pcall(truckStationPrevButton.setMaximumSize, truckStationPrevButton, 100, 2000)
+
+    truckStationPrevButton:onClick(function()
+
+        if truckStationPrevButton.handler ~= nil then
+
+            local ok, err = pcall(truckStationPrevButton.handler)
+
+            if not ok then
+                log.info("GUI CENTRAL RAW: truck station Prev failed: " .. tostring(err))
+            end
+
+        end
+
+    end)
+
+    truckStationPaginationRow:addItem(truckStationPrevButton)
+
+    local truckStationPageLabel = gui.textView_create(nil, "", 120, false)
+    truckStationPaginationRow:addItem(truckStationPageLabel)
+
+    local truckStationNextLabel = gui.textView_create(nil, "[ Next ]", 100, false)
+    local truckStationNextButton = gui.button_create(nil, truckStationNextLabel)
+    pcall(truckStationNextButton.setMaximumSize, truckStationNextButton, 100, 2000)
+
+    truckStationNextButton:onClick(function()
+
+        if truckStationNextButton.handler ~= nil then
+
+            local ok, err = pcall(truckStationNextButton.handler)
+
+            if not ok then
+                log.info("GUI CENTRAL RAW: truck station Next failed: " .. tostring(err))
+            end
+
+        end
+
+    end)
+
+    truckStationPaginationRow:addItem(truckStationNextButton)
+    panelLayout:addItem(truckStationPaginationRow)
+
+    state.truckStationPagination = {
+        prevButton = truckStationPrevButton,
+        nextButton = truckStationNextButton,
+        pageLabel = truckStationPageLabel
+    }
 
     return panel, rows, actionButtons
 
