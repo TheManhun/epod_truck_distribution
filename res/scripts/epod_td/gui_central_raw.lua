@@ -150,26 +150,18 @@ local ACTION_BUTTON_COUNTS = {
 -- slot 3 is Push Full Reallocation (Decision 146).
 local LINES_ACTION_BUTTON_COUNT = 3
 
--- Decision 143: how many enabled-hub buttons OVERVIEW pre-allocates --
--- a generous ceiling above what any real save has shown so far (3
--- hubs), same "reasonable ceiling, not exact-fit" philosophy as
--- MAX_LINE_GROUPS_PER_PAGE/MAX_DESTINATIONS_PER_LINE. No pagination
--- for the hub list -- not asked for, and easy to add later using the
--- exact same Prev/Next pattern LINES already proves out, if a save
--- ever actually has more than this many hubs.
-local MAX_HUB_BUTTONS = 12
-
--- Decision 151: player's request ("put it on the front page at the
+-- Decision 151/161: player's request ("put it on the front page at the
 -- bottom showing only 10 stations per page") -- a full-map truck-
--- station browser at the bottom of OVERVIEW, below the existing hub
--- list. Same "reasonable ceiling, not exact-fit" pool sizing and same
--- Prev/Next pagination pattern as LINES (MAX_LINE_GROUPS_PER_PAGE)
--- and the earlier hub-button pool above -- 10 rows per page, matching
--- the player's own number, reached across as many pages as
+-- station browser at the bottom of OVERVIEW. Decision 161 merged the
+-- former separate hub-button column into this same list (a "Hubs"
+-- filter mode replaces it). Same "reasonable ceiling, not exact-fit"
+-- pool sizing and same Prev/Next pagination pattern as LINES
+-- (MAX_LINE_GROUPS_PER_PAGE) -- 10 rows per page, matching the
+-- player's own number, reached across as many pages as
 -- truck_station_finder.scan() actually finds (86 on the test save,
 -- so 9 pages of 10).
 local MAX_TRUCK_STATION_ROWS_PER_PAGE = 10
-local TRUCK_STATION_LABEL_WIDTH = 380
+local TRUCK_STATION_LABEL_WIDTH = 460
 local TRUCK_STATION_HUB_BUTTON_WIDTH = 140
 
 -- Decision 136: player's request -- full tab names ("OVERVIEW",
@@ -462,21 +454,21 @@ function M.refresh(hubStationGroupId)
     clearRows(panelState.rows)
     clearActionButtons(panelState.actionButtons)
 
-    -- state.hubButtons/switchViewedHub are passed to EVERY simple
-    -- tab's refresh, not just OVERVIEW's -- harmless extra arguments
-    -- for tabs whose M.refresh doesn't declare/use them (Lua ignores
-    -- extra call arguments a function doesn't name), and keeps this
-    -- dispatch generic rather than special-casing OVERVIEW here too.
+    -- switchViewedHub/truckStation* are passed to EVERY simple tab's
+    -- refresh, not just OVERVIEW's -- harmless extra arguments for tabs
+    -- whose M.refresh doesn't declare/use them (Lua ignores extra call
+    -- arguments a function doesn't name), and keeps this dispatch
+    -- generic rather than special-casing OVERVIEW here too.
     local ok, err = pcall(
         activeTabModule.refresh,
         panelState.rows,
         effectiveHubStationGroupId,
         panelState.actionButtons,
-        state.hubButtons,
         switchViewedHub,
         state.truckStationRows,
         state.truckStationPagination,
-        state.truckStationRefreshButton
+        state.truckStationRefreshButton,
+        state.truckStationFilterButtons
     )
 
     if not ok then
@@ -632,17 +624,20 @@ local function buildSimplePanel(panelId, actionButtonCount)
 end
 
 
--- Decision 143: OVERVIEW's own bespoke panel -- same action-button row
--- as buildSimplePanel (via the shared buildActionButtons helper), plus
--- a real clickable hub-button column (player's request: "Lets Move
--- Hubs to main page .. have them Listed... if you select a different
--- hub then its data takes over the GUI"), plus the same MAX_ROWS plain-
--- text pool every simple tab has. Hub buttons reuse the exact same
--- EpodTdTabActive/EpodTdTabInactive style classes the tab bar itself
--- uses -- same green-vs-dark look, already proven, no new styling risk.
--- gui_tab_overview.lua owns deciding WHICH hub is active and wiring
--- each slot's `.handler` to call the `onSwitchHub` callback it's
--- handed (see M.refresh) -- this function only builds the widgets.
+-- Decision 161: player's own redesign -- the separate hub-switcher
+-- button column (Decision 143) and the truck-station list (Decision
+-- 151) were two different widget pools doing overlapping jobs (both
+-- ultimately just "list some stations"). Merged into ONE list: every
+-- enabled hub now appears as a normal row in the SAME truck-station
+-- pool below (switching which one an existing hub row's name-click
+-- does -- switch the viewed hub, per the player's own confirmation,
+-- "if you click the Hub button that's the one in focus for all the
+-- data" -- instead of a camera jump), with a 3-way filter (Hubs /
+-- Stations / All) replacing the old always-shown hub column. The old
+-- 12-slot hubButtonsColumn is gone outright, not just hidden -- same
+-- lesson as Decision 152: an unused pre-allocated pool in this non-
+-- scrolling window always costs real height whether or not it's
+-- ever populated.
 local function buildOverviewPanel(panelId, actionButtonCount)
 
     local panel = gui.container_create(panelId)
@@ -650,41 +645,6 @@ local function buildOverviewPanel(panelId, actionButtonCount)
     panel:setLayout(panelLayout)
 
     local actionButtons = buildActionButtons(panelLayout, actionButtonCount)
-
-    local hubButtonsColumn = gui.boxLayout_create(nil, "VERTICAL")
-
-    state.hubButtons = {}
-
-    for hubSlotIndex = 1, MAX_HUB_BUTTONS do
-
-        local label = gui.textView_create(nil, "", WINDOW_WIDTH, false)
-        local button = gui.button_create(nil, label)
-
-        pcall(button.setMaximumSize, button, WINDOW_WIDTH, 2000)
-
-        button:onClick(function()
-
-            local slot = state.hubButtons[hubSlotIndex]
-
-            if slot ~= nil and slot.handler ~= nil then
-
-                local ok, err = pcall(slot.handler)
-
-                if not ok then
-                    log.info("GUI CENTRAL RAW: hub button " .. tostring(hubSlotIndex) .. " handler failed: " .. tostring(err))
-                end
-
-            end
-
-        end)
-
-        hubButtonsColumn:addItem(button)
-
-        state.hubButtons[hubSlotIndex] = { label = label, button = button, handler = nil }
-
-    end
-
-    panelLayout:addItem(hubButtonsColumn)
 
     local rows = {}
 
@@ -734,6 +694,51 @@ local function buildOverviewPanel(panelId, actionButtonCount)
     panelLayout:addItem(truckStationHeadingRow)
 
     state.truckStationRefreshButton = { label = refreshButtonLabel, button = refreshButton, handler = nil }
+
+    -- Decision 161: 3-way filter replacing the old separate hub-button
+    -- column -- "Hubs" shows only your enabled hubs (this list's own
+    -- name-click now switches the viewed hub for a row like that,
+    -- instead of the camera-jump every other row does), "Stations"
+    -- shows only non-hub candidates, "All" is everything (still never
+    -- includes drop-offs -- Decision 159 stays in effect regardless of
+    -- filter). Same 3-button row-of-toggles shape as the tab bar
+    -- itself, reusing EpodTdTabActive/EpodTdTabInactive.
+    local filterRow = gui.boxLayout_create(nil, "HORIZONTAL")
+
+    state.truckStationFilterButtons = {}
+
+    local filterModes = { "HUBS", "STATIONS", "ALL" }
+    local filterLabels = { HUBS = "[ Hubs ]", STATIONS = "[ Stations ]", ALL = "[ All ]" }
+
+    for _, filterMode in ipairs(filterModes) do
+
+        local label = gui.textView_create(nil, filterLabels[filterMode], 120, false)
+        local button = gui.button_create(nil, label)
+        pcall(button.setMaximumSize, button, 120, 2000)
+
+        button:onClick(function()
+
+            local slot = state.truckStationFilterButtons[filterMode]
+
+            if slot ~= nil and slot.handler ~= nil then
+
+                local ok, err = pcall(slot.handler)
+
+                if not ok then
+                    log.info("GUI CENTRAL RAW: truck station filter '" .. tostring(filterMode) .. "' failed: " .. tostring(err))
+                end
+
+            end
+
+        end)
+
+        filterRow:addItem(button)
+
+        state.truckStationFilterButtons[filterMode] = { label = label, button = button, handler = nil }
+
+    end
+
+    panelLayout:addItem(filterRow)
 
     state.truckStationRows = {}
 

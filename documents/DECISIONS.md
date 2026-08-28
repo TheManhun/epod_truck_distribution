@@ -2930,6 +2930,140 @@ Each row's info text (`gui_central_raw.lua`'s `infoLabel`) is now wrapped in its
 
 **LIVE-CONFIRMED**: player tested the real list rows directly -- "the links worked perfectly". Click-to-Locate is complete: station names in the truck-station list jump the camera there, "Make Hub" stays fully separate, both proven live on the real 250-year save. `IDEAS.md`'s "Click-to-Locate" entry removed per its own maintenance rule (implemented and successfully tested).
 
+## Decision 157 — "Drop-off only" stations ARE detectable: no construction entity at all, not just a different one
+
+### What happened
+
+Follow-up to the player's real screenshots comparing "Barking Industrial" (tiny roadside shelter) against "Barking Machines factory" (real paved cargo yard) -- IDEAS.md's queued research question, "is this detectable via the station's construction data?" Extended `truck_station_finder.scan()` to read each station's construction `fileName`, reusing the EXACT proven chain `industry_recipes.lua`'s `getIndustryFileName` already uses for factories (`api.engine.getComponent(constructionId, api.type.ComponentType.CONSTRUCTION).fileName`), aimed at the station-specific `api.engine.system.streetConnectorSystem.getConstructionEntityForStation` instead of the SimBuilding equivalent. New DEBUG button "Station Construction Survey" groups all 86 real truck stations by this fileName and reports the breakdown.
+
+### Decision
+
+**LIVE-CONFIRMED, real signal found** -- not the fileName-comparison originally guessed, but something cleaner: 64 of the 86 stations resolved to a genuine construction, `station/street/modular_terminal.con` (includes BOTH "Barking Machines factory" and, notably, the full "Barking Cargo Station" too -- so this fileName covers real player-built truck stations broadly, not just factory-adjacent ones). The remaining **22 stations returned NO construction entity at all** (`getConstructionEntityForStation` itself came back empty/negative, never even reaching the `.fileName` read) -- and "Barking Industrial" is in that exact group, alongside three stations the player had themselves named "...drop-off" (Barking CM drop-off, Bradninch Cargo Station drop-off, Langport Steel mill drop-off) and a cluster of "...Commercial"/"...Industrial"/"Windsor Road"-style stops. The correlation between "no construction entity" and the player's own visual/naming intuition is strong and immediate -- these all read as auto-generated town-zone delivery points the game creates for building cargo needs, never actually "constructed" by the player at all, which would explain both the tiny visual footprint and the inability to hold real stock.
+
+### Consequence
+
+Detection mechanism proven and already live in `truck_station_finder.lua` (every scan result now carries a `fileName` field, `nil` meaning "no construction -- likely drop-off/auto-generated"). Not yet wired into the actual GUI list -- next step, if wanted, is a visible tag (e.g. "[drop-off]") on these rows in OVERVIEW's truck-station list, the same way factory-adjacency is already flagged. Root cause of WHY these specific stations lack a construction entity (auto-zone-delivery vs. some other real category) is inferred from strong correlation, not separately proven -- would need one of these stations opened in-game and its build history/right-click info checked to fully close that out, though the practical detection signal itself is already solid.
+
+## Decision 158 — Drop-off stations excluded from Make Hub, kept visible in the list
+
+### What happened
+
+Player's direct instruction after Decision 157's finding: "we should filter out the drop off centres as able to be converted to distribution hubs."
+
+### Decision
+
+In `gui_tab_overview.lua`'s truck-station row rendering, added a new branch ahead of the existing `isHub`/busy/`Make Hub` chain: any station where `entry.fileName == nil` (no construction entity -- Decision 157's live-confirmed drop-off signal) shows `[ Drop-off ]` (muted style, `EpodTdMutedText`) with its handler cleared, instead of `[ Make Hub ]`. Deliberately kept the row itself fully VISIBLE rather than removing it from the list -- the name/city/line/truck data and the Locate (camera-jump) button both still work normally, only the hub-conversion action is disabled, same "show why, don't just hide the information" pattern already used for the `[ Busy... ]` state.
+
+### Consequence
+
+**LIVE-CONFIRMED**: player tested -- "Barking CM drop-off" and "Barking Industrial" both showed `[ Drop-off ]`, every other row showed a normal active `[ Make Hub ]`. Detection and disabling both work correctly.
+
+## Decision 159 — Drop-off stations removed from the list entirely, not just disabled
+
+### What happened
+
+Player's follow-up after confirming Decision 158's `[ Drop-off ]` tag works: "would it not be best just to not list them? I mean no need to see them." Also raised a second, separate idea: a small icon on the LINES page to show drop-off vs. real cargo station type per destination.
+
+### Decision
+
+New `filterOutDropOffs(list)` in `gui_tab_overview.lua`, applied at all three places the truck-station scan result gets cached (`Refresh` click, first-open auto-scan, post-"Make Hub" rescan) -- keeps an entry only if `entry.fileName ~= nil or entry.isHub` (the `isHub` half is defensive: never hide an already-converted real hub even in some future edge case where its fileName read comes back empty). `truck_station_finder.scan()` itself is untouched and still returns every truck station including drop-offs, unfiltered -- this filtering is specific to what OVERVIEW's hub-candidate list wants to show, not a change to the underlying data, so the LINES-page icon idea (still just proposed, not built) can use the same full scan data later without needing a second scan mode.
+
+Decision 158's `[ Drop-off ]` branch in the row-rendering code is now unreachable dead code for this specific list (every entry reaching it already has a real fileName or is a hub) -- left in place as a harmless defensive fallback rather than removed.
+
+### Consequence
+
+Not yet live-tested. The LINES-page station-type icon idea from the same message is a separate, larger question (needs a lightweight single-station lookup distinct from the full-map `scan()`, plus a decision on real icon images vs. a plain text tag) -- not started, pending the player's input on that approach.
+
+## Decision 160 — Drop-off marker added to LINES page destinations
+
+### What happened
+
+Player chose plain text tag over a custom icon image (asked directly -- no new asset round-trip needed, and this font only renders a small confirmed glyph set anyway). Built the LINES-page half of the drop-off detection idea raised alongside Decision 159.
+
+### Decision
+
+New `truck_station_finder.isDropOffStation(stationGroupId)` -- a deliberately CHEAP, single-station equivalent of the expensive full-map `M.scan()`, since LINES refreshes every `guiUpdate` tick and can't afford a 223-station enumeration per destination row. Reads one station out of the destination's group (`STATION_GROUP.stations[1]`) and checks whether IT has a construction entity, the exact same signal Decision 157 proved distinguishes real cargo stations from drop-offs. `STATION_GROUP.stations` itself is a field never yet used live in this mod (only seen in AI Builder's reference source) -- given three earlier wrong-object guesses this same session (Decisions 148-150), added a self-diagnostic log for the first 6 real calls so a wrong assumption here surfaces immediately rather than silently returning wrong answers.
+
+`gui_tab_lines.lua`'s destination-row rendering now prepends `"[D] "` to a destination's name when this returns `true` -- only the exception gets tagged, nothing shown for a normal station, matching this project's existing "mark only what's notable" convention (same as the delta column's "n/a" case).
+
+### Consequence
+
+**LIVE-CONFIRMED (visually)**: player's own screenshot showed `"[D] Bedford Industrial"` on a real LINES destination -- "Bedford Industrial" matches the exact same naming pattern as "Barking Industrial", one of Decision 157's own confirmed drop-off examples, so the tag landed on a real, plausible drop-off station, not a random/wrong one. The `STATION_GROUP.stations` diagnostic log lines themselves weren't separately reviewed, but the correct-looking real-world result is strong practical evidence the lookup resolved properly.
+
+## Decision 161 — OVERVIEW redesign: hub-switcher column merged into the truck-station list, with a Hubs/Stations/All filter
+
+### What happened
+
+Player's own redesign proposal after seeing the Decision 151 list working well: "we need to think about the layout of the 1st page... maybe we remove the top listing and have all the stations Hubs listed at the bottom, then we can maybe have a filter to the list (Hubs) (Stations) (All)." Confirmed directly that clicking a Hub row should behave like the old hub-button column always did: "if you click the Hub button that's the one in focus for all the data."
+
+### Decision
+
+Removed the separate 12-slot hub-button column (Decision 143) from `gui_central_raw.lua`'s `buildOverviewPanel` OUTRIGHT, not just hidden -- same lesson as Decision 152, an unused pre-allocated pool in this non-scrolling window always costs real height. Replaced with a 3-button filter row (`state.truckStationFilterButtons`, "Hubs"/"Stations"/"All") sitting above the existing truck-station row pool, reusing the tab bar's own `EpodTdTabActive`/`EpodTdTabInactive` styling for the active filter.
+
+`gui_tab_overview.lua`'s cached scan result is now stored unfiltered (`truckStationState.rawList`) and filtered at RENDER time (`applyListFilter`, combining the existing drop-off exclusion from Decision 159 with the new Hubs-only/Stations-only/All mode) rather than at scan time -- switching filter modes is instant, never triggers a re-scan. An enabled hub is now just a normal row like any other; the ONLY difference is its name-click handler (`row.locateHandler`) now ALSO calls `onSwitchHub` (the same callback the old hub-button column used to switch `state.viewedHubStationGroupId`) before doing its usual camera jump -- both actions are pure navigation, neither mutates anything, so combining them is safe. The row's own button style reflects whether it's the currently-viewed hub (`EpodTdTabActive`) the same way the old column did.
+
+### Consequence
+
+Not yet live-tested. Next step: confirm the filter buttons actually switch which rows show, confirm clicking a Hub row's name both switches OVERVIEW's own hub summary data (managed lines/vehicles/waiting/etc.) AND jumps the camera, and confirm the window still fits on screen with the new filter row added (one more row of buttons than before, but a full 12-slot hub column removed -- expected net reduction, matching Decision 152's own math, but not yet re-verified live).
+
+## Decision 162 — "n/a" delta now names the owning hub, read-only, right on the line's own name
+
+### What happened
+
+Player's follow-up to Decision 147's plain "n/a": "maybe if the stop it does not own we just don't show it? or some icon to indicate its owned by another hub?"
+
+### Decision
+
+Kept the line visible (removing it would hide real, existing traffic) but replaced the mystery with a real answer: `gui_tab_lines.lua`'s header row now appends `"[owned by <Hub Name>]"` next to a line's name whenever its delta is blank, via `line_ownership.getOwner(lineId)` -- a pure read, returns `nil` if never claimed. Deliberately NOT `line_ownership.isOwnedByOther` for this -- that function has a real, documented side effect (lazily claims an unclaimed line for whichever hub asks first), which a read-only display path must never trigger just by being looked at. Shown on the header label (350px wide) rather than the delta cell itself (45px, never wide enough for a real hub name).
+
+### Consequence
+
+Tested live -- see Decision 164 for what it actually revealed (the fix works exactly as designed, but the assumption that most "n/a" lines are shared-ownership cases turned out to be wrong for most of them).
+
+## Decision 163 — Hub-row click bug found: the green "[ HUB ]" badge had no handler, and the player was clicking it, not the name
+
+### What happened
+
+Follow-up to Decision 161's redesign: player reported clicking a Hub row did nothing. Root-caused with file-based diagnostics (not console `log.info` -- this mod's console output was never actually the channel this session's diagnostics relied on; every other probe wrote a real report file) written directly into the click handler and into `M.refresh` itself. Result: `epod_td_overview_refresh_diag.txt` was created and updated (confirming `M.refresh` runs fine), but `epod_td_overview_click_diag.txt` -- written as the very FIRST line inside `row.locateHandler` -- was never created at all. That means the click never reached the handler code, full stop.
+
+### Decision
+
+Concluded the player was clicking the green `[ HUB ]` badge on the right, not the plain station-name text on the left -- a completely reasonable assumption, since on every OTHER row in this same list, the right-side badge ("Make Hub") IS the actionable button. For hub rows specifically, that badge's handler (`row.handler`) had been left `nil` (Decision 161 only ever wired the name's `locateHandler`). Fixed by pointing `row.handler` at the exact same function as `row.locateHandler` for hub rows -- both the name and the badge now switch the viewed hub and jump the camera.
+
+### Consequence
+
+**LIVE-CONFIRMED**: player tested -- "I like the way it works now takes you to the station and shows the info." Both the badge and the name now switch the viewed hub and jump the camera correctly. The two temporary diagnostic file-writes (`epod_td_overview_click_diag.txt`, `epod_td_overview_refresh_diag.txt` -- the second one writing every single `guiUpdate` tick) have been removed from the code now that the fix is confirmed; the stale `.txt` files themselves are harmless leftovers in the game install folder, never regenerated.
+
+## Decision 164 — "n/a" was hiding two genuinely different causes, not just shared ownership: internal-only lines get their own label
+
+### What happened
+
+Player tested Decision 162's owner-suffix fix on a real hub, "Braintree Cargo Airport" (a multi-terminal T1-T4 complex) -- and EVERY one of its 5 lines showed plain "n/a", none showing the new `[owned by ...]` suffix. Root-caused with a capped, temporary file diagnostic (`epod_td_lines_ownersuffix_diag.txt`) rather than guessing a fourth time: 4 of the 5 lines had `ownerHubId == nil` -- never claimed by ANY hub at all. Only the 5th ("Bedford Outer Cargo Station ↔ Braintree Cargo Airport") had a real owner (Bedford, id 107560).
+
+### Decision
+
+Traced why `ownerHubId` was `nil` for the other 4: `planner.lua`'s `findDestinationStationGroup` returns `nil` for TWO structurally different reasons, both collapsed into the same "n/a" today -- (1) the line is genuinely owned by a different hub (`isOwnedByOther`), or (2) the line never even reaches that ownership check because EVERY one of its stops resolves to the SAME station group as the hub itself, so `destinationStationGroup` never gets set at all. The 4 Braintree lines (`[T] Braintree Cargo Transit`, `Industrial Delivery`, `Commercial Delivery`, `Crude to Goods`) are internal shuttle lines moving cargo between terminals of the SAME big Airport complex -- there is no external destination for the planner to size a fleet against, which is a correct, structural "n/a", not an ownership conflict at all. Confirms the player's own original question ("should the n/a line just not show since it's managed by another hub") was based on an incomplete picture -- most of what they were seeing wasn't a shared-hub case at all, so hiding "owned by another hub" lines specifically would have left the internal-only ones just as unexplained as before.
+
+Fixed by hoisting `ownerHubId` out of the header-label computation so the DELTA cell (previously always plain "n/a") can now distinguish the two real cases: `"shared"` when a real owner exists (full name still on the header label, which has the room), `"n/a"` when the line is genuinely internal/destination-less. Removed the temporary diagnostic file-write now that its job is done.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 165 — Truck-station row text widened and shortened labels to stop names getting cut off
+
+### What happened
+
+Player's report: station names on OVERVIEW's truck-station list were getting cut off (e.g. "Braintree Chemical plant - B...").
+
+### Decision
+
+Two real causes fixed together: (1) the row format was spending characters on full `"lines="`/`"trucks="` labels every row -- shortened to `"L:"`/`"T:"`, freeing ~10 characters for the name itself; (2) `TRUCK_STATION_LABEL_WIDTH` itself (380) was simply too narrow for what it held -- widened to 460 in BOTH `gui_tab_overview.lua` and `gui_central_raw.lua` (the two files keep their own copies of this constant in sync by convention -- the actual widget is built in the latter, the text formatted in the former). City-name truncation trimmed slightly (16→14 chars, real city names here are all well under that) to give the station name itself more room (28→34 chars).
+
+### Consequence
+
+Not yet live-tested.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

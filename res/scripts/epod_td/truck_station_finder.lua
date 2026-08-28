@@ -99,6 +99,41 @@ function M.scan()
 
                 end)
 
+                -- Player's question: can a "drop-off only" station (a
+                -- small roadside stop, no real cargo yard -- e.g.
+                -- "Barking Industrial") be told apart from a real full
+                -- truck station (e.g. "Barking Machines factory")?
+                -- Neither the raw STATION component nor getEntity()'s
+                -- own fields (cargo/carriers/stationGroup/town/position/
+                -- name/type/id -- Decisions 148-150) carry anything
+                -- resembling a capacity flag, so the difference, if
+                -- detectable at all, is a CONSTRUCTION-level one (which
+                -- physical building was placed), not a station-data one.
+                -- Same exact proven chain `industry_recipes.lua`'s
+                -- `getIndustryFileName` already uses for factories
+                -- (there via getConstructionEntityForSimBuilding) --
+                -- here via the station-specific equivalent, confirmed
+                -- real via AI Builder's own reference source.
+                local fileName = nil
+
+                pcall(function()
+
+                    local constructionId =
+                        api.engine.system.streetConnectorSystem.getConstructionEntityForStation(stationEntity)
+
+                    if constructionId ~= nil and constructionId >= 0 then
+
+                        local construction =
+                            api.engine.getComponent(constructionId, api.type.ComponentType.CONSTRUCTION)
+
+                        if construction ~= nil then
+                            fileName = construction.fileName
+                        end
+
+                    end
+
+                end)
+
                 local lineCount = 0
                 local vehicleCount = 0
 
@@ -138,7 +173,8 @@ function M.scan()
                     isHub = isHub,
                     industryName = industryName,
                     lineCount = lineCount,
-                    vehicleCount = vehicleCount
+                    vehicleCount = vehicleCount,
+                    fileName = fileName
                 }
 
             end)
@@ -180,6 +216,76 @@ function M.scan()
     end)
 
     return results
+
+end
+
+
+-- ============================================================
+-- LIGHTWEIGHT SINGLE-STATION DROP-OFF CHECK
+--
+-- M.scan() above is a full-map enumeration (223 stations on the test
+-- save) -- far too expensive to call once per destination on every
+-- LINES tab refresh (which runs every guiUpdate tick). This is the
+-- cheap, single-station equivalent: given a stationGroupId (exactly
+-- what a line destination already carries), read ONE station out of
+-- its group and check whether IT has a construction entity, same
+-- fileName-presence signal Decision 157 already proved distinguishes
+-- real cargo stations from drop-off/auto-generated ones.
+--
+-- `STATION_GROUP.stations` (the array of individual station entities
+-- belonging to a group) is NOT yet proven live in THIS mod -- only
+-- seen in reference mod source (AI Builder's own
+-- `stationGroupComp.stations` usage). Logs a one-off diagnostic for
+-- the first few real calls so a wrong assumption here shows up
+-- immediately in the log, same discipline as every other new field
+-- this session (Decisions 148-150 each caught a wrong guess this way).
+-- ============================================================
+
+local stationTypeDiagLoggedCount = 0
+
+function M.isDropOffStation(stationGroupId)
+
+    if type(stationGroupId) ~= "number" or stationGroupId < 0 then
+        return nil
+    end
+
+    local isDropOff = nil
+
+    pcall(function()
+
+        local groupComponent =
+            api.engine.getComponent(stationGroupId, api.type.ComponentType.STATION_GROUP)
+
+        if groupComponent == nil
+            or groupComponent.stations == nil
+            or groupComponent.stations[1] == nil
+        then
+            return
+        end
+
+        local firstStationId = groupComponent.stations[1]
+
+        local constructionId =
+            api.engine.system.streetConnectorSystem.getConstructionEntityForStation(firstStationId)
+
+        isDropOff = (constructionId == nil or constructionId < 0)
+
+        if stationTypeDiagLoggedCount < 6 then
+
+            stationTypeDiagLoggedCount = stationTypeDiagLoggedCount + 1
+
+            log.info(
+                "TRUCK STATION FINDER: isDropOffStation diag -- stationGroupId=" .. tostring(stationGroupId)
+                    .. " firstStationId=" .. tostring(firstStationId)
+                    .. " constructionId=" .. tostring(constructionId)
+                    .. " -> isDropOff=" .. tostring(isDropOff)
+            )
+
+        end
+
+    end)
+
+    return isDropOff
 
 end
 

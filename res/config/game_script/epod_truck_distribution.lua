@@ -1391,6 +1391,92 @@ end
 
 
 -- ============================================================
+-- STATION CONSTRUCTION SURVEY (config.DEBUG only)
+--
+-- Player's question: can a "drop-off only" station (a small roadside
+-- stop with no real cargo yard, e.g. "Barking Industrial") be told
+-- apart from a real full truck station (e.g. "Barking Machines
+-- factory")? truck_station_finder.scan() now reads each station's
+-- construction `fileName` via the exact same proven chain
+-- industry_recipes.lua already uses for factories (Decision-era
+-- research, `getIndustryFileName`) -- here via the station-specific
+-- getConstructionEntityForStation instead of the SimBuilding one.
+-- Read-only, groups every real truck station by its fileName so the
+-- actual construction names can be compared side by side, rather than
+-- guessing which one "looks like" a drop-off from a screenshot alone.
+-- ============================================================
+
+local function handleStationConstructionSurveyButtonClick()
+
+    local output = {}
+
+    output[#output + 1] = "========================================"
+    output[#output + 1] = "STATION CONSTRUCTION SURVEY"
+    output[#output + 1] = "========================================"
+
+    local ok, list = pcall(truck_station_finder.scan)
+
+    if not ok or list == nil then
+
+        logUi("STATION CONSTRUCTION SURVEY: scan failed: " .. tostring(list))
+        output[#output + 1] = "SCAN FAILED: " .. tostring(list)
+        writeReportFile("epod_td_station_construction_survey.txt", output)
+
+        return
+
+    end
+
+    local byFileName = {}
+    local fileNameOrder = {}
+
+    for _, entry in ipairs(list) do
+
+        local key = entry.fileName or "(nil -- construction lookup failed or returned nothing)"
+
+        if byFileName[key] == nil then
+
+            byFileName[key] = {}
+            fileNameOrder[#fileNameOrder + 1] = key
+
+        end
+
+        table.insert(byFileName[key], entry)
+
+    end
+
+    table.sort(fileNameOrder, function(a, b) return #byFileName[a] > #byFileName[b] end)
+
+    output[#output + 1] = "Total truck stations: " .. tostring(#list)
+    output[#output + 1] = "Distinct construction fileNames: " .. tostring(#fileNameOrder)
+    output[#output + 1] = "----------------------------------------"
+
+    for _, fileName in ipairs(fileNameOrder) do
+
+        local entries = byFileName[fileName]
+
+        output[#output + 1] = fileName .. "  (" .. tostring(#entries) .. " station(s))"
+
+        for _, entry in ipairs(entries) do
+
+            output[#output + 1] =
+                "    " .. tostring(entry.name) .. "  (groupId=" .. tostring(entry.stationGroupId)
+                    .. ", lines=" .. tostring(entry.lineCount) .. ", trucks=" .. tostring(entry.vehicleCount) .. ")"
+
+        end
+
+    end
+
+    writeReportFile("epod_td_station_construction_survey.txt", output)
+
+    logUi(
+        "STATION CONSTRUCTION SURVEY: " .. tostring(#list) .. " station(s), "
+            .. tostring(#fileNameOrder) .. " distinct construction fileName(s) -- see epod_td_station_construction_survey.txt"
+    )
+
+end
+
+
+-- ============================================================
 -- DUMP ALL MANAGED LINES (config.DEBUG only)
 --
 -- Requested live as a direct alternative to screenshots, which kept
@@ -2244,6 +2330,7 @@ if config.DEBUG then
         { key = "dedupeSharedRouteLines", label = "Dedupe Shared Route Lines (DEBUG)", handler = handleDedupeSharedRouteLinesButtonClick },
         { key = "truckStationSurvey", label = "Truck Station Survey (DEBUG)", handler = handleTruckStationSurveyButtonClick },
         { key = "cameraFocusTest", label = "Camera Focus Test (DEBUG)", handler = handleCameraFocusTestButtonClick },
+        { key = "stationConstructionSurvey", label = "Station Construction Survey (DEBUG)", handler = handleStationConstructionSurveyButtonClick },
         { key = "openRawUiExperiment", label = "Open Raw UI Experiment (TEST)", handler = handleOpenRawUiExperimentButtonClick },
         { key = "openLegacyCentral", label = "Open Central Manager (Legacy)", handler = handleOpenNewGuiButtonClick }
 

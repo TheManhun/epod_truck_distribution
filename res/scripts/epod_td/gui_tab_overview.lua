@@ -11,18 +11,51 @@ local M = {}
 
 -- Must match gui_central_raw.lua's own copies of these same constants
 -- exactly -- the actual widgets are created at these widths.
-local TRUCK_STATION_LABEL_WIDTH = 380
+local TRUCK_STATION_LABEL_WIDTH = 460
 local TRUCK_STATION_HUB_BUTTON_WIDTH = 140
 
--- Decision 151: cached scan result + current page, same shape as
--- gui_tab_lines.lua's own state.currentPage. Deliberately module-level
--- (survives across refreshes) rather than re-scanning every guiUpdate
--- tick -- a full-map stationSystem.forEach scan is real work, meant to
--- run only when the player explicitly asks (Refresh button, first
--- open, or right after a hub toggle completes).
+-- Decision 159/161: player's call after seeing drop-off stations sit in
+-- the list as permanently-disabled "[ Drop-off ]" rows -- "would it
+-- not be best just to not list them? ... no need to see them" -- and,
+-- separately, the player's redesign merging the old hub-button column
+-- into this same list with a Hubs/Stations/All filter. Applied at
+-- RENDER time against the cached RAW scan (never re-scans just to
+-- switch filter mode) -- truck_station_finder.scan() itself stays
+-- generic/unfiltered so any future feature can still use the full set.
+local function applyListFilter(rawList, filterMode)
+
+    local filtered = {}
+
+    for _, entry in ipairs(rawList or {}) do
+
+        local passesDropOff = entry.fileName ~= nil or entry.isHub
+
+        local passesMode =
+            (filterMode == "HUBS" and entry.isHub)
+                or (filterMode == "STATIONS" and not entry.isHub)
+                or (filterMode ~= "HUBS" and filterMode ~= "STATIONS")
+
+        if passesDropOff and passesMode then
+            filtered[#filtered + 1] = entry
+        end
+
+    end
+
+    return filtered
+
+end
+
+
+-- Decision 151/161: cached RAW scan result + current page/filter mode,
+-- same shape as gui_tab_lines.lua's own state.currentPage. Deliberately
+-- module-level (survives across refreshes) rather than re-scanning
+-- every guiUpdate tick -- a full-map stationSystem.forEach scan is real
+-- work, meant to run only when the player explicitly asks (Refresh
+-- button, first open, or right after a hub toggle completes).
 local truckStationState = {
-    list = nil,
-    currentPage = 1
+    rawList = nil,
+    currentPage = 1,
+    filterMode = "ALL"
 }
 
 
@@ -53,17 +86,12 @@ function M.getLabel()
 end
 
 
--- Decision 143: hub-list rendering, moved here from the now-dropped
--- HUBS tab. `hubButtons` is a pool of {label, button, handler} slots
--- gui_central_raw.lua's buildOverviewPanel built; `onSwitchHub` is a
--- plain callback (state.viewedHubStationGroupId's setter) it hands us
--- so this file never touches that state directly -- see gui_central_
--- raw.lua's own header comment for why. Renders unconditionally, even
--- with hubStationGroupId == nil, so the player can pick their first
--- hub straight from this list rather than needing one already
--- selected on the map. Active/inactive reuses the exact same
--- EpodTdTabActive/EpodTdTabInactive classes the tab bar itself uses --
--- same green-vs-dark look, no new styling risk.
+-- Decision 143 introduced a dedicated hub-button column here; Decision
+-- 161 removed it outright and merged hub-switching into the truck-
+-- station list below instead (see renderTruckStationList's own header
+-- comment). `onSwitchHub` is still the same plain callback
+-- (state.viewedHubStationGroupId's setter) gui_central_raw.lua hands
+-- this file so it never touches that state directly.
 -- Decision 152: LIVE-CONFIRMED real bug -- adding the truck-station
 -- list pushed OVERVIEW's total content past the window's fixed size
 -- (no scroll capability, confirmed failing back in Decision 75/76) and
@@ -85,63 +113,9 @@ local function setRowsVisibleUpTo(rows, usedCount)
 end
 
 
-local function renderHubButtons(hubButtons, hubStationGroupId, onSwitchHub)
-
-    if hubButtons == nil then
-        return
-    end
-
-    local okHubs, enabledHubs = pcall(hub_registry.getEnabledHubs)
-
-    if not okHubs or enabledHubs == nil then
-        enabledHubs = {}
-    end
-
-    for hubSlotIndex, slot in ipairs(hubButtons) do
-
-        local enabledHubId = enabledHubs[hubSlotIndex]
-
-        if enabledHubId == nil then
-
-            -- Decision 144: LIVE-CONFIRMED -- blanking a slot's text
-            -- doesn't collapse its height, same root cause as the LINES
-            -- accordion's own spacing bug (Decision 132) -- a 12-slot
-            -- pool with only 3 real hubs left 9 button-heights' worth
-            -- of visible empty space below the list. Same proven fix:
-            -- hide the whole slot via setVisible, not just its text.
-            pcall(slot.button.setVisible, slot.button, false)
-            slot.label:setText("", 560)
-            slot.handler = nil
-            pcall(slot.button.setStyleClassList, slot.button, {})
-
-        else
-
-            local okName, hubName = pcall(stations.getEntityName, enabledHubId)
-            local isActive = enabledHubId == hubStationGroupId
-
-            pcall(slot.button.setVisible, slot.button, true)
-
-            slot.label:setText(
-                okName and tostring(hubName) or ("hub " .. tostring(enabledHubId)),
-                560
-            )
-
-            pcall(slot.button.setStyleClassList, slot.button, { isActive and "EpodTdTabActive" or "EpodTdTabInactive" })
-
-            slot.handler = function()
-
-                if onSwitchHub ~= nil then
-                    onSwitchHub(enabledHubId)
-                end
-
-            end
-
-        end
-
-    end
-
-end
-
+-- Decision 161: player's redesign, moved to buildOverviewPanel/
+-- renderTruckStationList below -- see that function's own header
+-- comment.
 
 -- Decision 151: player's request -- "put it on the front page at the
 -- bottom showing only 10 stations per page ... City Name - How many
@@ -159,7 +133,18 @@ end
 -- truck_station_finder.scan()'s own job, not this file's -- see that
 -- module's header comment for the full live-proven field list
 -- (Decisions 148-150) this reads.
-local function renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton)
+--
+-- Decision 161: player's redesign -- the separate hub-button column
+-- (Decision 143) is gone; an enabled hub is now just a row in THIS
+-- list like any other, reachable via the new Hubs/Stations/All filter
+-- (`truckStationFilterButtons`, built by gui_central_raw.lua's
+-- buildOverviewPanel). Clicking a HUB row's name now switches which
+-- hub the whole OVERVIEW page focuses on (via `onSwitchHub`, the same
+-- callback the old hub-button column used) IN ADDITION to the camera
+-- jump every row's name-click already does -- player's own
+-- confirmation, "if you click the Hub button that's the one in focus
+-- for all the data."
+local function renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton, truckStationFilterButtons, onSwitchHub, hubStationGroupId)
 
     if truckStationRows == nil then
         return
@@ -173,7 +158,7 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
 
             if ok then
 
-                truckStationState.list = result
+                truckStationState.rawList = result
                 truckStationState.currentPage = 1
 
             else
@@ -184,7 +169,24 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
 
     end
 
-    if truckStationState.list == nil then
+    if truckStationFilterButtons ~= nil then
+
+        for filterMode, slot in pairs(truckStationFilterButtons) do
+
+            local isActive = truckStationState.filterMode == filterMode
+
+            pcall(slot.button.setStyleClassList, slot.button, { isActive and "EpodTdTabActive" or "EpodTdTabInactive" })
+
+            slot.handler = function()
+                truckStationState.filterMode = filterMode
+                truckStationState.currentPage = 1
+            end
+
+        end
+
+    end
+
+    if truckStationState.rawList == nil then
 
         -- First time this window's been opened this session -- run one
         -- scan automatically so the list isn't just empty forever until
@@ -193,17 +195,17 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
         local ok, result = pcall(truck_station_finder.scan)
 
         if ok then
-            truckStationState.list = result
+            truckStationState.rawList = result
         else
 
-            truckStationState.list = {}
+            truckStationState.rawList = {}
             log.info("OVERVIEW TAB: initial truck station scan failed: " .. tostring(result))
 
         end
 
     end
 
-    local list = truckStationState.list
+    local list = applyListFilter(truckStationState.rawList, truckStationState.filterMode)
     local totalPages = math.max(1, math.ceil(#list / #truckStationRows))
 
     if truckStationState.currentPage > totalPages then
@@ -271,18 +273,27 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
 
             pcall(row.hubButton.setVisible, row.hubButton, true)
             pcall(row.infoButton.setVisible, row.infoButton, true)
-            pcall(row.infoButton.setStyleClassList, row.infoButton, { "EpodTdTabInactive" })
 
             local industryTag =
                 entry.industryName ~= nil
                     and ("  <-- near " .. tostring(entry.industryName))
                     or ""
 
+            -- Decision 165: player's own report -- station names were
+            -- getting cut off ("Braintree Chemical plant - B..."). Two
+            -- real causes fixed together: the field was cramming a
+            -- full "lines=" / "trucks=" label into every row (shortened
+            -- to "L:"/"T:", saving ~10 characters for the name itself),
+            -- and the label width itself (TRUCK_STATION_LABEL_WIDTH)
+            -- was too narrow for what it was being asked to hold --
+            -- widened to match (also updated in gui_central_raw.lua,
+            -- which must keep its own copy of this constant in sync --
+            -- the actual widget is built there).
             row.infoLabel:setText(
                 string.format(
-                    "%-16s %-28s lines=%-3s trucks=%-3s%s",
-                    tostring(entry.townName or "?"):sub(1, 16),
-                    tostring(entry.name):sub(1, 28),
+                    "%-14s %-34s L:%-3s T:%-3s%s",
+                    tostring(entry.townName or "?"):sub(1, 14),
+                    tostring(entry.name):sub(1, 34),
                     tostring(entry.lineCount),
                     tostring(entry.vehicleCount),
                     industryTag
@@ -297,11 +308,23 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
             -- game.gui.setCamera call the DEBUG probe already proved
             -- live (Decision 155), fetching a fresh position at click
             -- time rather than caching one from scan time.
+            --
+            -- Decision 161: for a HUB row specifically, this SAME
+            -- name-click now also switches the viewed hub (via
+            -- onSwitchHub) -- replaces the old dedicated hub-button
+            -- column's only job, on top of the camera jump every row
+            -- already does. Never mutates anything either way -- both
+            -- halves are pure navigation.
             do
 
                 local locateStationGroupId = entry.stationGroupId
+                local isHubRow = entry.isHub
 
                 row.locateHandler = function()
+
+                    if isHubRow and onSwitchHub ~= nil then
+                        onSwitchHub(locateStationGroupId)
+                    end
 
                     local ok, targetEntity = pcall(game.interface.getEntity, locateStationGroupId)
 
@@ -319,10 +342,44 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
 
             end
 
+            -- A hub row that's ALSO the currently-viewed hub gets the
+            -- active tab-bar green, same visual language the old hub-
+            -- button column and the tab bar itself already use.
+            local isViewedHub = entry.isHub and entry.stationGroupId == hubStationGroupId
+            pcall(row.infoButton.setStyleClassList, row.infoButton, { isViewedHub and "EpodTdTabActive" or "EpodTdTabInactive" })
+
             if entry.isHub then
 
+                -- Decision 163: LIVE-CONFIRMED real gap -- the player's
+                -- click never reached row.locateHandler at all (no
+                -- diagnostic file written), meaning they were almost
+                -- certainly clicking the green "[ HUB ]" badge itself,
+                -- not the plain station-name text next to it -- a
+                -- completely reasonable assumption given every OTHER
+                -- row's right-side badge ("Make Hub") IS the actionable
+                -- button. This badge's handler was left nil for hub
+                -- rows. Now points at the SAME switch-hub-and-locate
+                -- function the name already uses, so either click
+                -- works.
                 row.hubButtonLabel:setText("[ HUB ]", TRUCK_STATION_HUB_BUTTON_WIDTH)
                 pcall(row.hubButton.setStyleClassList, row.hubButton, { "EpodTdTabActive" })
+                row.handler = row.locateHandler
+
+            elseif entry.fileName == nil then
+
+                -- Decision 157/158: player's own conclusion after the
+                -- construction survey -- a station with NO construction
+                -- entity at all (auto-generated town-zone delivery
+                -- point, not a real player-built cargo yard -- e.g.
+                -- "Barking Industrial") can't hold real stock, so it
+                -- shouldn't be offered as a hub candidate at all. Left
+                -- VISIBLE in the list (still useful info -- the name/
+                -- city/line/truck data and Locate button all still
+                -- work) but the conversion action itself is disabled,
+                -- same "show why, don't just remove" philosophy as the
+                -- Busy state above.
+                row.hubButtonLabel:setText("[ Drop-off ]", TRUCK_STATION_HUB_BUTTON_WIDTH)
+                pcall(row.hubButton.setStyleClassList, row.hubButton, { "EpodTdMutedText" })
                 row.handler = nil
 
             elseif operation_lock.isRunning() then
@@ -399,8 +456,77 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
                                 local okRescan, result = pcall(truck_station_finder.scan)
 
                                 if okRescan then
-                                    truckStationState.list = result
+                                    truckStationState.rawList = result
                                 end
+
+                                -- TEMPORARY diagnostic (player reported
+                                -- needing a second click after the busy
+                                -- period ends): checks whether the
+                                -- rescanned DATA itself already shows
+                                -- isHub=true right here (would point at
+                                -- a display/sort issue) or is still
+                                -- false (a real hub_registry/timing bug).
+                                pcall(function()
+
+                                    local file = io.open("epod_td_makehub_rescan_diag.txt", "w")
+
+                                    if file ~= nil then
+
+                                        local okReg, isEnabledNow = pcall(hub_registry.isEnabled, targetStationGroupId)
+                                        local foundEntry = nil
+
+                                        if okRescan and result ~= nil then
+
+                                            for _, e in ipairs(result) do
+                                                if e.stationGroupId == targetStationGroupId then
+                                                    foundEntry = e
+                                                    break
+                                                end
+                                            end
+
+                                        end
+
+                                        -- Testing the theory: converting this
+                                        -- station just changed its lineCount/
+                                        -- vehicleCount dramatically, which the
+                                        -- sort key uses -- did it move to a
+                                        -- DIFFERENT page than the one currently
+                                        -- being viewed?
+                                        local actualIndex = nil
+
+                                        if okRescan and result ~= nil then
+
+                                            local filtered = applyListFilter(result, truckStationState.filterMode)
+
+                                            for i, e in ipairs(filtered) do
+                                                if e.stationGroupId == targetStationGroupId then
+                                                    actualIndex = i
+                                                    break
+                                                end
+                                            end
+
+                                        end
+
+                                        local actualPage =
+                                            actualIndex ~= nil and math.ceil(actualIndex / #truckStationRows) or nil
+
+                                        file:write(
+                                            "targetStationGroupId=" .. tostring(targetStationGroupId) .. "\n"
+                                                .. "okRescan=" .. tostring(okRescan) .. "\n"
+                                                .. "hub_registry.isEnabled=" .. tostring(okReg and isEnabledNow) .. "\n"
+                                                .. "foundEntry=" .. tostring(foundEntry ~= nil) .. "\n"
+                                                .. "foundEntry.isHub=" .. tostring(foundEntry ~= nil and foundEntry.isHub) .. "\n"
+                                                .. "currentPage=" .. tostring(truckStationState.currentPage) .. "\n"
+                                                .. "actualIndexInFilteredList=" .. tostring(actualIndex) .. "\n"
+                                                .. "actualPage=" .. tostring(actualPage) .. "\n"
+                                                .. "filterMode=" .. tostring(truckStationState.filterMode) .. "\n"
+                                        )
+
+                                        file:close()
+
+                                    end
+
+                                end)
 
                             end
                         )
@@ -427,15 +553,14 @@ function M.refresh(
     rows,
     hubStationGroupId,
     actionButtons,
-    hubButtons,
     onSwitchHub,
     truckStationRows,
     truckStationPagination,
-    truckStationRefreshButton
+    truckStationRefreshButton,
+    truckStationFilterButtons
 )
 
-    renderHubButtons(hubButtons, hubStationGroupId, onSwitchHub)
-    renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton)
+    renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton, truckStationFilterButtons, onSwitchHub, hubStationGroupId)
 
     if hubStationGroupId == nil then
 

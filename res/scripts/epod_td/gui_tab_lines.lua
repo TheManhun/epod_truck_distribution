@@ -6,6 +6,8 @@ local terminal_allocator = require("epod_td.terminal_allocator")
 local operation_lock = require("epod_td.operation_lock")
 local planner = require("epod_td.planner")
 local dispatcher = require("epod_td.dispatcher")
+local truck_station_finder = require("epod_td.truck_station_finder")
+local line_ownership = require("epod_td.line_ownership")
 local log = require("epod_td.log")
 
 local M = {}
@@ -275,7 +277,20 @@ local function renderDestinations(group, lineInfo, hubStationGroupId, scanResult
                 row.container:setVisible(true)
             end
 
-            row.label:setText("    " .. directionArrow .. " " .. tostring(destination.name), LINE_ROW_LABEL_WIDTH)
+            -- Decision 160: player's request -- a small marker to tell
+            -- a "drop off only" destination (Decision 157's real, live-
+            -- confirmed signal: no construction entity at all) apart
+            -- from a normal full cargo station, right here on LINES
+            -- where destinations are actually listed. Only the
+            -- exception gets tagged (matches this project's existing
+            -- "n/a"/muted-only-when-notable" convention) -- a normal
+            -- station shows nothing extra. Cheap single-station lookup
+            -- (`truck_station_finder.isDropOffStation`), not the full
+            -- map scan -- safe to run every refresh tick.
+            local okDropOff, isDropOff = pcall(truck_station_finder.isDropOffStation, destination.stationGroup)
+            local dropOffTag = (okDropOff and isDropOff == true) and "[D] " or ""
+
+            row.label:setText("    " .. directionArrow .. " " .. dropOffTag .. tostring(destination.name), LINE_ROW_LABEL_WIDTH)
 
             if row.waitingLabel ~= nil then
 
@@ -639,8 +654,54 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
                 displayLineName = "\xE2\x97\x8f " .. displayLineName
             end
 
+            -- Decision 162: player's own follow-up to Decision 147's
+            -- plain "n/a" -- "maybe some icon to indicate its owned by
+            -- another hub?" Computed here (not down by the delta cell)
+            -- because this header label (LINE_ROW_LABEL_WIDTH, 350px)
+            -- has room for a real hub name; the delta cell (45px) never
+            -- would. Deliberately reads via line_ownership.getOwner
+            -- (pure lookup, returns nil if never claimed) rather than
+            -- isOwnedByOther -- that second one has a real, documented
+            -- side effect (lazily CLAIMS an unclaimed line for whichever
+            -- hub asks first), which a read-only display path must
+            -- never trigger just by being looked at.
+            --
+            -- Decision 163 follow-up, LIVE-CONFIRMED via diagnostic:
+            -- most real "n/a" lines are NOT a shared-ownership case at
+            -- all -- e.g. a real hub ("Braintree Cargo Airport") showed
+            -- 4 of 5 lines with `ownerHubId=nil` (never claimed by ANY
+            -- hub). Root cause: these are internal-only shuttle lines
+            -- whose every stop resolves to the SAME station group as
+            -- the hub itself (a big multi-terminal complex, T1-T4) --
+            -- planner.findDestinationStationGroup correctly returns nil
+            -- because there's no genuinely external stop at all, not
+            -- because of any ownership conflict. `ownerHubId` is now
+            -- hoisted out of this block so the delta cell below can
+            -- show a short, honest distinction between the two real
+            -- cases instead of one undifferentiated "n/a".
+            local planLine = planByLineId[lineInfo.id]
+            local ownerSuffix = ""
+            local ownerHubId = nil
+
+            if planLine == nil then
+
+                local okOwner, resolvedOwnerHubId = pcall(line_ownership.getOwner, lineInfo.id)
+
+                if okOwner and resolvedOwnerHubId ~= nil and resolvedOwnerHubId ~= hubStationGroupId then
+
+                    ownerHubId = resolvedOwnerHubId
+
+                    local okOwnerName, ownerName = pcall(stations.getEntityName, ownerHubId)
+
+                    ownerSuffix =
+                        "  [owned by " .. (okOwnerName and tostring(ownerName) or ("hub " .. tostring(ownerHubId))) .. "]"
+
+                end
+
+            end
+
             group.headerButtonLabel:setText(
-                (isExpanded and "[-] " or "[+] ") .. displayLineName,
+                (isExpanded and "[-] " or "[+] ") .. displayLineName .. ownerSuffix,
                 LINE_ROW_LABEL_WIDTH
             )
 
@@ -664,8 +725,8 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
             -- vehicle/waiting text either side of it. Only a TextView's
             -- WHOLE string can carry one style class -- this is why the
             -- old single summaryLabel had to split into three widgets.
-            local planLine = planByLineId[lineInfo.id]
-
+            -- (planLine itself is computed earlier now, alongside the
+            -- header label's ownerSuffix -- Decision 162.)
             if planLine ~= nil then
 
                 local delta = planLine.delta or 0
@@ -692,12 +753,24 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
                 -- resolve to a single destination -- criteria stricter
                 -- than vehicles.getManagedLinesForStation's own (looser)
                 -- rules for which lines even appear in this list at
-                -- all. Most likely explanation for a shared/dual-hub
-                -- line: its target is calculated once, by whichever hub
-                -- actually owns it, not duplicated here. "n/a" makes
-                -- that a deliberate, readable state instead of an
-                -- unexplained gap.
-                group.deltaLabel:setText("n/a", LINE_DELTA_WIDTH)
+                -- all.
+                --
+                -- Decision 163 follow-up, LIVE-CONFIRMED via diagnostic
+                -- on a real hub ("Braintree Cargo Airport", T1-T4): a
+                -- plain "n/a" was hiding TWO genuinely different real
+                -- causes behind one label -- 4 of 5 lines there had
+                -- `ownerHubId == nil` (never claimed by ANY hub at all,
+                -- not a shared-ownership case) because they're internal
+                -- shuttle lines whose every stop resolves to this SAME
+                -- station group (no external destination exists for the
+                -- planner to size a fleet against); only the 5th line
+                -- was a genuine cross-hub share. `ownerHubId` (computed
+                -- above, alongside the header's ownerSuffix) now
+                -- distinguishes them: "shared" for a real cross-hub
+                -- line (full owner name is on the header label, which
+                -- has the room), "n/a" for a genuinely destination-less
+                -- internal line.
+                group.deltaLabel:setText(ownerHubId ~= nil and "shared" or "n/a", LINE_DELTA_WIDTH)
                 pcall(group.deltaLabel.setStyleClassList, group.deltaLabel, { "EpodTdMutedText" })
 
             end

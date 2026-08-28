@@ -18,6 +18,17 @@ When an idea reaches a definite outcome, it must be removed from `IDEAS.md`.
 `PROGRESS.md` = what currently exists and works.
 _______________________________________________________________________________________________________________________________
 
+## Detecting "Drop-Off Only" Stations (No Stock-Holding Ability)
+
+### Status
+
+**Detection mechanism LIVE-CONFIRMED (Decision 157)**: `truck_station_finder.scan()` now reads each station's construction `fileName` via `getConstructionEntityForStation` + `api.type.ComponentType.CONSTRUCTION` (same proven chain `industry_recipes.lua` already uses for factories). Real result on the 250-year save: 64 of 86 stations resolved to `station/street/modular_terminal.con`; the other 22 -- including "Barking Industrial" (the player's own visual example) and three player-named "...drop-off" stations -- returned NO construction entity at all. Strong, immediate correlation with the player's own screenshots and naming.
+
+### What's left
+
+- Root cause (auto-generated town-zone delivery point vs. some other real category) is inferred from correlation, not separately proven -- would need one of the 22 opened in-game and its info/build-history checked to fully close out.
+- Not yet wired into the actual GUI -- the truck-station list doesn't show this tag yet. If wanted: a "[drop-off]" style flag on OVERVIEW's list rows for any station whose `fileName` comes back `nil`, same treatment as the existing factory-adjacency tag.
+
 ## Distance/Cycle-Time-Aware Truck Allocation
 
 ### Origin
