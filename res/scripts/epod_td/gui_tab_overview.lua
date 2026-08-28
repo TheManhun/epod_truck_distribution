@@ -459,74 +459,26 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
                                     truckStationState.rawList = result
                                 end
 
-                                -- TEMPORARY diagnostic (player reported
-                                -- needing a second click after the busy
-                                -- period ends): checks whether the
-                                -- rescanned DATA itself already shows
-                                -- isHub=true right here (would point at
-                                -- a display/sort issue) or is still
-                                -- false (a real hub_registry/timing bug).
-                                pcall(function()
-
-                                    local file = io.open("epod_td_makehub_rescan_diag.txt", "w")
-
-                                    if file ~= nil then
-
-                                        local okReg, isEnabledNow = pcall(hub_registry.isEnabled, targetStationGroupId)
-                                        local foundEntry = nil
-
-                                        if okRescan and result ~= nil then
-
-                                            for _, e in ipairs(result) do
-                                                if e.stationGroupId == targetStationGroupId then
-                                                    foundEntry = e
-                                                    break
-                                                end
-                                            end
-
-                                        end
-
-                                        -- Testing the theory: converting this
-                                        -- station just changed its lineCount/
-                                        -- vehicleCount dramatically, which the
-                                        -- sort key uses -- did it move to a
-                                        -- DIFFERENT page than the one currently
-                                        -- being viewed?
-                                        local actualIndex = nil
-
-                                        if okRescan and result ~= nil then
-
-                                            local filtered = applyListFilter(result, truckStationState.filterMode)
-
-                                            for i, e in ipairs(filtered) do
-                                                if e.stationGroupId == targetStationGroupId then
-                                                    actualIndex = i
-                                                    break
-                                                end
-                                            end
-
-                                        end
-
-                                        local actualPage =
-                                            actualIndex ~= nil and math.ceil(actualIndex / #truckStationRows) or nil
-
-                                        file:write(
-                                            "targetStationGroupId=" .. tostring(targetStationGroupId) .. "\n"
-                                                .. "okRescan=" .. tostring(okRescan) .. "\n"
-                                                .. "hub_registry.isEnabled=" .. tostring(okReg and isEnabledNow) .. "\n"
-                                                .. "foundEntry=" .. tostring(foundEntry ~= nil) .. "\n"
-                                                .. "foundEntry.isHub=" .. tostring(foundEntry ~= nil and foundEntry.isHub) .. "\n"
-                                                .. "currentPage=" .. tostring(truckStationState.currentPage) .. "\n"
-                                                .. "actualIndexInFilteredList=" .. tostring(actualIndex) .. "\n"
-                                                .. "actualPage=" .. tostring(actualPage) .. "\n"
-                                                .. "filterMode=" .. tostring(truckStationState.filterMode) .. "\n"
-                                        )
-
-                                        file:close()
-
-                                    end
-
-                                end)
+                                -- Decision 167, LIVE-CONFIRMED root cause
+                                -- (diagnostic showed actualIndexInFiltered
+                                -- List=nil under filterMode=STATIONS): a
+                                -- successful conversion correctly makes
+                                -- entry.isHub true, but the "Stations"
+                                -- filter deliberately EXCLUDES hubs -- so
+                                -- the just-converted row vanishes from view
+                                -- the instant it succeeds, and whichever
+                                -- real station shifts into that same row
+                                -- position next reads as "it reverted."
+                                -- Not a data bug at all -- the conversion
+                                -- always worked in one click. Fix: switch
+                                -- to "All" so the just-converted station
+                                -- stays visible and the player actually
+                                -- sees the [ HUB ] confirmation, rather
+                                -- than staying on a filter guaranteed to
+                                -- hide the very thing that just happened.
+                                if truckStationState.filterMode == "STATIONS" then
+                                    truckStationState.filterMode = "ALL"
+                                end
 
                             end
                         )

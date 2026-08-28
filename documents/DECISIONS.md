@@ -3087,7 +3087,23 @@ Deliberately NOT touched, each for a specific reason: `terminal_allocator.testAl
 
 ### Consequence
 
-**~2000 net lines removed** (`git diff --stat`: 8 files, +204/-2216). Not yet live-tested in-game -- next step is confirming the mod still loads and runs correctly with nothing broken, since large deletions always carry some risk even with careful call-site verification. The remaining audit findings (duplicated apportionment logic across `planner.lua`/`fleet_allocator.lua`/`line_splitter.lua`, the Legacy 8-tab window, `gui_experiment.lua`, the two superseded DEBUG survey buttons) all need an explicit player decision before touching -- not part of this low-risk batch.
+**~2000 net lines removed** (`git diff --stat`: 8 files, +204/-2216). **LIVE-CONFIRMED**: player reloaded and played on it -- "seems to be all normal", nothing broken by the removal.
+
+## Decision 167 — Make Hub "needs a second click" bug fully closed: it was the Stations filter hiding a successful one-click conversion
+
+### What happened
+
+Reopened the "Busy... reverts to Make Hub... second click converts it" investigation from Decision 158-161's era with the page-tracking diagnostic added earlier. Player converted a station while on the `[ Stations ]` filter and got a definitive answer: `filterMode=STATIONS`, `actualIndexInFilteredList=nil`, `actualPage=nil` -- the just-converted station wasn't in the filtered list AT ALL.
+
+### Decision
+
+Root cause: the conversion has ALWAYS succeeded in exactly one click (`entry.isHub` correctly true immediately, confirmed by every prior diagnostic run too). The "Stations" filter (Decision 161) deliberately excludes hubs by design -- so the instant a station becomes a hub, its row vanishes from that filtered view, and whatever real (still-unconverted) station shifts into that same row position afterward legitimately shows `[ Make Hub ]` -- reading as "it reverted" when actually a completely different station was now occupying that slot. Player independently confirmed once this was explained: "oh the hub is now one click its working."
+
+Fixed the confusion, not a bug: `gui_tab_overview.lua`'s post-conversion callback now switches `truckStationState.filterMode` from `"STATIONS"` to `"ALL"` automatically on a successful conversion, so the just-converted station stays visible and the player actually sees the `[ HUB ]` confirmation instead of it disappearing. Removed the now-answered diagnostic.
+
+### Consequence
+
+**LIVE-CONFIRMED root cause** (not yet re-tested with the auto-switch fix itself, but the underlying mechanism is fully understood and the fix directly addresses it). Separately, live testing during this investigation surfaced a real, different issue worth its own follow-up: a genuine in-game warning, "● Barking Quarry - Barking ↔ Barking Outer Cargo Station: Line contains too few stations" -- confirmed via `epod_td_dump_managed_lines.txt` to be a real line (id 114363) down to a single stop with 1 vehicle still on it, an owner-hub-side leftover from `hub_setup.lua`'s split/retire sequence that apparently didn't fully resolve. Not investigated further yet -- flagged for the player's own call on priority.
 
 ## Appendix — open runtime-verification items
 
