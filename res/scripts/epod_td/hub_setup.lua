@@ -59,7 +59,7 @@ local function splitAllManagedLines(stationGroupId, managedLines, index, sourceL
                 .. " managed line(s). Organizing terminals..."
         )
 
-        onStatusUpdate("[ Organizing terminals... (see log) ]")
+        onStatusUpdate("[ Organizing terminals... ]")
 
         -- LIVE-CONFIRMED BUG (Decision, original panel): without
         -- excluding the line(s) just split, stockTakeExistingLoad
@@ -82,7 +82,7 @@ local function splitAllManagedLines(stationGroupId, managedLines, index, sourceL
                     onStatusUpdate(
                         "[ Split & Organize Terminals (done: "
                             .. tostring(processedCount)
-                            .. " line(s) -- see log) ]"
+                            .. " line(s)) ]"
                     )
 
                     if onAllDone ~= nil then
@@ -96,7 +96,7 @@ local function splitAllManagedLines(stationGroupId, managedLines, index, sourceL
 
             log.info("SPLIT ALL (terminal step) FAILED: " .. tostring(err))
 
-            onStatusUpdate("[ Split & Organize Terminals (crashed -- see log) ]")
+            onStatusUpdate("[ Split & Organize Terminals (crashed) ]")
 
             if onAllDone ~= nil then
                 onAllDone()
@@ -196,7 +196,7 @@ function M.splitStationLines(stationGroupId, onStatusUpdate, onComplete)
 
     log.info("SPLIT ALL: starting for " .. tostring(#managedLines) .. " managed line(s).")
 
-    onStatusUpdate("[ Splitting... (see log) ]")
+    onStatusUpdate("[ Splitting... ]")
 
     splitAllManagedLines(stationGroupId, managedLines, 1, nil, onStatusUpdate, onComplete)
 
@@ -392,7 +392,7 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                                         .. tostring(sourceLineId) .. ": " .. tostring(err3)
                                 )
 
-                                onStatusUpdate("[ Assign & Balance Fleet (crashed -- see log) ]")
+                                onStatusUpdate("[ Assign & Balance Fleet (crashed) ]")
 
                                 onAllDone()
 
@@ -408,7 +408,7 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                             .. tostring(sourceLineId) .. ": " .. tostring(err2)
                     )
 
-                    onStatusUpdate("[ Assign & Balance Fleet (crashed -- see log) ]")
+                    onStatusUpdate("[ Assign & Balance Fleet (crashed) ]")
 
                     onAllDone()
 
@@ -424,7 +424,7 @@ local function processSourceLineNext(sourceLineIds, index, hubStationGroupId, to
                 .. tostring(sourceLineId) .. ": " .. tostring(err)
         )
 
-        onStatusUpdate("[ Assign & Balance Fleet (crashed -- see log) ]")
+        onStatusUpdate("[ Assign & Balance Fleet (crashed) ]")
 
         onAllDone()
 
@@ -450,7 +450,7 @@ function M.assignAndBalanceStationLines(hubStationGroupId, onStatusUpdate, onCom
                 .. "run Split Into Lines & Organize Terminals here first."
         )
 
-        onStatusUpdate("[ Assign & Balance Fleet (no source line -- see log) ]")
+        onStatusUpdate("[ Assign & Balance Fleet (no source line) ]")
 
         if onComplete ~= nil then
             onComplete()
@@ -478,7 +478,7 @@ function M.assignAndBalanceStationLines(hubStationGroupId, onStatusUpdate, onCom
                     .. tostring(totals.redistributed) .. " balanced, "
                     .. tostring(totals.deleted) .. " source line(s) deleted"
                     .. keptText
-                    .. " -- see log) ]"
+                    .. ") ]"
             )
 
             if onComplete ~= nil then
@@ -583,7 +583,7 @@ function M.toggleDistributionHub(hubStationGroupId, onStatusUpdate, onComplete)
 
     log.info("DISTRIBUTION HUB: turned ON for hub " .. tostring(hubStationGroupId) .. " -- setting it up now.")
 
-    onStatusUpdate("[ Setting up Distribution Hub... (see log) ]")
+    onStatusUpdate("[ Setting up Distribution Hub... ]")
 
     local ok, err =
         pcall(
@@ -629,7 +629,7 @@ function M.toggleDistributionHub(hubStationGroupId, onStatusUpdate, onComplete)
 
                     log.info("DISTRIBUTION HUB SETUP (rename step) FAILED: " .. tostring(errRename))
 
-                    onStatusUpdate("[ Distribution Hub (setup crashed -- see log) ]")
+                    onStatusUpdate("[ Distribution Hub (setup crashed) ]")
                     onComplete()
 
                 end
@@ -641,7 +641,7 @@ function M.toggleDistributionHub(hubStationGroupId, onStatusUpdate, onComplete)
 
         log.info("DISTRIBUTION HUB SETUP FAILED: " .. tostring(err))
 
-        onStatusUpdate("[ Distribution Hub (setup crashed -- see log) ]")
+        onStatusUpdate("[ Distribution Hub (setup crashed) ]")
         onComplete()
 
     end

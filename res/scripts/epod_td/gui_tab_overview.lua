@@ -274,11 +274,6 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
             pcall(row.hubButton.setVisible, row.hubButton, true)
             pcall(row.infoButton.setVisible, row.infoButton, true)
 
-            local industryTag =
-                entry.industryName ~= nil
-                    and ("  <-- near " .. tostring(entry.industryName))
-                    or ""
-
             -- Decision 165: player's own report -- station names were
             -- getting cut off ("Braintree Chemical plant - B..."). Two
             -- real causes fixed together: the field was cramming a
@@ -291,12 +286,11 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
             -- the actual widget is built there).
             row.infoLabel:setText(
                 string.format(
-                    "%-14s %-34s L:%-3s T:%-3s%s",
+                    "%-14s %-34s L:%-3s T:%-3s",
                     tostring(entry.townName or "?"):sub(1, 14),
                     tostring(entry.name):sub(1, 34),
                     tostring(entry.lineCount),
-                    tostring(entry.vehicleCount),
-                    industryTag
+                    tostring(entry.vehicleCount)
                 ),
                 TRUCK_STATION_LABEL_WIDTH
             )

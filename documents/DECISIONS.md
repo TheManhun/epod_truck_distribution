@@ -3119,6 +3119,20 @@ Wired into every real hub-mutating action across the three tabs that have one: O
 
 ### Consequence
 
+**LIVE-CONFIRMED**: player loaded the 250-year save fresh and converted several stations to hubs, "worked really well." Also flagged the status text itself carried leftover "(see log)" wording from before this bar existed, and the truck-station list's factory-proximity tag was getting cut off.
+
+## Decision 169 — Status text cleanup + removed the truncated factory-proximity tag from the truck-station list
+
+### What happened
+
+Two small but real UX issues from the same live test: (1) the new status bar (Decision 168) was showing `hub_setup.lua`'s own status strings verbatim, several of which still said "(see log)" -- a leftover from when these strings only ever went to the console log; a real end user has no reason to know what "the log" even is. (2) The truck-station list's `"<-- near <industry>"` suffix was getting cut off at the row's width limit, reading as a stray, confusing fragment.
+
+### Decision
+
+Stripped "(see log)"/" -- see log)" from every `onStatusUpdate` string in `hub_setup.lua` -- "[ Splitting... ]" instead of "[ Splitting... (see log) ]", "[ Assign & Balance Fleet (crashed) ]" instead of "...(crashed -- see log)", etc. Removed the factory-proximity tag from `gui_tab_overview.lua`'s truck-station row rendering entirely per the player's own call ("maybe remove that") -- `entry.industryName` is still computed by `truck_station_finder.scan()` and available, just not rendered in this particular row format any more.
+
+### Consequence
+
 Not yet live-tested.
 
 ## Appendix — open runtime-verification items
