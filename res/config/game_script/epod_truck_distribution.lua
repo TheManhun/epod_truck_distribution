@@ -231,6 +231,23 @@ local AUTO_INDUSTRY_NAME_POLL_INTERVAL =
 local autoIndustryNamePollCounter =
     0
 
+-- Codebase audit finding: unlike its three sibling pollers above,
+-- pollAutoApplyFleetPlan had no poll-counter gate at all -- its own
+-- per-hub interval/heartbeat math is genuinely real-time-based (game
+-- time in ms, real wall-clock seconds) and needs finer granularity
+-- than the 600-tick siblings, but the settings.get() enabled-check at
+-- its very top (settings.lua's own fresh-disk-read-per-call design,
+-- Decision 35) was still running unconditionally every single
+-- guiUpdate tick regardless. A much smaller interval than the 600-tick
+-- siblings -- still far finer than the smallest configurable fleet-
+-- plan interval (15 seconds) -- removes that redundant per-frame read
+-- without touching the real per-hub timing logic underneath at all.
+local AUTO_APPLY_FLEET_PLAN_POLL_INTERVAL =
+    30
+
+local autoApplyFleetPlanPollCounter =
+    0
+
 local isIndustryNamingRunning =
     false
 
@@ -4021,6 +4038,14 @@ local lastAutoApplyHeartbeatRealTimeByHub = {}
 
 
 local function pollAutoApplyFleetPlan()
+
+    autoApplyFleetPlanPollCounter = autoApplyFleetPlanPollCounter + 1
+
+    if autoApplyFleetPlanPollCounter < AUTO_APPLY_FLEET_PLAN_POLL_INTERVAL then
+        return
+    end
+
+    autoApplyFleetPlanPollCounter = 0
 
     if not settings.get("autoApplyFleetPlanEnabled") then
         return

@@ -76,13 +76,6 @@ function M.getStops(lineId)
 end
 
 
-function M.getStopCount(lineId)
-    local stops = M.getStops(lineId)
-
-    return M.safeLength(stops)
-end
-
-
 -- Decision 67, live-confirmed real bug: a combined line's real HUB is
 -- the stationGroup that repeats in its stops (the hub-destination-
 -- hub-destination pattern this whole split pipeline assumes) -- every

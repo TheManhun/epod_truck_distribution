@@ -233,15 +233,11 @@ end
 -- real cargo stations from drop-off/auto-generated ones.
 --
 -- `STATION_GROUP.stations` (the array of individual station entities
--- belonging to a group) is NOT yet proven live in THIS mod -- only
--- seen in reference mod source (AI Builder's own
--- `stationGroupComp.stations` usage). Logs a one-off diagnostic for
--- the first few real calls so a wrong assumption here shows up
--- immediately in the log, same discipline as every other new field
--- this session (Decisions 148-150 each caught a wrong guess this way).
+-- belonging to a group) was unproven live in THIS mod when this
+-- function was first written -- confirmed live via a capped
+-- diagnostic (removed now that it served its purpose; see Decisions
+-- 160/163's live-confirmed "[D] Bedford Industrial" result).
 -- ============================================================
-
-local stationTypeDiagLoggedCount = 0
 
 function M.isDropOffStation(stationGroupId)
 
@@ -269,19 +265,6 @@ function M.isDropOffStation(stationGroupId)
             api.engine.system.streetConnectorSystem.getConstructionEntityForStation(firstStationId)
 
         isDropOff = (constructionId == nil or constructionId < 0)
-
-        if stationTypeDiagLoggedCount < 6 then
-
-            stationTypeDiagLoggedCount = stationTypeDiagLoggedCount + 1
-
-            log.info(
-                "TRUCK STATION FINDER: isDropOffStation diag -- stationGroupId=" .. tostring(stationGroupId)
-                    .. " firstStationId=" .. tostring(firstStationId)
-                    .. " constructionId=" .. tostring(constructionId)
-                    .. " -> isDropOff=" .. tostring(isDropOff)
-            )
-
-        end
 
     end)
 

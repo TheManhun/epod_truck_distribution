@@ -3064,6 +3064,31 @@ Two real causes fixed together: (1) the row format was spending characters on fu
 
 Not yet live-tested.
 
+## Decision 166 — Low-risk codebase cleanup: ~2000 net lines of confirmed-dead code and one missing poll-gate
+
+### What happened
+
+Player's request: "lets go over the code and optimize it, make it work more logically, removing any dead code or overkill. 1st show issues then a plan." A background audit surveyed the modules not touched this session (`planner.lua`, `dispatcher.lua`, `route_injector.lua`, `vehicles.lua`, `stations.lua`, `lines.lua`, and others), cross-checking anything it wanted to flag against DECISIONS.md first so real research-discipline complexity wasn't mistaken for waste. Findings were categorized (Dead Code / Redundancy / Debug Scaffolding / Structural Complexity / Performance) and presented before any change was made. Player approved the low-risk batch; backed up to GitHub (commit `38bf1c7`) before starting.
+
+### Decision
+
+Removed, each individually cross-checked for zero real call sites across the whole `res/` tree before deletion (comment-only mentions in DECISIONS.md/historical narrative left untouched, matching this project's existing style of keeping removed-feature history in prose):
+
+- `state.lua` -- entire file, never `required` anywhere.
+- `line_adopter.lua` -- one unused `require`.
+- `route_injector.lua` -- `testCargoCompatibility` (its question already answered and documented), the entire orphaned "Loaded Vehicle Journey Test" chain (`startLoadedVehicleJourneyTest`/`checkLoadedVehicleJourneyTest`/`runLoadedVehicleJourneyTestStep` plus its two private helpers, `journeyWatch` state), `runTwoParkSetLineTest` and its private `buildTwoParkTestRoute` helper, and the one-line `injectParkStops` alias.
+- `stations.lua` -- `printParkTerminalDiagnostic` (its shared helper `inspectStationEntity` is still used elsewhere and was left alone).
+- `vehicles.lua` -- `printScannerReport`, `findAvailableAtPark`, `printLiveCargoTruckInventory` and their three private-only helpers (`printRouteMap`, `printParkSummary`, `readFirstKnownField`) all removed together as one contiguous ~750-line dead block; separately, `isRoadTruckLine` and `forceDeparture`.
+- `lines.lua` -- `getStopCount`.
+- `pollAutoApplyFleetPlan` (`epod_truck_distribution.lua`) -- added the poll-counter gate its three sibling pollers already had; it was running an uncached `settings.get()` disk read every single `guiUpdate` tick even when the feature is off. New `AUTO_APPLY_FLEET_PLAN_POLL_INTERVAL = 30` gates only the redundant top-of-function check -- the real per-hub game-time/heartbeat scheduling logic underneath is untouched.
+- `truck_station_finder.lua`'s capped `isDropOffStation` diagnostic -- removed now that it's confirmed working live (Decisions 160/163's real `"[D] Bedford Industrial"` result).
+
+Deliberately NOT touched, each for a specific reason: `terminal_allocator.testAlternativeTerminals` (Decision 1044 explicitly kept it dormant on purpose) and the entire BugB test chain (`startBugBTest`/`checkBugBTest`/`runBugBTestStep`, plus `testVehicleRenameAndColor`) -- both carry an explicit "remains callable manually if ever needed" comment in `epod_truck_distribution.lua`, the same category of deliberate retention as Decision 1044, so left for the player's own call rather than auto-removed. The Make Hub rescan diagnostic in `gui_tab_overview.lua` was also left in place -- that investigation (the "second click" display bug) is still open, not yet resolved.
+
+### Consequence
+
+**~2000 net lines removed** (`git diff --stat`: 8 files, +204/-2216). Not yet live-tested in-game -- next step is confirming the mod still loads and runs correctly with nothing broken, since large deletions always carry some risk even with careful call-site verification. The remaining audit findings (duplicated apportionment logic across `planner.lua`/`fleet_allocator.lua`/`line_splitter.lua`, the Legacy 8-tab window, `gui_experiment.lua`, the two superseded DEBUG survey buttons) all need an explicit player decision before touching -- not part of this low-risk batch.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
