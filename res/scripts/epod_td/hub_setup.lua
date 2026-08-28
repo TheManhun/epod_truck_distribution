@@ -170,6 +170,109 @@ local function splitAllManagedLines(stationGroupId, managedLines, index, sourceL
 end
 
 
+-- ============================================================
+-- PREVIEW: what a real Split pass WOULD do, without doing it
+--
+-- Player's request: "if you press turn into Hub it will then present
+-- the player with a full report on what it plans to do... Currently
+-- has 2 lines, plan to break this into 5 lines... Rename 45 trucks."
+--
+-- Read-only, mirrors splitAllManagedLines's exact real decision logic
+-- (same realCount<2 / isChainLine skip rules) so the preview can never
+-- promise something the real pass wouldn't actually do -- one function
+-- computing the plan, splitAllManagedLines executing it, kept
+-- deliberately readable side by side rather than sharing code, since
+-- one is pure/no side effects and the other drives real
+-- api.cmd.make.createLine calls.
+--
+-- Rename estimate: fleet_naming.renameFleetToHubIdentity only ever
+-- renames vehicles on lines already in managed_registry -- a line this
+-- pass predicts it WILL split becomes managed the moment it's split,
+-- so its current vehicle count is exactly what will get renamed. A
+-- line this pass predicts it will SKIP (already single-destination, or
+-- a genuine industry chain) never becomes managed by this pass, so its
+-- vehicles are correctly NOT counted here either -- same real
+-- distinction the live rename step itself makes, not a rough guess.
+function M.previewConversion(hubStationGroupId)
+
+    local hubName = stations.getEntityName(hubStationGroupId)
+
+    local okLines, managedLines = pcall(vehicles.getManagedLinesForStation, hubStationGroupId)
+
+    if not okLines or managedLines == nil then
+
+        return {
+            hubName = hubName,
+            currentLineCount = 0,
+            plannedNewLines = {},
+            skippedLines = {},
+            estimatedRenameCount = 0
+        }
+
+    end
+
+    local plannedNewLines = {}
+    local skippedLines = {}
+    local estimatedRenameCount = 0
+
+    for _, lineInfo in ipairs(managedLines) do
+
+        local realCount = 0
+
+        for _, destination in ipairs(lineInfo.destinations or {}) do
+
+            if destination.stationGroup ~= hubStationGroupId then
+                realCount = realCount + 1
+            end
+
+        end
+
+        local okChain, chainName =
+            pcall(industry_naming.buildChainName, lineInfo.destinations, hubStationGroupId)
+
+        local isChainLine = okChain and chainName ~= nil
+
+        if realCount < 2 or isChainLine then
+
+            skippedLines[#skippedLines + 1] = {
+                name = lineInfo.name,
+                reason = isChainLine
+                    and ("industry chain (\"" .. tostring(chainName) .. "\") -- kept as one line")
+                    or (tostring(realCount) .. " real destination(s) -- nothing to split")
+            }
+
+        else
+
+            estimatedRenameCount = estimatedRenameCount + (lineInfo.vehicleCount or 0)
+
+            for _, destination in ipairs(lineInfo.destinations) do
+
+                if destination.stationGroup ~= hubStationGroupId then
+
+                    plannedNewLines[#plannedNewLines + 1] = {
+                        name = "\xE2\x97\x8f " .. tostring(hubName) .. " \xE2\x86\x94 " .. tostring(destination.name),
+                        sourceLineName = lineInfo.name
+                    }
+
+                end
+
+            end
+
+        end
+
+    end
+
+    return {
+        hubName = hubName,
+        currentLineCount = #managedLines,
+        plannedNewLines = plannedNewLines,
+        skippedLines = skippedLines,
+        estimatedRenameCount = estimatedRenameCount
+    }
+
+end
+
+
 -- Entry point. `onStatusUpdate(text)` is called at every progress
 -- step ("Splitting...", "Organizing terminals...", "done: N line(s)",
 -- "crashed"); `onComplete()` fires exactly once, at the very end,

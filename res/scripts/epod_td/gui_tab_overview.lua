@@ -5,6 +5,7 @@ local hub_registry = require("epod_td.hub_registry")
 local hub_setup = require("epod_td.hub_setup")
 local operation_lock = require("epod_td.operation_lock")
 local truck_station_finder = require("epod_td.truck_station_finder")
+local gui_plan_popup = require("epod_td.gui_plan_popup")
 local log = require("epod_td.log")
 
 local M = {}
@@ -401,8 +402,19 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
                 pcall(row.hubButton.setStyleClassList, row.hubButton, { "EpodTdPrimaryButton" })
 
                 local targetStationGroupId = entry.stationGroupId
+                local targetStationName = entry.name
 
-                row.handler = function()
+                -- Decision 170: player's request -- clicking Make Hub
+                -- now shows a real preview (predicted new lines,
+                -- estimated truck rename count -- hub_setup.
+                -- previewConversion, a pure read-only mirror of the
+                -- real Split decision logic) before anything happens,
+                -- with a real [ Confirm ] button in gui_plan_popup.lua
+                -- gating the actual conversion. This closure is the
+                -- SAME real conversion logic that used to run
+                -- immediately on click -- now it only runs if/when the
+                -- popup's Confirm is pressed.
+                local function performConversion()
 
                     if operation_lock.isRunning() then
 
@@ -411,7 +423,7 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
 
                     end
 
-                    log.info("OVERVIEW TAB: truck station list -- Make Hub clicked for stationGroupId " .. tostring(targetStationGroupId))
+                    log.info("OVERVIEW TAB: truck station list -- Make Hub confirmed for stationGroupId " .. tostring(targetStationGroupId))
 
                     -- Decision 154: player's own observation -- the
                     -- whole setup sequence (Split -> Rename Fleet ->
@@ -429,7 +441,7 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
                     pcall(row.hubButton.setStyleClassList, row.hubButton, {})
 
                     operation_lock.begin()
-                    setStatus("Converting " .. tostring(entry.name) .. " to a Distribution Hub...")
+                    setStatus("Converting " .. tostring(targetStationName) .. " to a Distribution Hub...")
 
                     local ok, err =
                         pcall(
@@ -483,9 +495,70 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
                     if not ok then
 
                         operation_lock.finish()
+                        setStatus("")
                         log.info("OVERVIEW TAB: truck station list -- toggleDistributionHub crashed: " .. tostring(err))
 
                     end
+
+                end
+
+                row.handler = function()
+
+                    if operation_lock.isRunning() then
+
+                        log.info("OVERVIEW TAB: another hub operation is still running -- ignoring click.")
+                        return
+
+                    end
+
+                    local okPreview, plan = pcall(hub_setup.previewConversion, targetStationGroupId)
+
+                    if not okPreview or plan == nil then
+
+                        log.info("OVERVIEW TAB: preview failed, converting without one: " .. tostring(plan))
+                        performConversion()
+                        return
+
+                    end
+
+                    local lines = {
+                        "Currently has " .. tostring(plan.currentLineCount) .. " line(s).",
+                        ""
+                    }
+
+                    if #plan.plannedNewLines > 0 then
+
+                        lines[#lines + 1] =
+                            "Plan: break into " .. tostring(#plan.plannedNewLines) .. " dedicated line(s):"
+
+                        for index, planned in ipairs(plan.plannedNewLines) do
+                            lines[#lines + 1] = "  Line " .. tostring(index) .. ": " .. tostring(planned.name)
+                        end
+
+                        lines[#lines + 1] = ""
+
+                    end
+
+                    if #plan.skippedLines > 0 then
+
+                        lines[#lines + 1] = "Kept as-is (" .. tostring(#plan.skippedLines) .. " line(s)):"
+
+                        for _, skipped in ipairs(plan.skippedLines) do
+                            lines[#lines + 1] = "  " .. tostring(skipped.name) .. " -- " .. tostring(skipped.reason)
+                        end
+
+                        lines[#lines + 1] = ""
+
+                    end
+
+                    lines[#lines + 1] =
+                        "Estimated trucks to rename: " .. tostring(plan.estimatedRenameCount)
+
+                    gui_plan_popup.show(
+                        "Make Hub: " .. tostring(targetStationName),
+                        lines,
+                        performConversion
+                    )
 
                 end
 

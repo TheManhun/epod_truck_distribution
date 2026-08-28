@@ -3135,6 +3135,24 @@ Stripped "(see log)"/" -- see log)" from every `onStatusUpdate` string in `hub_s
 
 Not yet live-tested.
 
+## Decision 170 — Make Hub now shows a real plan preview before doing anything, gated behind a Confirm button
+
+### What happened
+
+Player's request, while exploring the unfamiliar 250-year save: "if you press turn into Hub it will then present the player with a full report on what it plans to do... Currently has 2 lines, plan to break this into 5 lines... Rename 45 trucks." Confirmed directly (asked which of two flows they wanted): Make Hub should always show the plan first, with a real Confirm button gating the actual conversion -- not just an optional separate report.
+
+### Decision
+
+New `hub_setup.previewConversion(hubStationGroupId)` -- a pure, read-only function that mirrors `splitAllManagedLines`'s exact real decision logic (same `realCount < 2` / `isChainLine` skip rules) so the preview can never promise something the real pass wouldn't do. Deliberately a separate function from the real executor rather than a shared code path, since one is pure and the other drives real `api.cmd.make.createLine` calls -- kept readable side by side instead of forced into one branchy function. The rename estimate isn't a guess: `fleet_naming.renameFleetToHubIdentity` only ever renames vehicles on lines already in `managed_registry`, and a line the preview predicts WILL split becomes managed the moment it's split -- so summing `vehicleCount` over exactly the lines flagged for splitting is the real number, not an approximation. A skipped line (already single-destination, or a genuine industry chain) never becomes managed by this pass either, so its vehicles are correctly excluded from the estimate too.
+
+New standalone module `gui_plan_popup.lua` -- a small reusable raw-GUI popup (title + up to 30 text rows + optional `[ Confirm ]`/always-present `[ Cancel ]`), built as its OWN module rather than living inside `gui_central_raw.lua` specifically so `gui_tab_overview.lua` can `require` it directly with zero risk of a require cycle (`gui_central_raw.lua` is the one requiring every `gui_tab_*.lua` file, never the reverse). Generic on purpose: pass a real function for a Make-Hub-style gated action, or `nil` for a plain view-only report -- a future per-station "Detail" button (still not built) can reuse this exact same popup unchanged.
+
+`gui_tab_overview.lua`'s Make Hub click handler was restructured: the actual conversion logic (previously running immediately) is now a named local function (`performConversion`), and the row's real click handler instead computes the preview, formats it into plain text lines ("Currently has N line(s)", "Plan: break into M dedicated line(s): ...", "Kept as-is (K line(s)): ... -- reason", "Estimated trucks to rename: X"), and opens the popup with `performConversion` as the confirm handler -- nothing happens until the player actually clicks Confirm.
+
+### Consequence
+
+Not yet live-tested.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
