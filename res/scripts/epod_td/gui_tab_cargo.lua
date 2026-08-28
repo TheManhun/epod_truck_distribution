@@ -55,7 +55,9 @@ local function stripHubMarker(name)
 end
 
 
-function M.refresh(rows, hubStationGroupId, actionButtons)
+function M.refresh(rows, hubStationGroupId, actionButtons, _onSwitchHub, _truckStationRows, _truckStationPagination, _truckStationRefreshButton, _truckStationFilterButtons, setStatus)
+
+    setStatus = setStatus or function() end
 
     if actionButtons ~= nil and actionButtons[1] ~= nil then
 
@@ -86,6 +88,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
                 end
 
                 operation_lock.begin()
+                setStatus("Building Supply Chains...")
 
                 local ok, err =
                     pcall(
@@ -94,6 +97,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
 
                         function(builtCount, movedCount)
                             operation_lock.finish()
+                            setStatus("")
                             log.info(
                                 "CARGO TAB: Build Supply Chains done ("
                                     .. tostring(builtCount) .. " chain(s) built, "
@@ -104,6 +108,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons)
 
                 if not ok then
                     operation_lock.finish()
+                    setStatus("")
                     log.info("CARGO TAB: Build Supply Chains failed: " .. tostring(err))
                 end
 

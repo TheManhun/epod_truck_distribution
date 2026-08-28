@@ -333,11 +333,14 @@ end
 -- MAX_PUSH_ITERATIONS as a hard ceiling regardless.
 local MAX_PUSH_ITERATIONS = 5
 
-local function runPushIteration(hubStationGroupId, iterationsDone, totalMoved)
+local function runPushIteration(hubStationGroupId, iterationsDone, totalMoved, setStatus)
+
+    setStatus = setStatus or function() end
 
     if iterationsDone >= MAX_PUSH_ITERATIONS then
 
         operation_lock.finish()
+        setStatus("")
 
         log.info(
             "LINES TAB: Push Full Reallocation stopped at the "
@@ -348,6 +351,11 @@ local function runPushIteration(hubStationGroupId, iterationsDone, totalMoved)
         return
 
     end
+
+    setStatus(
+        "Push Full Reallocation: pass " .. tostring(iterationsDone + 1) .. "/" .. tostring(MAX_PUSH_ITERATIONS)
+            .. " -- " .. tostring(totalMoved) .. " vehicle(s) moved so far..."
+    )
 
     local ok, err =
         pcall(
@@ -360,11 +368,12 @@ local function runPushIteration(hubStationGroupId, iterationsDone, totalMoved)
 
                 if movesMade > 0 then
 
-                    runPushIteration(hubStationGroupId, iterationsDone + 1, newTotal)
+                    runPushIteration(hubStationGroupId, iterationsDone + 1, newTotal, setStatus)
 
                 else
 
                     operation_lock.finish()
+                    setStatus("")
 
                     log.info(
                         "LINES TAB: Push Full Reallocation done -- "
@@ -381,6 +390,7 @@ local function runPushIteration(hubStationGroupId, iterationsDone, totalMoved)
 
     if not ok then
         operation_lock.finish()
+        setStatus("")
         log.info("LINES TAB: Push Full Reallocation failed: " .. tostring(err))
     end
 
@@ -399,7 +409,9 @@ end
 -- comment). `actionButtons[1]` is Re-Organize Terminals (Decision 142),
 -- `actionButtons[2]` is Apply Fleet Plan (Decision 145),
 -- `actionButtons[3]` is Push Full Reallocation (Decision 146).
-function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
+function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, setStatus)
+
+    setStatus = setStatus or function() end
 
     if groups == nil then
 
@@ -451,6 +463,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
                 end
 
                 operation_lock.begin()
+                setStatus("Re-Organizing Terminals...")
 
                 local ok, err =
                     pcall(
@@ -460,12 +473,14 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
 
                         function(processedCount)
                             operation_lock.finish()
+                            setStatus("")
                             log.info("LINES TAB: Re-Organize Terminals done (" .. tostring(processedCount) .. " line(s)).")
                         end
                     )
 
                 if not ok then
                     operation_lock.finish()
+                    setStatus("")
                     log.info("LINES TAB: Re-Organize Terminals failed: " .. tostring(err))
                 end
 
@@ -503,6 +518,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
                 end
 
                 operation_lock.begin()
+                setStatus("Applying Fleet Plan...")
 
                 local ok, err =
                     pcall(
@@ -511,12 +527,14 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
 
                         function(movesMade)
                             operation_lock.finish()
+                            setStatus("")
                             log.info("LINES TAB: Apply Fleet Plan done (" .. tostring(movesMade) .. " vehicle(s) moved).")
                         end
                     )
 
                 if not ok then
                     operation_lock.finish()
+                    setStatus("")
                     log.info("LINES TAB: Apply Fleet Plan failed: " .. tostring(err))
                 end
 
@@ -555,7 +573,7 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination)
 
                 operation_lock.begin()
 
-                runPushIteration(hubStationGroupId, 0, 0)
+                runPushIteration(hubStationGroupId, 0, 0, setStatus)
 
             end
 

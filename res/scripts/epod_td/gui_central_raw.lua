@@ -224,6 +224,18 @@ local state = {
     lastMapHubStationGroupId = nil,
     hubButtons = nil,
 
+    -- Decision 168: player's request -- a persistent status bar along
+    -- the bottom of the window, always visible regardless of which
+    -- tab is active (added directly to the window's own root layout,
+    -- outside every per-tab panel, unlike everything else in `state`
+    -- that only OVERVIEW/LINES own). The real step-by-step text
+    -- (hub_setup.lua's "Splitting...", "Setting up Distribution
+    -- Hub...", "Assign & Balance Fleet (done: N assigned...)", etc.)
+    -- already existed and was only ever going to log.info -- this
+    -- just gives it a second, always-visible destination.
+    statusLabel = nil,
+    statusText = "",
+
     linesPanel = nil,
     lineGroups = nil,
     linesPagination = nil,
@@ -316,6 +328,23 @@ end
 -- comment already states).
 local function switchViewedHub(newHubStationGroupId)
     state.viewedHubStationGroupId = newHubStationGroupId
+end
+
+
+-- Decision 168: passed down to every tab's M.refresh the same way
+-- switchViewedHub already is, so no gui_tab_*.lua file ever needs to
+-- require this module back (would risk a require cycle -- this module
+-- is the one that requires them). Any tab can call setStatus(text) to
+-- post real progress text to the always-visible bottom bar; nil/""
+-- clears it back to blank.
+local function setStatus(text)
+
+    state.statusText = tostring(text or "")
+
+    if state.statusLabel ~= nil then
+        pcall(state.statusLabel.setText, state.statusLabel, state.statusText, WINDOW_WIDTH)
+    end
+
 end
 
 
@@ -435,7 +464,7 @@ function M.refresh(hubStationGroupId)
 
         clearActionButtons(state.linesActionButtons)
 
-        local ok, err = pcall(tab_lines.refresh, nil, effectiveHubStationGroupId, state.linesActionButtons, state.lineGroups, state.linesPagination)
+        local ok, err = pcall(tab_lines.refresh, nil, effectiveHubStationGroupId, state.linesActionButtons, state.lineGroups, state.linesPagination, setStatus)
 
         if not ok then
             log.info("GUI CENTRAL RAW: LINES refresh failed: " .. tostring(err))
@@ -468,7 +497,8 @@ function M.refresh(hubStationGroupId)
         state.truckStationRows,
         state.truckStationPagination,
         state.truckStationRefreshButton,
-        state.truckStationFilterButtons
+        state.truckStationFilterButtons,
+        setStatus
     )
 
     if not ok then
@@ -1216,6 +1246,15 @@ local function ensureWindow(hubStationGroupId)
         end
 
     end
+
+    -- Decision 168: added to `layout` directly (the window's own root
+    -- box), NOT inside any per-tab panel above -- so it stays visible
+    -- across every tab, exactly like the tab bar and section heading
+    -- already do, instead of disappearing whenever the player switches
+    -- away from whichever tab happened to be running something.
+    state.statusLabel = gui.textView_create(nil, "", WINDOW_WIDTH, false)
+    pcall(state.statusLabel.setStyleClassList, state.statusLabel, { "EpodTdMutedText" })
+    layout:addItem(state.statusLabel)
 
     local window = gui.window_create(nil, "Central Manager", layout)
 

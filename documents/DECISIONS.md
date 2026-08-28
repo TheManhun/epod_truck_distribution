@@ -3105,6 +3105,22 @@ Fixed the confusion, not a bug: `gui_tab_overview.lua`'s post-conversion callbac
 
 **LIVE-CONFIRMED root cause** (not yet re-tested with the auto-switch fix itself, but the underlying mechanism is fully understood and the fix directly addresses it). Separately, live testing during this investigation surfaced a real, different issue worth its own follow-up: a genuine in-game warning, "● Barking Quarry - Barking ↔ Barking Outer Cargo Station: Line contains too few stations" -- confirmed via `epod_td_dump_managed_lines.txt` to be a real line (id 114363) down to a single stop with 1 vehicle still on it, an owner-hub-side leftover from `hub_setup.lua`'s split/retire sequence that apparently didn't fully resolve. Not investigated further yet -- flagged for the player's own call on priority.
 
+## Decision 168 — Persistent status bar at the bottom of the window
+
+### What happened
+
+Player's request: "along the bottom of the GUI we have a STATUS: ... it tells us what its doing 'Converting to hub, renaming lines, renaming trucks, sorting/optimise terminals...'" -- real, granular progress text for the window's own long-running operations.
+
+### Decision
+
+New `state.statusLabel`, a single always-visible `TextView` added directly to the window's own root layout (not inside any per-tab panel), so it stays visible regardless of which tab is active -- same treatment as the tab bar and section heading. A new `setStatus(text)` function is threaded down to every tab's `M.refresh` the same way `switchViewedHub` already is (as a plain parameter, never a `require` back into `gui_central_raw.lua` -- would risk a require cycle, since that module is the one requiring the tab modules).
+
+Wired into every real hub-mutating action across the three tabs that have one: OVERVIEW's Split/Distribution-Hub-toggle/Make-Hub-from-the-truck-station-list (all three already had real step-by-step status text flowing through `hub_setup.lua`'s `onStatusUpdate` callback -- it was only ever going to `log.info`, never shown in the GUI, until now), LINES' Re-Organize Terminals/Apply Fleet Plan/Push Full Reallocation (`runPushIteration`'s own recursion now reports "pass N/5 -- M vehicle(s) moved so far..." on each iteration), and CARGO's Build Supply Chains. Every wiring point clears the status back to `""` on completion or failure, not just on success.
+
+### Consequence
+
+Not yet live-tested.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

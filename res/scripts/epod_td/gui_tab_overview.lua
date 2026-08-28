@@ -144,7 +144,7 @@ end
 -- jump every row's name-click already does -- player's own
 -- confirmation, "if you click the Hub button that's the one in focus
 -- for all the data."
-local function renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton, truckStationFilterButtons, onSwitchHub, hubStationGroupId)
+local function renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton, truckStationFilterButtons, onSwitchHub, hubStationGroupId, setStatus)
 
     if truckStationRows == nil then
         return
@@ -435,6 +435,7 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
                     pcall(row.hubButton.setStyleClassList, row.hubButton, {})
 
                     operation_lock.begin()
+                    setStatus("Converting " .. tostring(entry.name) .. " to a Distribution Hub...")
 
                     local ok, err =
                         pcall(
@@ -443,11 +444,13 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
 
                             function(text)
                                 log.info("OVERVIEW TAB: truck station list Distribution Hub -- " .. tostring(text))
+                                setStatus(text)
                             end,
 
                             function()
 
                                 operation_lock.finish()
+                                setStatus("")
 
                                 -- Re-scan once so this row picks up its new
                                 -- HUB state and refreshed line/truck counts
@@ -509,10 +512,13 @@ function M.refresh(
     truckStationRows,
     truckStationPagination,
     truckStationRefreshButton,
-    truckStationFilterButtons
+    truckStationFilterButtons,
+    setStatus
 )
 
-    renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton, truckStationFilterButtons, onSwitchHub, hubStationGroupId)
+    setStatus = setStatus or function() end
+
+    renderTruckStationList(truckStationRows, truckStationPagination, truckStationRefreshButton, truckStationFilterButtons, onSwitchHub, hubStationGroupId, setStatus)
 
     if hubStationGroupId == nil then
 
@@ -564,10 +570,12 @@ function M.refresh(
 
                     function(text)
                         log.info("OVERVIEW TAB: Split -- " .. tostring(text))
+                        setStatus(text)
                     end,
 
                     function()
                         operation_lock.finish()
+                        setStatus("")
                     end
                 )
 
@@ -635,10 +643,12 @@ function M.refresh(
 
                     function(text)
                         log.info("OVERVIEW TAB: Distribution Hub -- " .. tostring(text))
+                        setStatus(text)
                     end,
 
                     function()
                         operation_lock.finish()
+                        setStatus("")
                     end
                 )
 
