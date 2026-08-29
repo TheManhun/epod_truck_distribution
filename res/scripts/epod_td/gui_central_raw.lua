@@ -799,26 +799,16 @@ local function buildActionButtons(panelLayout, actionButtonCount)
 end
 
 
--- Generic panel builder for every tab except LINES and OVERVIEW: a
--- small pool of action-button slots (0 is fine -- most tabs use none)
--- plus a MAX_ROWS pool of plain text rows. Every gui_tab_*.lua file
--- besides gui_tab_lines.lua/gui_tab_overview.lua already only calls
--- this exact shape (setText(text,width) / setStyleClassList(list) on
--- whatever it's handed), proven first by OVERVIEW in Decision 131.
-local function buildSimplePanel(panelId, actionButtonCount)
+-- Decision 184 cleanup: extracted out of buildSimplePanel/
+-- buildOverviewPanel, which had built this exact same
+-- container+layout+row-loop+ScrollArea block verbatim, independently,
+-- since Decision 180 added it to both -- same "shared widget-building
+-- logic belongs in one place" precedent buildActionButtons above
+-- already set (Decision 143). Behavior unchanged: a MAX_ROWS pool of
+-- plain text rows wrapped in a fixed-size scrollable viewport, added to
+-- `panelLayout`, returning the row pool for the caller to fill.
+local function buildScrollableSummaryRows(panelLayout)
 
-    local panel = gui.container_create(panelId)
-    local panelLayout = gui.boxLayout_create(nil, "VERTICAL")
-    panel:setLayout(panelLayout)
-
-    local actionButtons = buildActionButtons(panelLayout, actionButtonCount)
-
-    -- Decision 180: wrapped in a real ScrollArea, same as the truck-
-    -- station/LINES-groups pools before it -- so a tab whose row count
-    -- genuinely varies a lot (CARGO's per-destination cargo breakdown
-    -- can be long) never needs the window itself to grow/shrink to fit
-    -- it. See CONTENT_FIT_HEIGHT's own comment for why this matters
-    -- now that the window's height is a single locked value like width.
     local rowsContainer = gui.container_create(nil)
     local rowsLayout = gui.boxLayout_create(nil, "VERTICAL")
     rowsContainer:setLayout(rowsLayout)
@@ -838,6 +828,26 @@ local function buildSimplePanel(panelId, actionButtonCount)
     pcall(rowsScrollArea.setMinimumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
     pcall(rowsScrollArea.setMaximumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
     panelLayout:addItem(rowsScrollArea)
+
+    return rows
+
+end
+
+
+-- Generic panel builder for every tab except LINES and OVERVIEW: a
+-- small pool of action-button slots (0 is fine -- most tabs use none)
+-- plus a MAX_ROWS pool of plain text rows. Every gui_tab_*.lua file
+-- besides gui_tab_lines.lua/gui_tab_overview.lua already only calls
+-- this exact shape (setText(text,width) / setStyleClassList(list) on
+-- whatever it's handed), proven first by OVERVIEW in Decision 131.
+local function buildSimplePanel(panelId, actionButtonCount)
+
+    local panel = gui.container_create(panelId)
+    local panelLayout = gui.boxLayout_create(nil, "VERTICAL")
+    panel:setLayout(panelLayout)
+
+    local actionButtons = buildActionButtons(panelLayout, actionButtonCount)
+    local rows = buildScrollableSummaryRows(panelLayout)
 
     return panel, rows, actionButtons
 
@@ -865,30 +875,7 @@ local function buildOverviewPanel(panelId, actionButtonCount)
     panel:setLayout(panelLayout)
 
     local actionButtons = buildActionButtons(panelLayout, actionButtonCount)
-
-    -- Decision 180: same ScrollArea wrap as buildSimplePanel's own rows
-    -- pool -- see CONTENT_FIT_HEIGHT's comment for why every variable-
-    -- length pool in this window needed this before height could be
-    -- safely locked to one fixed value the way width already is.
-    local rowsContainer = gui.container_create(nil)
-    local rowsLayout = gui.boxLayout_create(nil, "VERTICAL")
-    rowsContainer:setLayout(rowsLayout)
-
-    local rows = {}
-
-    for rowIndex = 1, MAX_ROWS do
-
-        local label = gui.textView_create(nil, "", ROW_WIDTH, false)
-        rowsLayout:addItem(label)
-
-        rows[rowIndex] = { label = label }
-
-    end
-
-    local rowsScrollArea = gui.scrollArea_create(nil, rowsContainer)
-    pcall(rowsScrollArea.setMinimumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
-    pcall(rowsScrollArea.setMaximumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
-    panelLayout:addItem(rowsScrollArea)
+    local rows = buildScrollableSummaryRows(panelLayout)
 
     -- Decision 151: truck-station browser at the bottom of OVERVIEW.
     -- Heading + a dedicated Refresh button (a full-map scan is real

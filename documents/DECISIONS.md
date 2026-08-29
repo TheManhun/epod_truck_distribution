@@ -3377,6 +3377,20 @@ Separately, the player's own UX suggestion -- pin the currently-viewed/selected 
 
 Not yet live-tested.
 
+## Decision 184 — Cleanup pass: extracted duplicated summary-rows-pool builder
+
+### What happened
+
+Player: "commit and push this, then go over and see ways we can optimize and clean up but keep all functionality." Reviewed the full diff of everything changed this session (Decisions 171-183) file by file. Most of it held up as lean, non-duplicated code -- one real duplication found: `buildSimplePanel` and `buildOverviewPanel` (`gui_central_raw.lua`) each independently built the exact same ~15-line block Decision 180 added to both (a container + vertical layout + `MAX_ROWS` text-row loop + `ScrollArea` wrap + fixed sizing), copy-pasted verbatim rather than shared.
+
+### Decision
+
+Extracted into a new `buildScrollableSummaryRows(panelLayout)`, placed right before `buildSimplePanel` (same "shared widget-building logic belongs in one place" precedent `buildActionButtons` already set, Decision 143) -- builds the row pool, wraps it, adds it to the given `panelLayout`, and returns the row pool for the caller to fill. Both `buildSimplePanel` and `buildOverviewPanel` now just call it. Pure extraction, zero behavior change -- same widgets, same sizing, same call order.
+
+### Consequence
+
+Not yet live-tested (no behavior change expected). Committed and pushed alongside this session's other changes.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
