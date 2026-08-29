@@ -1109,6 +1109,65 @@ end
 
 
 -- ============================================================
+-- LINE-LEVEL LOAD FACTOR
+--
+-- Player noticed the vanilla Line Statistics panel's "Cargo" column
+-- (e.g. "64/64" vs "10/25" -- current load over total capacity) and
+-- asked whether it could inform this mod's own fleet-needs estimate.
+-- Sums real per-vehicle cargoLoad against real per-vehicle
+-- allCapacities across every vehicle currently on a line -- the same
+-- fields getCargoLoad/getAllCapacities above already proved accessible
+-- for other purposes, just summed at the line level instead of read
+-- per-vehicle. Returns {totalLoad, totalCapacity, vehicleCount} --
+-- computing the ratio is the caller's job (totalCapacity can
+-- legitimately be 0: an empty line, or a vehicle type whose capacity
+-- could not be read).
+--
+-- Deliberately a snapshot, same limitation as demand.scan()'s waiting
+-- total -- one instant, not a trend. But it catches a real blind spot
+-- that waiting-cargo-only reporting has: a line running consistently
+-- FULL can show near-zero waiting at the origin (every unit gets
+-- picked up as fast as it appears), which would read as "no shortage"
+-- under a waiting-only signal despite the fleet genuinely being maxed
+-- out.
+function M.getLineLoadFactor(lineId)
+
+    local result = { totalLoad = 0, totalCapacity = 0, vehicleCount = 0 }
+
+    local vehicleIds = M.getVehiclesForLine(lineId)
+
+    for _, vehicleId in ipairs(vehicleIds) do
+
+        result.vehicleCount = result.vehicleCount + 1
+
+        local cargoLoad = M.getCargoLoad(vehicleId)
+
+        if cargoLoad ~= nil then
+
+            for _, amount in pairs(cargoLoad) do
+                result.totalLoad = result.totalLoad + (amount or 0)
+            end
+
+        end
+
+        local allCapacities = M.getAllCapacities(vehicleId)
+
+        if allCapacities ~= nil then
+
+            for _, amount in pairs(allCapacities) do
+                result.totalCapacity = result.totalCapacity + (amount or 0)
+            end
+
+        end
+
+    end
+
+    return result
+
+end
+
+
+-- ============================================================
 -- LIVE SET-LINE COMMAND
 --
 -- Proven TF2 command path from earlier EPOD-TD testing.

@@ -118,6 +118,23 @@ local function attachCommon(raw)
 
     end
 
+    -- Decision 175: real, widely-used pattern across multiple OTHER
+    -- installed Workshop mods (Move It Enhanced's gui_util.lua and its
+    -- near-identical move_it_script.lua both call `slider:
+    -- calcMinimumSize()` to size a widget to its own real content
+    -- instead of a guessed/fixed number) -- confirmed real on the base
+    -- Component class the same way setMinimumSize/setMaximumSize
+    -- already were. Returns ok/sizeOrErr like those two, for the same
+    -- "don't let an outer pcall hide a real failure" reason -- the
+    -- caller decides what a nil/failed result should fall back to.
+    -- NOT yet proven on THIS window type specifically -- Decision 136's
+    -- own note that setMinimumSize/setMaximumSize had zero visible
+    -- effect on this window's rendered WIDTH is a real reason for
+    -- caution, flagged for live verification.
+    wrapper.calcMinimumSize = function(self)
+        return pcall(self._raw.calcMinimumSize, self._raw)
+    end
+
     return wrapper
 
 end
@@ -288,6 +305,42 @@ function M.imageView_create(id, path)
     wrapper.setImage = function(self, newPath)
         pcall(self._raw.setImage, self._raw, newPath, false)
     end
+
+    return wrapper
+
+end
+
+
+-- ============================================================
+-- SCROLL AREA (Decision 173)
+--
+-- Not part of gui.lua's own shape at all -- gui.lua has no equivalent.
+-- Confirmed real and usable by reading a second, unrelated installed
+-- Workshop mod ("Small Minimap", Workshop 3256290611)'s own real
+-- source, which builds one via `api.gui.comp.ScrollArea.new(component,
+-- id)` and explicit `setHorizontalScrollBarPolicy`/
+-- `setVerticalScrollBarPolicy` calls (`api.gui.comp.ScrollBarPolicy.
+-- AS_NEEDED`/`ALWAYS_OFF`/`ALWAYS_ON`, per that mod's own comment).
+-- Not yet independently live-tested by THIS mod -- flagged for
+-- verification the same way every other newly-added raw call in this
+-- file was (Decisions 134/135/136/140 all started as "confirmed
+-- against a reference, not yet proven here").
+--
+-- `innerWrapper` is expected to be one of THIS module's own wrapped
+-- components (typically a container_create() with a boxLayout_create()
+-- layout already set on it) -- its `._raw` is unwrapped the same way
+-- boxLayout_create's own addItem already does, for consistency with
+-- the rest of this file. Every size/visibility/style method this
+-- wrapper exposes comes from the same attachCommon every other wrapper
+-- in this file already shares -- setMinimumSize/setMaximumSize are how
+-- a caller constrains the visible scroll viewport height.
+function M.scrollArea_create(id, innerWrapper)
+
+    local raw = api.gui.comp.ScrollArea.new(innerWrapper._raw, id or "")
+    local wrapper = attachCommon(raw)
+
+    pcall(raw.setHorizontalScrollBarPolicy, raw, api.gui.comp.ScrollBarPolicy.ALWAYS_OFF)
+    pcall(raw.setVerticalScrollBarPolicy, raw, api.gui.comp.ScrollBarPolicy.AS_NEEDED)
 
     return wrapper
 

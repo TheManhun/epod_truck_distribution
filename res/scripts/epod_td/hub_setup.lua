@@ -695,9 +695,12 @@ function M.toggleDistributionHub(hubStationGroupId, onStatusUpdate, onComplete)
 
             function(text)
                 log.info("DISTRIBUTION HUB SETUP: Split -- " .. tostring(text))
+                onStatusUpdate("Step 1 of 3 -- " .. tostring(text))
             end,
 
             function()
+
+                onStatusUpdate("Step 2 of 3 -- Renaming fleet to hub identity...")
 
                 local okRename, errRename =
                     pcall(
@@ -713,6 +716,7 @@ function M.toggleDistributionHub(hubStationGroupId, onStatusUpdate, onComplete)
 
                                 function(text)
                                     log.info("DISTRIBUTION HUB SETUP: Assign & Balance -- " .. tostring(text))
+                                    onStatusUpdate("Step 3 of 3 -- " .. tostring(text))
                                 end,
 
                                 function()

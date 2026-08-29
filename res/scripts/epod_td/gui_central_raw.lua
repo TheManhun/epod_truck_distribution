@@ -89,11 +89,41 @@ local ROW_WIDTH = WINDOW_WIDTH
 local MAX_ROWS = 24
 local ACTION_BUTTON_WIDTH = 260
 
+-- Decision 176: shared fixed allowance reserved for a ScrollArea's own
+-- vertical scrollbar track when sizing a scrolled box's WIDTH from its
+-- real row content -- see TRUCK_STATION_ROWS_VIEWPORT_WIDTH's and
+-- LINES_GROUPS_VIEWPORT_WIDTH's own comments for the real bug this
+-- fixes. A starting guess, not pixel-measured against the real
+-- scrollbar yet.
+local SCROLLBAR_WIDTH_ALLOWANCE = 30
+
+-- Decision 180: fixed visible height for the shared OVERVIEW/CARGO/
+-- SETTINGS summary-rows scroll viewport -- shows roughly 6-7 rows
+-- before needing to scroll. A starting guess, same category as every
+-- other viewport height added this session.
+local SUMMARY_ROWS_VIEWPORT_HEIGHT = 210
+
 -- Must match gui_tab_lines.lua's own copies of these same constants
 -- exactly -- the actual widgets are created at these widths/slot
 -- counts.
-local MAX_LINE_GROUPS_PER_PAGE = 8
+--
+-- Decision 174: bumped 8 -> 24 now that the group pool lives inside a
+-- real ScrollArea (Decision 173's proven pattern) instead of only
+-- Prev/Next pagination -- fewer real hubs will ever need to click Next
+-- at all now, Prev/Next kept as the fallback for a hub with more than
+-- 24 real managed lines. Still a bounded, pre-built-once pool, not
+-- unlimited -- see LINES_GROUPS_VIEWPORT_HEIGHT's own comment for why
+-- (this window refreshes on every guiUpdate tick, so rebuilding
+-- widgets per-refresh instead of reusing a fixed pool was never an
+-- option considered here).
+local MAX_LINE_GROUPS_PER_PAGE = 24
 local MAX_DESTINATIONS_PER_LINE = 6
+
+-- Fixed visible height for the LINES groups scroll viewport -- shows
+-- roughly 6-8 collapsed headers (or fewer with one expanded) before
+-- needing to scroll. A starting guess, not tuned against real rendered
+-- row height yet, same as gui_plan_popup.lua's own ROWS_VIEWPORT_HEIGHT.
+local LINES_GROUPS_VIEWPORT_HEIGHT = 420
 local LINE_ROW_LABEL_WIDTH = 350
 local LINE_ROW_WAITING_WIDTH = 60
 local LINE_ROW_CARGO_SLOTS = 3
@@ -108,6 +138,15 @@ local BLANK_CARGO_ICON = "ui/hud/empty12.tga"
 local LINE_VEHICLES_WIDTH = 110
 local LINE_DELTA_WIDTH = 45
 local LINE_WAITING_TERMINAL_WIDTH = 150
+
+-- Decision 176: same real clipping bug as TRUCK_STATION_ROWS_VIEWPORT_
+-- WIDTH above, same fix -- a header row's real content
+-- (LINE_ROW_LABEL_WIDTH + LINE_VEHICLES_WIDTH + LINE_DELTA_WIDTH +
+-- LINE_WAITING_TERMINAL_WIDTH = 655) already exceeds WINDOW_WIDTH
+-- (560), so the scroll area's box must be sized from the real content
+-- width plus scrollbar allowance, not WINDOW_WIDTH.
+local LINES_GROUPS_VIEWPORT_WIDTH =
+    LINE_ROW_LABEL_WIDTH + LINE_VEHICLES_WIDTH + LINE_DELTA_WIDTH + LINE_WAITING_TERMINAL_WIDTH + SCROLLBAR_WIDTH_ALLOWANCE
 
 -- Decision 145: SERVICES dropped -- its two real actions moved
 -- (Apply Fleet Plan to LINES, Build Supply Chains to CARGO), and its
@@ -143,12 +182,13 @@ local ACTION_BUTTON_COUNTS = {
     [tab_settings] = 2
 }
 
--- Decision 142/145/146: LINES' own action-button pool -- separate from
--- ACTION_BUTTON_COUNTS above since LINES is built by buildLinesPanel,
--- never buildSimplePanel. Slot 1 is Re-Organize Terminals (Decision
--- 142), slot 2 is Apply Fleet Plan (Decision 145, moved from SERVICES),
--- slot 3 is Push Full Reallocation (Decision 146).
-local LINES_ACTION_BUTTON_COUNT = 3
+-- Decision 142/145/146/171: LINES' own action-button pool -- separate
+-- from ACTION_BUTTON_COUNTS above since LINES is built by
+-- buildLinesPanel, never buildSimplePanel. Slot 1 is Re-Organize
+-- Terminals (Decision 142), slot 2 is Apply Fleet Plan (Decision 145,
+-- moved from SERVICES), slot 3 is Push Full Reallocation (Decision
+-- 146), slot 4 is Fleet Needs Report (Decision 171).
+local LINES_ACTION_BUTTON_COUNT = 4
 
 -- Decision 151/161: player's request ("put it on the front page at the
 -- bottom showing only 10 stations per page") -- a full-map truck-
@@ -156,13 +196,135 @@ local LINES_ACTION_BUTTON_COUNT = 3
 -- former separate hub-button column into this same list (a "Hubs"
 -- filter mode replaces it). Same "reasonable ceiling, not exact-fit"
 -- pool sizing and same Prev/Next pagination pattern as LINES
--- (MAX_LINE_GROUPS_PER_PAGE) -- 10 rows per page, matching the
--- player's own number, reached across as many pages as
--- truck_station_finder.scan() actually finds (86 on the test save,
--- so 9 pages of 10).
-local MAX_TRUCK_STATION_ROWS_PER_PAGE = 10
+-- (MAX_LINE_GROUPS_PER_PAGE), reached across as many pages as
+-- truck_station_finder.scan() actually finds (86 on the test save at
+-- the time, up to 223 real stations on the later 250-year save).
+--
+-- Decision 174: bumped 10 -> 40 now that the row pool lives inside a
+-- real ScrollArea instead of relying on Prev/Next alone -- far fewer
+-- clicks needed to browse a large map's full station list, Prev/Next
+-- kept as the fallback beyond 40. Still a bounded, pre-built-once pool
+-- (this window refreshes on every guiUpdate tick -- see Decision 173's
+-- own reasoning for why per-refresh widget creation was never an
+-- option here), not literally every station on the map at once.
+local MAX_TRUCK_STATION_ROWS_PER_PAGE = 40
 local TRUCK_STATION_LABEL_WIDTH = 460
 local TRUCK_STATION_HUB_BUTTON_WIDTH = 140
+
+-- Fixed visible height for the truck-station scroll viewport -- shows
+-- roughly the same ~10 rows the player originally asked for before
+-- needing to scroll, same "starting guess" caveat as every other new
+-- viewport height added this session.
+local TRUCK_STATION_ROWS_VIEWPORT_HEIGHT = 300
+
+-- Decision 176, LIVE-CONFIRMED BUG: a row's real content
+-- (TRUCK_STATION_LABEL_WIDTH + TRUCK_STATION_HUB_BUTTON_WIDTH = 600) is
+-- already wider than WINDOW_WIDTH (560) -- harmless before Decision
+-- 174 since rows were added straight to panelLayout with no fixed-
+-- width box around them, so a slightly-over-560 row just rendered fine
+-- inside the much wider real window. Wrapping the pool in a
+-- ScrollArea's own fixed-width box made that width a real, enforced
+-- clip boundary for the first time, and the vertical scrollbar itself
+-- (real screen-space, not accounted for by any width constant here)
+-- then ate further into what little margin was left -- live-confirmed
+-- as the button label text getting cut off ("[ Make H", "[ HUB")
+-- exactly once the scrollbar appeared. Fixed by sizing the scroll
+-- area's box from the row's own real content width plus a fixed
+-- allowance for the scrollbar track, instead of reusing the unrelated
+-- WINDOW_WIDTH constant. SCROLLBAR_WIDTH_ALLOWANCE is declared once,
+-- near WINDOW_WIDTH itself, and shared with LINES_GROUPS_VIEWPORT_
+-- WIDTH's own identical fix below.
+local TRUCK_STATION_ROWS_VIEWPORT_WIDTH =
+    TRUCK_STATION_LABEL_WIDTH + TRUCK_STATION_HUB_BUTTON_WIDTH + SCROLLBAR_WIDTH_ALLOWANCE
+
+-- Decision 177: player's real complaint -- even after Decision 175's
+-- content-fit HEIGHT, the window still rendered close to full screen
+-- WIDTH, because `lockedWidth` (below, in ensureWindow) was a screen-
+-- percentage guess (60% of screen width, Decision 136) completely
+-- untethered from how wide this window's content actually is.
+--
+-- Deliberately NOT solved with calcMinimumSize the way height was --
+-- all four tab panels share ONE window and only one is visible at a
+-- time, so a per-tab content-fit WIDTH (recomputed on every tab
+-- switch, same as applyContentFitHeight does for height) would make
+-- the window visibly change WIDTH switching tabs, exactly the
+-- resizing-on-tab-switch annoyance Decision 136 originally fixed.
+-- Width has to stay ONE fixed value across every tab, so it's computed
+-- once here from the known real widths of the widest actual content in
+-- the whole window (LINES' own 4-button action row turns out to be the
+-- true widest single row anywhere in this window, wider than either
+-- scroll box) -- not a new live API call, just arithmetic over
+-- constants already defined above.
+local CONTENT_FIT_WIDTH_MARGIN = 40
+local CONTENT_FIT_WIDTH =
+    math.max(
+        LINES_ACTION_BUTTON_COUNT * ACTION_BUTTON_WIDTH,
+        LINES_GROUPS_VIEWPORT_WIDTH,
+        TRUCK_STATION_ROWS_VIEWPORT_WIDTH,
+        WINDOW_WIDTH
+    ) + CONTENT_FIT_WIDTH_MARGIN
+
+-- Decision 181: player's request -- LINES' own groups scroll box
+-- (sized to LINES_GROUPS_VIEWPORT_WIDTH, its OWN narrowest real
+-- content) looked like a narrow column with a big dead gap beside it,
+-- since the WINDOW itself is wider than that (the LINES action row,
+-- 1040px, is the real widest thing and drives CONTENT_FIT_WIDTH).
+-- Every scrollable pool in the window now sizes its box to the same
+-- FULL_WIDTH_SCROLL_AREA_WIDTH (the window's own real content width)
+-- instead of each pool's own narrower natural content width, so every
+-- list visually fills the window instead of leaving a gap beside it.
+-- `ensureWindow`'s own `lockedWidth` isn't known yet when these pools
+-- are built (screen size hasn't been queried at that point) -- this
+-- reuses CONTENT_FIT_WIDTH directly instead, which `lockedWidth` equals
+-- in the normal case (it's only ever clamped narrower on an unusually
+-- small screen).
+local FULL_WIDTH_SCROLL_AREA_WIDTH = CONTENT_FIT_WIDTH - CONTENT_FIT_WIDTH_MARGIN
+
+-- Decision 180: player's real complaint, repeated across several
+-- rounds of trying to derive height from `calcMinimumSize` (Decisions
+-- 175/178/179) -- that call kept producing inconsistent results (too
+-- tall on a full page, then too short after a flat scale-down was
+-- applied on top of it) because it was trying to measure genuinely
+-- variable per-tab content. Once every variable-length pool in the
+-- window is wrapped in a fixed-height ScrollArea (this decision --
+-- OVERVIEW/CARGO/SETTINGS' shared summary-rows pool, the last one that
+-- wasn't), NOTHING in this window can grow past a known bound any more
+-- -- so, exactly like CONTENT_FIT_WIDTH just above, height can be
+-- computed ONCE from real known constants instead of any live
+-- calcMinimumSize call, and locked, same as width already is
+-- (Decision 177). `calcMinimumSize`-based dynamic per-tab height
+-- (applyContentFitHeight/currentTabScrollOverflow) is removed entirely
+-- -- height is now ONE fixed value for every tab, exactly mirroring
+-- width's own "must never jump switching tabs" rule.
+--
+-- ROW_HEIGHT_ESTIMATE approximates one plain text/button row -- not
+-- pixel-measured, same "starting guess" caveat as every viewport height
+-- this session. CHROME_HEIGHT_ESTIMATE covers the tab bar, section
+-- heading, STATUS bar, and window title bar/margins, none of which are
+-- tab-specific.
+local ROW_HEIGHT_ESTIMATE = 30
+local CHROME_HEIGHT_ESTIMATE = 160
+
+local OVERVIEW_BODY_HEIGHT =
+    ROW_HEIGHT_ESTIMATE -- action row
+    + SUMMARY_ROWS_VIEWPORT_HEIGHT -- summary rows
+    + ROW_HEIGHT_ESTIMATE -- "TRUCK STATIONS" heading + Refresh
+    + ROW_HEIGHT_ESTIMATE -- Hubs/Stations/All filter row
+    + TRUCK_STATION_ROWS_VIEWPORT_HEIGHT -- truck-station rows
+    + ROW_HEIGHT_ESTIMATE -- Prev/Next pagination
+
+local LINES_BODY_HEIGHT =
+    ROW_HEIGHT_ESTIMATE -- action row
+    + LINES_GROUPS_VIEWPORT_HEIGHT -- groups
+    + ROW_HEIGHT_ESTIMATE -- Prev/Next pagination
+
+local SIMPLE_TAB_BODY_HEIGHT =
+    ROW_HEIGHT_ESTIMATE -- action row
+    + SUMMARY_ROWS_VIEWPORT_HEIGHT -- summary rows (CARGO/SETTINGS)
+
+local CONTENT_FIT_HEIGHT =
+    CHROME_HEIGHT_ESTIMATE
+    + math.max(OVERVIEW_BODY_HEIGHT, LINES_BODY_HEIGHT, SIMPLE_TAB_BODY_HEIGHT)
 
 -- Decision 136: player's request -- full tab names ("OVERVIEW",
 -- "TERMINALS", "ACTIVITY"...) were getting cut off regardless of
@@ -508,6 +670,19 @@ function M.refresh(hubStationGroupId)
 end
 
 
+-- Decision 180: the per-tab dynamic height dance that used to live here
+-- (applyContentFitHeight/currentTabScrollOverflow, Decisions 175/178/
+-- 179) is gone -- `calcMinimumSize`-driven height kept producing
+-- inconsistent real results (correct on a short page, oversized on a
+-- full one, then undersized once a flat scale-down was layered on top
+-- to compensate). Height is now a single fixed value for the window's
+-- whole lifetime, computed once in ensureWindow from CONTENT_FIT_HEIGHT
+-- -- exactly the same treatment CONTENT_FIT_WIDTH already gets, and for
+-- the same reason: every variable-length pool in this window is now
+-- wrapped in its own bounded ScrollArea, so nothing can grow past a
+-- known bound any more and a live measurement is no longer needed.
+
+
 local function selectTab(tabIndex, hubStationGroupId)
 
     state.activeTabIndex = tabIndex
@@ -638,16 +813,31 @@ local function buildSimplePanel(panelId, actionButtonCount)
 
     local actionButtons = buildActionButtons(panelLayout, actionButtonCount)
 
+    -- Decision 180: wrapped in a real ScrollArea, same as the truck-
+    -- station/LINES-groups pools before it -- so a tab whose row count
+    -- genuinely varies a lot (CARGO's per-destination cargo breakdown
+    -- can be long) never needs the window itself to grow/shrink to fit
+    -- it. See CONTENT_FIT_HEIGHT's own comment for why this matters
+    -- now that the window's height is a single locked value like width.
+    local rowsContainer = gui.container_create(nil)
+    local rowsLayout = gui.boxLayout_create(nil, "VERTICAL")
+    rowsContainer:setLayout(rowsLayout)
+
     local rows = {}
 
     for rowIndex = 1, MAX_ROWS do
 
         local label = gui.textView_create(nil, "", ROW_WIDTH, false)
-        panelLayout:addItem(label)
+        rowsLayout:addItem(label)
 
         rows[rowIndex] = { label = label }
 
     end
+
+    local rowsScrollArea = gui.scrollArea_create(nil, rowsContainer)
+    pcall(rowsScrollArea.setMinimumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
+    pcall(rowsScrollArea.setMaximumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
+    panelLayout:addItem(rowsScrollArea)
 
     return panel, rows, actionButtons
 
@@ -676,16 +866,29 @@ local function buildOverviewPanel(panelId, actionButtonCount)
 
     local actionButtons = buildActionButtons(panelLayout, actionButtonCount)
 
+    -- Decision 180: same ScrollArea wrap as buildSimplePanel's own rows
+    -- pool -- see CONTENT_FIT_HEIGHT's comment for why every variable-
+    -- length pool in this window needed this before height could be
+    -- safely locked to one fixed value the way width already is.
+    local rowsContainer = gui.container_create(nil)
+    local rowsLayout = gui.boxLayout_create(nil, "VERTICAL")
+    rowsContainer:setLayout(rowsLayout)
+
     local rows = {}
 
     for rowIndex = 1, MAX_ROWS do
 
         local label = gui.textView_create(nil, "", ROW_WIDTH, false)
-        panelLayout:addItem(label)
+        rowsLayout:addItem(label)
 
         rows[rowIndex] = { label = label }
 
     end
+
+    local rowsScrollArea = gui.scrollArea_create(nil, rowsContainer)
+    pcall(rowsScrollArea.setMinimumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
+    pcall(rowsScrollArea.setMaximumSize, rowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, SUMMARY_ROWS_VIEWPORT_HEIGHT)
+    panelLayout:addItem(rowsScrollArea)
 
     -- Decision 151: truck-station browser at the bottom of OVERVIEW.
     -- Heading + a dedicated Refresh button (a full-map scan is real
@@ -770,6 +973,14 @@ local function buildOverviewPanel(panelId, actionButtonCount)
 
     panelLayout:addItem(filterRow)
 
+    -- Decision 174: row pool now lives inside its own scrollable
+    -- viewport (real ScrollArea, proven in Decision 173) instead of
+    -- being added straight to panelLayout -- see
+    -- TRUCK_STATION_ROWS_VIEWPORT_HEIGHT's own comment above.
+    local truckStationRowsContainer = gui.container_create(nil)
+    local truckStationRowsLayout = gui.boxLayout_create(nil, "VERTICAL")
+    truckStationRowsContainer:setLayout(truckStationRowsLayout)
+
     state.truckStationRows = {}
 
     for stationSlotIndex = 1, MAX_TRUCK_STATION_ROWS_PER_PAGE do
@@ -830,7 +1041,7 @@ local function buildOverviewPanel(panelId, actionButtonCount)
 
         local rowContainer = gui.container_create("centralRaw.truckStationRow." .. tostring(stationSlotIndex))
         rowContainer:setLayout(rowLayout)
-        panelLayout:addItem(rowContainer)
+        truckStationRowsLayout:addItem(rowContainer)
 
         state.truckStationRows[stationSlotIndex] = {
             container = rowContainer,
@@ -843,6 +1054,11 @@ local function buildOverviewPanel(panelId, actionButtonCount)
         }
 
     end
+
+    local truckStationRowsScrollArea = gui.scrollArea_create(nil, truckStationRowsContainer)
+    pcall(truckStationRowsScrollArea.setMinimumSize, truckStationRowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, TRUCK_STATION_ROWS_VIEWPORT_HEIGHT)
+    pcall(truckStationRowsScrollArea.setMaximumSize, truckStationRowsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, TRUCK_STATION_ROWS_VIEWPORT_HEIGHT)
+    panelLayout:addItem(truckStationRowsScrollArea)
 
     local truckStationPaginationRow = gui.boxLayout_create(nil, "HORIZONTAL")
 
@@ -959,6 +1175,22 @@ local function buildLinesPanel()
 
     panelLayout:addItem(actionRow)
 
+    -- Decision 174: group pool now lives inside its own scrollable
+    -- viewport (real ScrollArea, proven in Decision 173) instead of
+    -- being added straight to panelLayout -- see
+    -- LINES_GROUPS_VIEWPORT_HEIGHT's own comment above. Each group's
+    -- accordion-expand detail panel still lives INSIDE this same
+    -- scrolled container (unchanged setVisible-toggle behavior,
+    -- gui_tab_lines.lua's own expand/collapse logic doesn't need to
+    -- know this container is now scrollable at all) -- not yet
+    -- independently live-tested whether expanding a group deep in a
+    -- long scrolled list behaves sensibly (e.g. whether the scroll
+    -- position jumps), flagged for live-test same as everything else
+    -- new this session.
+    local lineGroupsContainer = gui.container_create(nil)
+    local lineGroupsLayout = gui.boxLayout_create(nil, "VERTICAL")
+    lineGroupsContainer:setLayout(lineGroupsLayout)
+
     state.lineGroups = {}
 
     for groupIndex = 1, MAX_LINE_GROUPS_PER_PAGE do
@@ -1003,7 +1235,7 @@ local function buildLinesPanel()
         local waitingTerminalLabel = gui.textView_create(nil, "", LINE_WAITING_TERMINAL_WIDTH, false)
         headerRow:addItem(waitingTerminalLabel)
 
-        panelLayout:addItem(headerRow)
+        lineGroupsLayout:addItem(headerRow)
 
         local detailPanel = gui.container_create("centralRaw.lineGroup." .. tostring(groupIndex) .. ".detail")
         local detailLayout = gui.boxLayout_create(nil, "VERTICAL")
@@ -1056,7 +1288,7 @@ local function buildLinesPanel()
 
         end
 
-        panelLayout:addItem(detailPanel)
+        lineGroupsLayout:addItem(detailPanel)
 
         state.lineGroups[groupIndex] = {
             headerButton = headerButton,
@@ -1070,6 +1302,11 @@ local function buildLinesPanel()
         }
 
     end
+
+    local lineGroupsScrollArea = gui.scrollArea_create(nil, lineGroupsContainer)
+    pcall(lineGroupsScrollArea.setMinimumSize, lineGroupsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, LINES_GROUPS_VIEWPORT_HEIGHT)
+    pcall(lineGroupsScrollArea.setMaximumSize, lineGroupsScrollArea, FULL_WIDTH_SCROLL_AREA_WIDTH, LINES_GROUPS_VIEWPORT_HEIGHT)
+    panelLayout:addItem(lineGroupsScrollArea)
 
     local paginationRow = gui.boxLayout_create(nil, "HORIZONTAL")
 
@@ -1293,24 +1530,40 @@ local function ensureWindow(hubStationGroupId)
         -- this window's actual rendered width. Switched to setSize --
         -- a direct "set the current size to this" call rather than a
         -- negotiated min/max range, which this window type apparently
-        -- doesn't respect for its own auto-computed size. 60% of
-        -- screen width (player's own revised ask, "50-75%") rather
-        -- than a hard 50%, for some breathing room.
-        local lockedWidth = screenRect[3] * 0.6
-        local initialHeight = (screenRect[4] or 2000) * 0.7
+        -- doesn't respect for its own auto-computed size.
+        --
+        -- Decision 177: player's live complaint -- 60% of screen width
+        -- (the original choice above) rendered close to full-screen on
+        -- a wide monitor, while this window's real widest content
+        -- (CONTENT_FIT_WIDTH, computed above from known constants) is
+        -- nowhere near that big. Replaced the screen-percentage guess
+        -- with that real content-derived width -- clamped to 90% of
+        -- screen width only as a sanity floor for an unusually narrow
+        -- screen, not as the normal driver of the number any more.
+        --
+        -- Decision 180: HEIGHT now gets the exact same treatment,
+        -- locked to CONTENT_FIT_HEIGHT once here, for the SAME reason
+        -- and the same way, instead of the per-tab calcMinimumSize
+        -- dance (Decisions 175/178/179) that kept producing
+        -- inconsistent results across different tabs/content amounts.
+        -- Both width and height are now ONE fixed value for the whole
+        -- window's lifetime -- never recomputed on tab switch, exactly
+        -- mirroring width's own original anti-jump rule (Decision 136).
+        local lockedWidth = math.min(CONTENT_FIT_WIDTH, screenRect[3] * 0.9)
+        local lockedHeight = math.min(CONTENT_FIT_HEIGHT, (screenRect[4] or 2000) * 0.9)
 
-        local okSize, errSize = window.setSize(window, lockedWidth, initialHeight)
+        local okSize, errSize = window.setSize(window, lockedWidth, lockedHeight)
 
         -- Kept as a secondary attempt alongside setSize, not instead
         -- of it -- costs nothing since both already report success
         -- with no observed downside, and might still matter for
         -- manual-resize bounds even if they don't drive initial size.
-        window.setMinimumSize(window, lockedWidth, 0)
-        window.setMaximumSize(window, lockedWidth, (screenRect[4] or 2000) * 0.85)
+        window.setMinimumSize(window, lockedWidth, lockedHeight)
+        window.setMaximumSize(window, lockedWidth, lockedHeight)
 
         log.info(
-            "GUI CENTRAL RAW: width lock lockedWidth=" .. tostring(lockedWidth)
-            .. " initialHeight=" .. tostring(initialHeight)
+            "GUI CENTRAL RAW: size lock lockedWidth=" .. tostring(lockedWidth)
+            .. " lockedHeight=" .. tostring(lockedHeight)
             .. " setSize ok=" .. tostring(okSize) .. " err=" .. tostring(errSize)
         )
 

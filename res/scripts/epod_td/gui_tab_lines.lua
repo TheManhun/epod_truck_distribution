@@ -8,6 +8,8 @@ local planner = require("epod_td.planner")
 local dispatcher = require("epod_td.dispatcher")
 local truck_station_finder = require("epod_td.truck_station_finder")
 local line_ownership = require("epod_td.line_ownership")
+local fleet_needs = require("epod_td.fleet_needs")
+local gui_plan_popup = require("epod_td.gui_plan_popup")
 local log = require("epod_td.log")
 
 local M = {}
@@ -51,8 +53,16 @@ local M = {}
 -- simulation state -- it just remembers what the player clicked.
 -- ============================================================
 
-local MAX_LINE_GROUPS_PER_PAGE = 8
+-- Decision 174: bumped 8 -> 24 to match gui_central_raw.lua's own pool
+-- size increase (the group pool now scrolls inside a real ScrollArea
+-- instead of relying on Prev/Next alone).
+local MAX_LINE_GROUPS_PER_PAGE = 24
 local MAX_DESTINATIONS_PER_LINE = 6
+
+-- Decision 182: Fleet Needs Report's headline number shows red past
+-- this threshold -- player's own number ("over 10"), not derived from
+-- anything.
+local HIGH_NEED_THRESHOLD = 10
 
 -- Must match the window-building file's own copies of these same
 -- constants exactly -- the actual widgets are created at these
@@ -408,7 +418,8 @@ end
 -- in this codebase already uses -- see gui_manager.lua's own header
 -- comment). `actionButtons[1]` is Re-Organize Terminals (Decision 142),
 -- `actionButtons[2]` is Apply Fleet Plan (Decision 145),
--- `actionButtons[3]` is Push Full Reallocation (Decision 146).
+-- `actionButtons[3]` is Push Full Reallocation (Decision 146),
+-- `actionButtons[4]` is Fleet Needs Report (Decision 171).
 function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, setStatus)
 
     setStatus = setStatus or function() end
@@ -574,6 +585,95 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
                 operation_lock.begin()
 
                 runPushIteration(hubStationGroupId, 0, 0, setStatus)
+
+            end
+
+        end
+
+    end
+
+    -- Decision 171: "Fleet Needs Report" -- read-only, no
+    -- operation_lock gate (it mutates nothing, so it's safe to check
+    -- even mid-operation, same as every other pure demand.scan() read
+    -- already happening during a refresh). Reuses gui_plan_popup.lua
+    -- in its view-only mode (confirmHandler = nil), exactly the reuse
+    -- its own header comment anticipated.
+    if actionButtons ~= nil and actionButtons[4] ~= nil then
+
+        local slot = actionButtons[4]
+
+        if hubStationGroupId == nil then
+
+            slot.label:setText("[ Fleet Needs Report: select a hub first ]", 560)
+            slot.handler = nil
+
+        else
+
+            slot.label:setText("[ Fleet Needs Report ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+            slot.handler = function()
+
+                local okReport, report = pcall(fleet_needs.estimateFleetNeeds, hubStationGroupId)
+
+                if not okReport or report == nil then
+
+                    log.info("LINES TAB: Fleet Needs Report failed: " .. tostring(report))
+                    gui_plan_popup.show(
+                        "Fleet Needs Report",
+                        { "Could not build a report for this hub right now." },
+                        nil
+                    )
+
+                    return
+
+                end
+
+                local reportLines = {}
+
+                if not report.hasData then
+
+                    reportLines[1] = "No managed lines at this hub yet -- nothing to estimate."
+
+                else
+
+                    -- Decision 182: player's request -- lead with the
+                    -- single actionable number ("Needs N more truck(s)
+                    -- for this hub") instead of a per-line breakdown --
+                    -- "the splitter can sort out where they go" once
+                    -- more trucks exist, so the player doesn't need to
+                    -- know or act on which specific line is short. Red
+                    -- (reused EpodTdDeltaNegative, gui_plan_popup.lua's
+                    -- new "warning" row style) once the total passes
+                    -- HIGH_NEED_THRESHOLD -- the player's own number,
+                    -- "over 10".
+                    if report.totalSuggestedAdditional > 0 then
+
+                        reportLines[1] = {
+                            text = "Needs " .. tostring(report.totalSuggestedAdditional) .. " more truck(s) for this hub.",
+                            style = report.totalSuggestedAdditional > HIGH_NEED_THRESHOLD and "warning" or nil
+                        }
+
+                    else
+
+                        reportLines[1] = "No truck shortage detected -- fleet currently keeps up with demand."
+
+                    end
+
+                    reportLines[2] = ""
+
+                    reportLines[3] =
+                        "Hub-wide waiting-cargo-per-truck baseline: "
+                            .. (report.baselineRatio ~= nil and string.format("%.1f", report.baselineRatio) or "n/a (no well-served line yet)")
+                            .. " waiting/truck"
+
+                    reportLines[4] =
+                        "(Based on cargo currently waiting -- a terminal's storage cap means real demand could be higher than shown. "
+                            .. "Once added, Push Full Reallocation redistributes new trucks across this hub's lines automatically.)"
+
+                end
+
+                gui_plan_popup.show("Fleet Needs: " .. tostring(report.hubName), reportLines, nil)
 
             end
 

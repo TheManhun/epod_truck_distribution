@@ -3153,6 +3153,230 @@ New standalone module `gui_plan_popup.lua` -- a small reusable raw-GUI popup (ti
 
 Not yet live-tested.
 
+## Decision 171 — Reviewed the "AI Builder" mod's source for reusable patterns; added step-by-step hub-setup status text and a new Fleet Needs Report
+
+### What happened
+
+Player asked to look at another installed Workshop mod, "AI Builder" (id 2820656841, a large ~25,000-line autonomous network-building mod), to see what could be learned and applied to optimize this mod. It was subscribed and unpacked locally, so its real source (not just the Workshop listing) was reviewed directly. Explicitly NOT a request to add autonomy -- this mod stays player-driven (per prior guidance) -- the review was for engineering patterns only. Player's own follow-up: "add what you think will help", plus a concrete want: "This hub needs X more trucks to full service this area."
+
+Most of AI Builder's code doesn't transfer -- it solves a different problem (building new infrastructure) with logic tightly coupled to its own route/graph cache. Three things were judged worth adapting:
+
+1. Its top-level `tickUpdate()` processes a work-item queue one step per tick with per-step status text, instead of one opaque blocking call -- this mod's own `hub_setup.toggleDistributionHub` ON sequence (Split -> Rename Fleet -> Assign & Balance) is already exactly three chained async steps, it just never forwarded its own inner step text up to the STATUS bar (Decision 168).
+2. A generic weighted/normalized candidate scorer (`util.evaluateWinnerFromScores`) -- judged NOT worth adding as a standalone utility; this mod's own `planner.lua` already has an equivalent, already-tuned apportion-by-demand mechanism (`apportionPoolByDemand`), so introducing a second generic scorer would just be a second implementation of the same idea.
+3. Merge-not-replace on settings load -- skipped; this mod has no persisted settings/toggle table to migrate (state lives on real game entities -- station names, `hub_registry`, `managed_registry` -- not a serialized save blob), so the pattern has nothing to apply to here.
+
+### Decision
+
+**Step-by-step STATUS text**: `hub_setup.toggleDistributionHub`'s ON branch now forwards its real inner-step `onStatusUpdate` text out to the caller (previously swallowed into `log.info` only, with the outer STATUS bar just showing "Setting up..." then "ON" with nothing in between) -- prefixed "Step 1 of 3 -- [ Splitting... ]", "Step 2 of 3 -- Renaming fleet to hub identity...", "Step 3 of 3 -- [ Assign & Balance Fleet... ]". No new queue/infrastructure needed -- the async chain already was three real steps, this just stops discarding their own progress text.
+
+**Fleet Needs Report** (new): `fleet_needs.lua`, a pure read-only module, answers a genuinely different question than `planner.lua`'s existing `calculateTargetAllocation` -- that one only ever REDISTRIBUTES a hub's current fleet (every delta sums to zero by construction), it can never say the hub's total fleet is too small. `fleet_needs.estimateFleetNeeds(hubStationGroupId)` reuses `planner.lua`'s own `collectManagedLineCandidates` (newly exported, rather than writing a fourth copy of the same waiting/floor/activity-tier logic -- see the deferred "consolidate duplicated apportionment logic" cleanup item) and combines two real signals, neither an invented constant: any line already below its own live-tuned floor (`MINIMUM_VEHICLES_PER_LINE` + activity-tier bonus) with real waiting cargo is unambiguously short; beyond the floor, a line whose waiting-per-vehicle ratio is markedly worse than the HUB'S OWN average (drawn only from lines already at/above their floor) is under-trucked relative to its own peers, not against any universal number. Carries the same terminal-storage-cap caveat `fleet_allocator.lua` already documents -- waiting cargo is a floor on true demand, not exact, so this is a suggestion, not a guarantee.
+
+Surfaced as a new 4th LINES-tab action button, "[ Fleet Needs Report ]" (`LINES_ACTION_BUTTON_COUNT` 3 -> 4 in `gui_central_raw.lua`), reusing `gui_plan_popup.lua` in its view-only mode (`confirmHandler = nil`) -- exactly the reuse that module's own Decision 170 header comment anticipated. Deliberately NOT gated behind `operation_lock` -- it's a pure read, same as every other `demand.scan()` call already happening mid-refresh, so it stays available even while another hub operation is running.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 172 — Fleet Needs Report gains a second real signal: per-line cargo load/capacity ratio
+
+### What happened
+
+Player shared a screenshot of the vanilla Line Statistics panel and asked whether its "Cargo" column (current load over total capacity, e.g. "64/64" vs "10/25") could help optimize the mod's own reporting. Checked whether the panel's "Freq." column (departure interval, e.g. "3 min") is reachable through the scripting API first -- found no evidence anywhere in this codebase that a line's departure interval/frequency is an exposed field (nothing in `lines.lua`'s own real `LINE` component field usage, nothing in `TECHNICAL_RESEARCH.md`), so it was NOT pursued rather than guessed at. The "Cargo" load/capacity ratio, by contrast, was already provably reachable: `vehicles.lua` already reads real per-vehicle `cargoLoad` (current) and `allCapacities` (max) for other purposes (Decision 61's `isVehicleEmpty` fix, the cargo-compatibility work) -- just never summed at the line level before.
+
+### Decision
+
+New `vehicles.getLineLoadFactor(lineId)` sums real `cargoLoad`/`allCapacities` across every vehicle currently on a line, returning `{totalLoad, totalCapacity, vehicleCount}`. `planner.lua`'s `collectManagedLineCandidates` now calls it once per candidate and carries `totalCargoLoad`/`totalCargoCapacity` on the candidate (not consumed by `calculateTargetAllocation`'s own redistribution math, which is unchanged) -- avoids fleet_needs.lua re-scanning each line's vehicles a second time, and as a side effect replaces a redundant `#vehicles.getVehiclesForLine(lineId)` call with the count `getLineLoadFactor` already produces.
+
+`fleet_needs.lua` gained a third signal on top of Decision 171's two: a line running at/above `NEAR_CAPACITY_LOAD_FACTOR` (0.9 -- a threshold, same category as `demand.lua`'s existing 0.25 underServed cutoff, not a proven constant) gets a `+1` suggestion with its own distinct reason text ("trucks running near-full capacity"), but ONLY when the existing waiting-based signals found no shortage already -- this is deliberately the blind-spot case, not stacked on top of an already-flagged line. The blind spot it closes: a line running consistently full can show near-zero waiting cargo at the origin (every unit gets carried off as fast as it appears), which the waiting-only signals would misread as "no shortage" despite the fleet being maxed out. The Fleet Needs Report popup now also shows each line's load percentage (`load: NN%`) alongside its waiting/truck numbers.
+
+### Consequence
+
+LIVE-TESTED, real bug found and fixed: the report row builder used `string.format("%-30s ...", tostring(lineInfo.name):sub(1, 30), ...)`. Real line names routinely carry multi-byte UTF-8 (the "\xE2\x97\x8f " bullet, the "\xE2\x86\x94" arrow used in adopted/split line names) -- `:sub(1, 30)` counts bytes, not characters, and on one real line name it cut mid-character, corrupting that glyph and garbling the rest of the row ("Barking Quarry - Barking [box]aiting:34" instead of "...Waiting:34"). The `%-Ns` column padding was also byte-count padding in a proportional-width raw-GUI font, so it was never actually producing visual column alignment either (confirmed ragged in the screenshot) -- padding removed entirely, not just the truncation. Fixed by dropping both the `:sub()` truncation and the `%-Ns` padding in favor of plain concatenation (`name .. "  --  waiting:" .. ... `), the same unpadded style `previewConversion`'s own report lines already use. The rest of the report (baseline ratio, per-line waiting/trucks/load%, suggestion text, totals) rendered correctly on the real save (Barking Outer Cargo Station hub: baseline 14.2 waiting/truck, 4 total suggested additional trucks across 3 flagged lines).
+
+LIVE-RETESTED after that fix, second real bug found: with the glyph corruption gone, a long real adopted line name plus its stats on one combined row ("Barking Outer Cargo Station \xE2\x86\x94 Barking Construction materials plant - Barking -- waiting...") overflowed `gui_plan_popup.lua`'s fixed-width row and clipped silently instead of wrapping. Root cause: `raw_gui_compat.lua`'s `textView_create(id, text, width, iaHintSupport)` never actually reads its 4th `iaHintSupport` argument anywhere in the function body -- it's dead, not a wrap toggle -- and `applyFixedWidth` clamps width to an exact min/max with no wrap behavior at all. No proven word-wrap API exists anywhere else in this codebase to fall back on, so rather than guess at one, the report's per-line rows were split in two: the (possibly long) name on its own row, stats indented on the next -- same "solve overflow by restructuring layout, not by guessing at an unproven API" approach Decision 165 already used for the truck-station list's own overflow problem.
+
+## Decision 173 — Added a real ScrollArea wrapper to raw_gui_compat.lua, used in gui_plan_popup.lua
+
+### What happened
+
+Player pointed at a second, unrelated installed Workshop mod ("Small Minimap", Workshop 3256290611) after noticing it has a real scroll bar in one of its GUI screens. Its real source (subscribed and unpacked locally, same as AI Builder in Decision 171) was checked directly: `res/config/game_script/minimap_script.lua` builds one via `api.gui.comp.ScrollArea.new(component, id)`, with explicit `setHorizontalScrollBarPolicy`/`setVerticalScrollBarPolicy` calls against `api.gui.comp.ScrollBarPolicy.AS_NEEDED`/`ALWAYS_OFF`/`ALWAYS_ON`, plus min/max sizing on both the inner component and the scroll area itself. Genuinely new capability -- nothing in `raw_gui_compat.lua` (or gui.lua before it) has ever exposed a real scrollable container; every list in this mod's own GUI has instead worked around that gap with a fixed-size pre-built widget pool and either manual Prev/Next pagination (LINES groups, the truck-station browser) or a hard row cap that just clips past its limit (`gui_plan_popup.lua`'s own MAX_ROWS, the exact class of bug hit twice live this session -- Decision 172's clipped row, and the corrupted-glyph row before it).
+
+### Decision
+
+New `raw_gui_compat.M.scrollArea_create(id, innerWrapper)`, following this file's own established wrapper conventions exactly (built on `attachCommon`, same as every other wrapper here) -- takes an already-wrapped component (typically a `container_create()` with a `boxLayout_create()` layout set on it) and unwraps its `._raw` the same way `boxLayout_create`'s own `addItem` already does. Defaults to `ALWAYS_OFF` horizontal / `AS_NEEDED` vertical, matching the reference mod's own comment about what each policy value means.
+
+`gui_plan_popup.lua`'s row pool was restructured to use it: the `MAX_ROWS` textView pool now lives inside its own `container_create()` + `boxLayout_create()`, wrapped in a `scrollArea_create()` fixed to a new `ROWS_VIEWPORT_HEIGHT` (360, a starting guess) instead of being added straight to the window's own top-level layout. The window's own fixed size shrank from a flat 720 to `ROWS_VIEWPORT_HEIGHT + 160`, since the window no longer needs to be tall enough to show all 30 possible rows at once -- content past the viewport height should now scroll instead of clip.
+
+### Consequence
+
+LIVE-CONFIRMED WORKING, first try -- real save, Bedford Outer Cargo Station 2's Fleet Needs Report (6 real lines, more than fit in `ROWS_VIEWPORT_HEIGHT`): a real vertical scrollbar rendered on the right edge of the row area, with visible up/down arrows and a drag thumb, and scrolling revealed rows below the fold instead of clipping them. `api.gui.comp.ScrollArea` is now a proven, reusable pattern for this mod, not just a reference-mod claim. Worth revisiting later for the truck-station browser and LINES groups pagination (both still use the older fixed-pool-plus-Prev/Next pattern) -- not changed now, kept scoped to the one contained test case.
+
+## Decision 174 — Rolled the proven ScrollArea pattern out to the truck-station browser and LINES groups
+
+### What happened
+
+Player confirmed ("yes") to extending Decision 173's now-proven `ScrollArea` pattern to the two remaining fixed-pool-plus-Prev/Next lists in this window: the OVERVIEW truck-station browser and the LINES groups accordion.
+
+Deliberately NOT a full rewrite to unlimited/virtualized scrolling (i.e. building a real live widget for every one of a save's real stations or lines, however many that turns out to be). `gui_central_raw.refresh` is called unconditionally on every `guiUpdate` tick (confirmed by reading `epod_truck_distribution.lua`'s own polling loop, where it's called ahead of the early-return-on-nothing-selected check) -- rebuilding hundreds of live widgets on every single tick would be a real, untested performance risk, and this codebase has consistently avoided that shape of problem everywhere else (the whole reason a pre-built, refreshed-in-place widget pool was ever used to begin with, rather than creating/destroying widgets per refresh). So the fix keeps the existing "bounded pool, built once, values updated per refresh" architecture completely intact -- it just makes the bound bigger, and puts that bigger pool inside a real scroll viewport instead of relying on Prev/Next alone to reach content beyond the visible area.
+
+### Decision
+
+`MAX_TRUCK_STATION_ROWS_PER_PAGE`: 10 -> 40 (`gui_central_raw.lua`; no duplicate constant exists in `gui_tab_overview.lua` to keep in sync). `MAX_LINE_GROUPS_PER_PAGE`: 8 -> 24, in BOTH `gui_central_raw.lua` and `gui_tab_lines.lua`'s own copy (the header comment's own "must match exactly" rule, though `gui_tab_lines.lua`'s copy turned out to only be documentation -- its real page-count math already derives from `#groups`, the pool's actual live length, not the constant). Prev/Next kept as the fallback for a hub/map exceeding the new, bigger bound -- 223 real stations now needs 6 pages of 40 instead of 23 pages of 10.
+
+Both pools' widgets are now built into their own dedicated inner container (`container_create` + a `VERTICAL boxLayout_create`) instead of being added straight to the panel's own top-level layout, then that inner container is wrapped in a `scrollArea_create` fixed to a new viewport-height constant (`TRUCK_STATION_ROWS_VIEWPORT_HEIGHT` = 300, `LINES_GROUPS_VIEWPORT_HEIGHT` = 420 -- both starting guesses, not pixel-tuned). `gui_tab_overview.lua`/`gui_tab_lines.lua` needed NO changes at all -- both only ever touch `state.truckStationRows`/`state.lineGroups` by index, never caring what container hierarchy sits above the pool, so this was purely a `gui_central_raw.lua`-side restructuring.
+
+One real unknown flagged rather than assumed: the LINES groups accordion's per-group detail panel (expand/collapse via `setVisible`) now lives INSIDE the same scrolled container as the header rows. Whether expanding a group deep in a long scrolled list behaves sensibly (stays where you clicked vs. the scroll position jumping unexpectedly) hasn't been tested -- flagged for live verification alongside the rest of this change.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 175 — Window height now fits the active tab's real content instead of a fixed 70%-of-screen guess
+
+### What happened
+
+Player's live complaint, screenshot of the LINES tab on a 3840x2400 screen: only 5 real lines rendering, yet the window extended nearly the full screen height with a huge empty gap below the Prev/Next row. Traced to `ensureWindow`'s own `initialHeight = (screenRect[4] or 2000) * 0.7` (Decision 136) -- a fixed height locked in ONCE at window-build time, regardless of which tab is later shown or how much content it actually has. Made worse, not caused, by Decision 174's ScrollArea rollout -- real per-tab content is now genuinely much shorter (bounded by `TRUCK_STATION_ROWS_VIEWPORT_HEIGHT`/`LINES_GROUPS_VIEWPORT_HEIGHT`) than it used to be, so the gap between "real content height" and "locked 70% of a tall screen" got more visually obvious, not less.
+
+Checked how other installed Workshop mods solve this rather than guessing: Move It Enhanced's `gui_util.lua` and its near-identical `move_it_script.lua` both call `component:calcMinimumSize()` to size a widget to its own real content instead of a fixed number -- a real, reusable pattern, same category of discovery as Decisions 173/174's ScrollArea.
+
+### Decision
+
+New `raw_gui_compat.M.calcMinimumSize` (wrapper method on every component via `attachCommon`, following the same ok/sizeOrErr pcall convention as `setMinimumSize`/`setMaximumSize`). NOT applied inside `ensureWindow` itself -- ALL four tab panels are built into the same root layout and default visible until `selectTab`'s own loop hides the inactive ones, so calling `calcMinimumSize` before that loop runs would sum every tab's content at once, making the problem worse. Instead: `ensureWindow` now stores `state.lockedWidth`/`state.maxWindowHeight`/`state.fallbackWindowHeight` (the original fixed-70% value, kept only as an emergency fallback), and a new `applyContentFitHeight()` runs inside `selectTab` -- AFTER the panel-visibility loop, so only the now-active tab's panel is actually visible when `calcMinimumSize` is called -- computing a real content-fit height (plus a 40px margin for chrome/padding), clamped to `state.maxWindowHeight`, and applying it via the same `setSize` call Decision 136 already proved works for this window's width. Falls back to the original fixed height if `calcMinimumSize` fails or returns something degenerate (nil/zero), so a real failure never leaves the window sized to nothing.
+
+Width stays completely untouched by this -- Decision 136's own deliberate anti-jump fix (`lockedWidth`) is a separate, deliberate lock the player explicitly asked for and this change doesn't touch. `selectTab` runs on initial window open and on every tab-button click, never on the unconditional every-tick `M.refresh` -- so the window resizes when the player actually changes tabs, not continuously while they're looking at one.
+
+### Consequence
+
+LIVE-CONFIRMED WORKING: player's follow-up screenshot (OVERVIEW tab, same 3840x2400 screen) shows the window now stopping shortly after the truck-station list's Prev/Next row instead of extending most of the screen height -- `calcMinimumSize` is real and usable on this window type after all, despite Decision 136's earlier caution about surprising behavior on size-related calls for this same window. Player's own read: "needs some resizing but looks good" -- see Decision 176 for the real remaining issue that screenshot also revealed (a width-clipping bug in the same ScrollArea work, not a height problem).
+
+## Decision 176 — Fixed a real width-clipping bug in the ScrollArea rollout (Decision 174)
+
+### What happened
+
+Same screenshot that confirmed Decision 175's height fix also showed a second, separate real bug: the truck-station list's per-row `[ Make Hub ]`/`[ HUB ]` button text was visibly cut off ("[ Make H", "[ HUB") with the real vertical scrollbar rendered overlapping/squeezing the row's right edge.
+
+Root cause: a truck-station row's real content width (`TRUCK_STATION_LABEL_WIDTH` 460 + `TRUCK_STATION_HUB_BUTTON_WIDTH` 140 = 600) was ALREADY wider than the `WINDOW_WIDTH` constant (560) used to size Decision 174's new scroll-area box -- harmless before that change, since rows were added straight to `panelLayout` with no fixed-width box constraining them, so a slightly-over-560 row simply rendered fine inside the much wider real window (the window's actual pixel width is `screenRect[3] * 0.6`, unrelated to the `WINDOW_WIDTH` design constant). Wrapping the row pool in a `ScrollArea`'s own fixed-width box (Decision 174) made that width a real, enforced clip boundary for the first time -- and the vertical scrollbar itself, once it actually appeared, ate further into the available width with nothing accounting for it, squeezing the already-tight-fitting row past its edge. The same latent mismatch exists for the LINES groups header row (`LINE_ROW_LABEL_WIDTH` 350 + `LINE_VEHICLES_WIDTH` 110 + `LINE_DELTA_WIDTH` 45 + `LINE_WAITING_TERMINAL_WIDTH` 150 = 655, also over 560) -- not yet visibly clipped in a screenshot only because that hub's 5 lines fit inside the viewport height without triggering a scrollbar at all.
+
+### Decision
+
+New shared `SCROLLBAR_WIDTH_ALLOWANCE` (30, a starting guess, not pixel-measured against the real scrollbar) declared once near `WINDOW_WIDTH`. Both scroll areas' box widths now come from their own real row content width plus that allowance, instead of reusing the unrelated `WINDOW_WIDTH` constant: `TRUCK_STATION_ROWS_VIEWPORT_WIDTH = TRUCK_STATION_LABEL_WIDTH + TRUCK_STATION_HUB_BUTTON_WIDTH + SCROLLBAR_WIDTH_ALLOWANCE` (630), `LINES_GROUPS_VIEWPORT_WIDTH = LINE_ROW_LABEL_WIDTH + LINE_VEHICLES_WIDTH + LINE_DELTA_WIDTH + LINE_WAITING_TERMINAL_WIDTH + SCROLLBAR_WIDTH_ALLOWANCE` (685). Both `scrollArea_create` calls updated to use their new matching width constant instead of `ROW_WIDTH`/`WINDOW_WIDTH`.
+
+### Consequence
+
+LIVE-CONFIRMED WORKING: player's next screenshot (OVERVIEW, Hubs filter) shows the `[ HUB ]` button text rendering fully with the real scrollbar present -- no clipping. LINES groups clipping was never actually observed either way in this round (that tab wasn't the one open), so that half stays preventative until specifically checked.
+
+## Decision 177 — Window WIDTH now also derived from real content instead of a screen-percentage guess
+
+### What happened
+
+Same screenshot that confirmed Decision 176's clipping fix also showed the underlying complaint still standing: the window rendered close to full monitor width (3840px screen, window visibly reaching the far right edge) despite all real content topping out around 630-1040px wide. Player, after seeing Decisions 173/174/175/176 all come from reading other installed mods' real source rather than guessing: "look deeper check other codes, find the solution, there must be one[.] 50% of the current size would be great."
+
+Root cause: `lockedWidth = screenRect[3] * 0.6` (Decision 136) was always a screen-relative guess, never tied to how wide this window's actual content is -- on a 3840px-wide monitor that's 2304px, dwarfing every real row in the window.
+
+Considered and rejected: reusing Decision 175's `calcMinimumSize` approach for width too. That won't work here -- all four tab panels share ONE window and only the active one is ever visible, so a per-tab content-fit WIDTH recomputed on every tab switch (the same way height now recomputes) would make the window visibly change WIDTH switching tabs, which is exactly the resizing-on-tab-switch annoyance Decision 136's original width lock existed to prevent. Width has to stay ONE fixed value shared across every tab.
+
+### Decision
+
+New `CONTENT_FIT_WIDTH`, computed once from `math.max()` over the known real widths of the widest actual rows anywhere in the window (LINES' own 4-button action row, `LINES_ACTION_BUTTON_COUNT * ACTION_BUTTON_WIDTH` = 1040, turns out to be the single widest row in the entire window -- wider than either scroll box) plus a 40px margin -- not a new live API call, just arithmetic over constants already defined earlier in the file. `ensureWindow`'s `lockedWidth` now uses `math.min(CONTENT_FIT_WIDTH, screenRect[3] * 0.9)` -- the real content width drives the number normally, the 90%-of-screen clamp only kicks in as a sanity floor on an unusually narrow screen. `state.lockedWidth` (Decision 175's own stored value, reused by `applyContentFitHeight` on every tab switch) picks up this new value automatically since both read the same local variable.
+
+### Consequence
+
+LIVE-CONFIRMED WORKING: player's next screenshot shows the window width now roughly matching real content instead of spanning most of the screen -- "much better."
+
+## Decision 178 — Fixed calcMinimumSize wrongly counting a ScrollArea's clipped-off content against the outer window height
+
+### What happened
+
+Same screenshot that confirmed Decision 177's width fix also showed height had regressed back to spanning most of the screen -- but only on OVERVIEW's "All" filter (64 real stations, 2 pages of up to 40), not the "Hubs" filter (6 real stations) tested a few messages earlier, which had sized correctly. The difference pinpointed the real cause: with the "All" filter, page 1 fills all 40 real, VISIBLE rows in the truck-station pool (Decision 174 bumped the pool to 40); with "Hubs", only 6 of 40 pool slots are visible, the rest `setVisible(false)`.
+
+Root cause: `calcMinimumSize` on the window does NOT respect a nested `ScrollArea`'s own `setMinimumSize`/`setMaximumSize` clamp (`TRUCK_STATION_ROWS_VIEWPORT_HEIGHT`/`LINES_GROUPS_VIEWPORT_HEIGHT`, Decision 174) -- it walks the real component tree and reports the INNER row-pool container's full, unclamped natural height (however many rows are actually visible stacked at their real height) rather than the scroll viewport's own intended fixed height. With only 6 visible rows this natural height happens to be small and close to correct; with 40 visible rows it's roughly 40 rows' worth, ballooning the whole window back to near what it looked like before any of this session's fixes -- the exact overflow the `ScrollArea` exists to hide via internal scrolling, double-counted against the outer window instead.
+
+### Decision
+
+Both scrollable pool containers (`truckStationRowsContainer`, `lineGroupsContainer`) are now kept on `state` at build time specifically so their real content height can be measured separately. New `currentTabScrollOverflow()`: for whichever tab is currently active, calls `calcMinimumSize` on that tab's own pool container (if it has one) and returns how far it overshoots its OWN known, intended viewport height constant -- 0 for tabs with no scroll area (CARGO, SETTINGS) or when the pool's real content already fits inside its viewport (no overflow to correct for). `applyContentFitHeight` now subtracts this overflow from the window's own `calcMinimumSize` result before applying the margin/clamp -- correcting exactly the double-counted portion, without touching the ScrollArea's real internal scrolling behavior (which keeps working exactly as Decision 173/174 already proved) at all.
+
+### Consequence
+
+LIVE-TESTED, NOT ENOUGH: player reported the window was still too tall after this correction. The scroll-overflow subtraction wasn't wrong in principle, but evidently didn't fully account for whatever `calcMinimumSize` is really doing on this window type -- see Decision 179.
+
+## Decision 179 — Height still oversized after Decision 178's correction; applied a flat empirical scale-down instead
+
+### What happened
+
+Player: "it didnt work its still too long... try make it 66% of the current size, whatever that is in pixels." Rather than continue chasing the exact remaining discrepancy in `calcMinimumSize`'s behavior on this window type (already shown more than one undocumented surprise this session -- Decision 136's width-ignore, Decision 178's scroll-blindness), player's own direct, pragmatic request: scale whatever height the existing calculation produces down by a flat factor.
+
+### Decision
+
+`applyContentFitHeight` now applies `HEIGHT_SCALE_FACTOR = 0.66` to the previously-computed height (renamed `rawTargetHeight`) before calling `setSize`, floored at 200px so a tab with genuinely little content never gets scaled down into something unusably small. Explicitly an empirical fudge factor, not a principled derivation -- tunable as one constant if 66% turns out to be the wrong number once tested, same spirit as every other "starting guess, not pixel-tuned" viewport constant added this session.
+
+### Consequence
+
+LIVE-TESTED, STILL WRONG (in the opposite direction): player's next screenshot (OVERVIEW, a hub selected) showed the window now clipping mid-content -- cut off right after "Managed lines: 6", well before the rest of the summary or the truck-station list. The flat 0.66 scale-down, applied on top of an already-unreliable `calcMinimumSize` result, was inconsistent across tabs/content amounts by construction -- sometimes too big, sometimes too small. Player: "this keeps getting bigger and smaller can you lock the length to a number like you did width?" -- see Decision 180.
+
+## Decision 180 — Height locked to one fixed value, exactly like width; all per-tab dynamic height logic removed
+
+### What happened
+
+Three straight rounds (Decisions 175/178/179) of trying to derive the window's height from `calcMinimumSize`, each fixing one real observed problem but the next screenshot always finding another: correct on a short page, oversized once a scrollable pool's page genuinely filled (Decision 178's fix), then undersized after a flat 0.66 scale-down was layered on top to compensate (Decision 179) -- because that scale-down was applied uniformly regardless of how much real content a given screenshot actually had. Player's own diagnosis, having watched the size "keep getting bigger and smaller": stop trying to dynamically measure it and lock height to one fixed number, the same way width already works (Decision 177).
+
+### Decision
+
+The root blocker to doing this earlier was that OVERVIEW/CARGO/SETTINGS' shared summary-rows pool (`MAX_ROWS` textViews, built by `buildSimplePanel` and `buildOverviewPanel`) was the one remaining variable-length pool in the window NOT wrapped in a `ScrollArea` -- unlike the truck-station rows (Decision 174) and LINES groups (Decision 174) already were. Wrapped it the same way, in a new fixed `SUMMARY_ROWS_VIEWPORT_HEIGHT` (210) viewport. With every variable-length pool in the window now genuinely bounded, height can be computed once from known constants -- exactly like `CONTENT_FIT_WIDTH` already is, not from any live size-measurement call. New `CONTENT_FIT_HEIGHT` sums a `CHROME_HEIGHT_ESTIMATE` (160, covering the tab bar/section heading/STATUS bar/window chrome, none of which are tab-specific) plus `math.max()` over each tab's own body height (OVERVIEW's is the tallest at ~630: action row + summary-rows viewport + truck-station heading/filter rows + truck-station viewport + pagination, all at a shared `ROW_HEIGHT_ESTIMATE` of 30 per plain row) -- roughly 790px total.
+
+`ensureWindow` now locks BOTH `lockedWidth` and a new `lockedHeight = math.min(CONTENT_FIT_HEIGHT, screenRect[4] * 0.9)` in one `setSize` call, with `setMinimumSize`/`setMaximumSize` pinned to the exact same values (no manual-resize range at all any more, matching how width already behaved). `applyContentFitHeight` and `currentTabScrollOverflow` (Decisions 175/178/179's entire dynamic-height mechanism) are deleted outright, along with `selectTab`'s call to the former -- height is now set once, at window-build time, and never touched again, mirroring width's own original "must never jump switching tabs" rule exactly.
+
+### Consequence
+
+LIVE-CONFIRMED WORKING: player's next screenshot (LINES tab, 6 real lines) shows a stable, correctly-fitting window with no clipping and a working scrollbar -- the fixed-height approach held up. Only remaining feedback was cosmetic (Decision 181), not a repeat of the sizing bug.
+
+## Decision 181 — Every scrollable pool now fills the window's real width instead of its own narrower natural content width
+
+### What happened
+
+Same screenshot confirming Decision 180's height fix also showed the LINES groups scroll box rendering as a narrow column with a large dead gap beside it -- the box was sized to `LINES_GROUPS_VIEWPORT_WIDTH` (655, that row's own narrowest real content), while the window itself is `CONTENT_FIT_WIDTH` wide (~1080, driven by LINES' own 4-button action row, the true widest thing in the window). Player: "the scrolling area in lines could be wider... maybe set it to fill the gui width wise?"
+
+### Decision
+
+New `FULL_WIDTH_SCROLL_AREA_WIDTH = CONTENT_FIT_WIDTH - CONTENT_FIT_WIDTH_MARGIN` -- the window's own real content width, computed once, reused (not `ensureWindow`'s own `lockedWidth`, which isn't known yet at the point these pools are built -- before the screen size has even been queried -- but equals `CONTENT_FIT_WIDTH` in the normal case anyway). All four scrollable pools in the window (OVERVIEW's and CARGO/SETTINGS' shared summary-rows pool, the truck-station rows, and LINES groups) now size their scroll box to this same shared width instead of each one's own narrower natural content width -- every list now visually fills the window instead of leaving a gap beside it. `LINES_GROUPS_VIEWPORT_WIDTH`/`TRUCK_STATION_ROWS_VIEWPORT_WIDTH` themselves are untouched -- still used inside `CONTENT_FIT_WIDTH`'s own `math.max()` as each pool's real minimum-needed width, just no longer used directly as the rendered box width.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 182 — Fleet Needs Report simplified to a single headline number, red past a threshold
+
+### What happened
+
+Player, after seeing the Fleet Needs Report work correctly on a real busy line (Yateley East, "Sandwich Machines factory" line suggesting +13 trucks): "Maybe the Report screen could show as red if there is a need for trucks say over 10? And maybe rather then break down per line it say Needs 14 trucks for this hub, the splitter can sort out where they go." Two changes: a single actionable headline instead of the full per-line breakdown, and red styling once the number is large enough to matter.
+
+### Decision
+
+`gui_plan_popup.lua`'s `M.show(title, lines, confirmHandler)` now accepts either a plain string per row (unchanged) or a table `{ text = "...", style = "warning" }` for a row that needs to stand out -- `"warning"` maps to this codebase's own already-proven red style class, `EpodTdDeltaNegative` (used elsewhere for negative fleet-plan deltas), reused rather than inventing a new one. Every row's style is now explicitly set on each `M.show` call (previously never touched for plain rows), which also fixes a latent bug: without this, a row styled by an earlier report could keep that leftover style class the next time the same reused row slot displayed plain text.
+
+`gui_tab_lines.lua`'s Fleet Needs Report now leads with "Needs N more truck(s) for this hub." (or "No truck shortage detected..." when 0) as its own headline row -- styled `"warning"` (red) once the total exceeds a new `HIGH_NEED_THRESHOLD` (10, the player's own number). The full per-line waiting/trucks/load%/reason breakdown from Decisions 171/172 is no longer shown in this report -- player's own reasoning, the exact per-line allocation isn't something the player needs to act on, Push Full Reallocation/the Splitter sorts that out once more trucks exist. The hub-wide baseline ratio and the terminal-storage-cap caveat are kept as supporting context beneath the headline. `fleet_needs.estimateFleetNeeds`'s own per-line data is untouched and still returned (just no longer consumed by this particular report) in case a future feature wants it.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 183 — Fixed a stale-cache bug hiding a just-toggled-off hub, and pinned the viewed station to the top of the list
+
+### What happened
+
+Player, on the fresh save: "Chester south isnt showing? I have it selected via map, and its showing in the lines section, maybe when selected its at top of the list in the 1st page so easy to find to turn into a hub?" Chester South's own OVERVIEW summary showed real managed lines and "Distribution Hub: OFF for this hub" -- meaning it used to be a hub and had just been toggled off via that same action button -- yet it was missing from the "Stations" filter, which specifically excludes hubs.
+
+Root cause, confirmed by comparing against the truck-station list's OWN per-row "Make Hub" handler: that handler rescans `truck_station_finder.scan()` into `truckStationState.rawList` the instant a conversion finishes (Decision 154-era code), so the cached list reflects reality right away. The separate OVERVIEW action-button toggle (`actionButtons[2]`, "Distribution Hub: ON/OFF", Decision 124) never had this rescan at all -- so turning a hub OFF through THIS button left it permanently marked `isHub = true` in the stale cache until the player happened to click Refresh, and the "Stations" filter correctly-per-stale-data kept hiding a station that was, in reality, no longer a hub. Same bug family as Decision 167 (a stale cached list misreading a real state change), on the OFF path this time, which Decision 167 never touched.
+
+### Decision
+
+Added the same rescan call (`truck_station_finder.scan()` -> `truckStationState.rawList`) to this action button's own `onComplete` callback, matching the per-row handler exactly.
+
+Separately, the player's own UX suggestion -- pin the currently-viewed/selected station to the very front of the rendered list, regardless of the list's own (townName, lineCount, vehicleCount, name) sort order, so it's never buried among dozens of other real candidates. Implemented as a display-only reorder of the current render's filtered `list` copy in `renderTruckStationList` (`truckStationState.rawList` itself untouched, so no effect on other filter modes or a later refresh) -- since it's always moved to absolute index 1, it mathematically always falls within page 1's range regardless of pool size. NOT handled: if the player is already viewing page 2+ of the list for some unrelated reason, `truckStationState.currentPage` isn't auto-reset to 1 on a new selection, so they'd still need to click back to page 1 to see the pinned entry in that specific case -- judged a much smaller papercut than not being able to find it at all, and simpler than adding selection-change-tracking state to force a page reset.
+
+### Consequence
+
+Not yet live-tested.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

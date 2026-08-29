@@ -233,6 +233,14 @@ local function collectManagedLineCandidates(hubStationGroup)
                 local tier =
                     classifyActivityTier(waiting, recentUnloaded, historicalUnloaded)
 
+                -- Not consumed by calculateTargetAllocation's own
+                -- redistribution math below (that math is unchanged) --
+                -- carried on the candidate purely so other read-only
+                -- consumers (fleet_needs.lua) can reuse this same
+                -- collection pass instead of re-scanning every line's
+                -- vehicles a second time.
+                local loadFactor = vehicles.getLineLoadFactor(lineId)
+
                 candidates[#candidates + 1] = {
                     id = lineId,
                     name = lines.getName(lineId),
@@ -242,7 +250,9 @@ local function collectManagedLineCandidates(hubStationGroup)
                     historicalUnloaded = historicalUnloaded,
                     activityTier = tier,
                     floor = MINIMUM_VEHICLES_PER_LINE + floorBonusForTier(tier),
-                    currentVehicleCount = #vehicles.getVehiclesForLine(lineId)
+                    currentVehicleCount = loadFactor.vehicleCount,
+                    totalCargoLoad = loadFactor.totalLoad,
+                    totalCargoCapacity = loadFactor.totalCapacity
                 }
 
             end
@@ -254,6 +264,15 @@ local function collectManagedLineCandidates(hubStationGroup)
     return candidates
 
 end
+
+-- Exported so other read-only modules can reuse this exact real
+-- waiting/floor/activity-tier signal set instead of recomputing a
+-- fourth copy of it (fleet_allocator.lua and gui_tab_lines.lua's
+-- earlier private candidate-collection each already duplicate pieces
+-- of this same logic -- see documents/DECISIONS.md's own deferred
+-- cleanup note about consolidating it). fleet_needs.lua's
+-- M.estimateFleetNeeds is the first consumer.
+M.collectManagedLineCandidates = collectManagedLineCandidates
 
 
 -- Largest-remainder apportionment of `pool` whole vehicles across

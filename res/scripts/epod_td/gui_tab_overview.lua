@@ -207,6 +207,34 @@ local function renderTruckStationList(truckStationRows, truckStationPagination, 
     end
 
     local list = applyListFilter(truckStationState.rawList, truckStationState.filterMode)
+
+    -- Decision 183: player's request -- the currently-viewed/selected
+    -- station (map click or hub-switcher) is pinned to the very front
+    -- of the list, so it always lands on page 1's first row regardless
+    -- of the list's own (townName, lineCount, vehicleCount, name) sort
+    -- -- no hunting for it to click Make Hub or just glance at its row.
+    -- Display-only reordering of this one render's `list` copy --
+    -- truckStationState.rawList itself is untouched, so this has no
+    -- effect on any other filter mode or a future refresh.
+    if hubStationGroupId ~= nil then
+
+        for index, entry in ipairs(list) do
+
+            if entry.stationGroupId == hubStationGroupId then
+
+                if index > 1 then
+                    table.remove(list, index)
+                    table.insert(list, 1, entry)
+                end
+
+                break
+
+            end
+
+        end
+
+    end
+
     local totalPages = math.max(1, math.ceil(#list / #truckStationRows))
 
     if truckStationState.currentPage > totalPages then
@@ -714,8 +742,28 @@ function M.refresh(
                     end,
 
                     function()
+
                         operation_lock.finish()
                         setStatus("")
+
+                        -- LIVE-CONFIRMED BUG (Decision 183): this
+                        -- button's own toggle never rescanned the
+                        -- cached truck-station list the way the list's
+                        -- own per-row Make Hub handler already does
+                        -- (Decision 154-era code, below) -- so turning a
+                        -- hub OFF here left it permanently marked
+                        -- `isHub = true` in the stale cache, and the
+                        -- "Stations" filter (which excludes hubs)
+                        -- correctly-per-stale-data kept hiding a
+                        -- station that was, in reality, no longer a
+                        -- hub at all. Same real rescan call as that
+                        -- other handler.
+                        local okRescan, result = pcall(truck_station_finder.scan)
+
+                        if okRescan then
+                            truckStationState.rawList = result
+                        end
+
                     end
                 )
 

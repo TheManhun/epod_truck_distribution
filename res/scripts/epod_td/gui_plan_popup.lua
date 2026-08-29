@@ -26,6 +26,13 @@ local M = {}
 local WINDOW_WIDTH = 560
 local MAX_ROWS = 30
 
+-- Fixed visible height for the scrollable row area (Decision 173) --
+-- deliberately shorter than MAX_ROWS' full content height, so a report
+-- longer than roughly a dozen-odd rows visibly needs to scroll rather
+-- than the popup just growing tall enough to show everything. A
+-- starting guess, not tuned against real rendered row height yet.
+local ROWS_VIEWPORT_HEIGHT = 360
+
 local state = {
     window = nil,
     visible = false,
@@ -58,16 +65,32 @@ local function ensureWindow()
     pcall(state.titleLabel.setStyleClassList, state.titleLabel, { "EpodTdSectionHeading" })
     layout:addItem(state.titleLabel)
 
+    -- Decision 173: real rows overflowing this popup's fixed height was
+    -- exactly the class of bug just hit live (the clipped Fleet Needs
+    -- Report row) -- rows now live inside their own scrollable viewport
+    -- instead of being added straight to the window's layout, so a
+    -- report longer than MAX_ROWS visible rows scrolls instead of
+    -- clipping or needing pagination. NOT yet independently live-tested
+    -- by this mod -- see raw_gui_compat.lua's scrollArea_create header.
+    local rowsContainer = gui.container_create(nil)
+    local rowsLayout = gui.boxLayout_create(nil, "VERTICAL")
+    rowsContainer:setLayout(rowsLayout)
+
     state.rows = {}
 
     for rowIndex = 1, MAX_ROWS do
 
         local label = gui.textView_create(nil, "", WINDOW_WIDTH, false)
-        layout:addItem(label)
+        rowsLayout:addItem(label)
 
         state.rows[rowIndex] = label
 
     end
+
+    local rowsScrollArea = gui.scrollArea_create(nil, rowsContainer)
+    pcall(rowsScrollArea.setMinimumSize, rowsScrollArea, WINDOW_WIDTH, ROWS_VIEWPORT_HEIGHT)
+    pcall(rowsScrollArea.setMaximumSize, rowsScrollArea, WINDOW_WIDTH, ROWS_VIEWPORT_HEIGHT)
+    layout:addItem(rowsScrollArea)
 
     local buttonRow = gui.boxLayout_create(nil, "HORIZONTAL")
 
@@ -123,7 +146,13 @@ local function ensureWindow()
     end)
 
     pcall(window.setPosition, window, 80, 80)
-    pcall(window.setSize, window, WINDOW_WIDTH + 40, 720)
+
+    -- Decision 173: shrunk from a fixed 720 now that rows scroll within
+    -- their own ROWS_VIEWPORT_HEIGHT instead of the window itself
+    -- needing to be tall enough to show all MAX_ROWS at once -- title
+    -- (~30) + scroll viewport (ROWS_VIEWPORT_HEIGHT) + button row (~50)
+    -- plus margin. A starting guess, not pixel-tuned yet.
+    pcall(window.setSize, window, WINDOW_WIDTH + 40, ROWS_VIEWPORT_HEIGHT + 160)
 
     state.window = window
 
@@ -132,12 +161,22 @@ local function ensureWindow()
 end
 
 
--- `lines` is a plain array of strings, one per row (capped at
--- MAX_ROWS -- a hub with more planned lines than that gets truncated,
--- same "reasonable ceiling, not exact-fit" convention every other
--- pool in this codebase uses). `confirmHandler`, if given, shows a
--- real [ Confirm ] button that runs it (and clears/hides the popup
--- first); omit or pass nil for a view-only report with just [ Cancel ].
+-- `lines` is a plain array, one entry per row (capped at MAX_ROWS -- a
+-- hub with more planned lines than that gets truncated, same
+-- "reasonable ceiling, not exact-fit" convention every other pool in
+-- this codebase uses). Each entry is either a plain string (default
+-- text styling, unchanged from before) or a table
+-- `{ text = "...", style = "warning" }` for a row that needs to stand
+-- out -- "warning" reuses this codebase's own proven `EpodTdDeltaNegative`
+-- red (Decision 182, player's request: "show as red if there is a need
+-- for trucks say over 10"), rather than inventing a new style class.
+-- `confirmHandler`, if given, shows a real [ Confirm ] button that runs
+-- it (and clears/hides the popup first); omit or pass nil for a view-
+-- only report with just [ Cancel ].
+local ROW_STYLE_CLASSES = {
+    warning = { "EpodTdDeltaNegative" }
+}
+
 function M.show(title, lines, confirmHandler)
 
     local window = ensureWindow()
@@ -146,7 +185,7 @@ function M.show(title, lines, confirmHandler)
 
     local rowIndex = 0
 
-    for _, text in ipairs(lines or {}) do
+    for _, entry in ipairs(lines or {}) do
 
         rowIndex = rowIndex + 1
 
@@ -154,7 +193,16 @@ function M.show(title, lines, confirmHandler)
             break
         end
 
-        state.rows[rowIndex]:setText(tostring(text), WINDOW_WIDTH)
+        local text = entry
+        local styleClasses = {}
+
+        if type(entry) == "table" then
+            text = entry.text
+            styleClasses = ROW_STYLE_CLASSES[entry.style] or {}
+        end
+
+        state.rows[rowIndex]:setText(tostring(text or ""), WINDOW_WIDTH)
+        pcall(state.rows[rowIndex].setStyleClassList, state.rows[rowIndex], styleClasses)
 
     end
 
