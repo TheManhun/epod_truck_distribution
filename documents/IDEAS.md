@@ -1646,4 +1646,24 @@ Real closed loop: Fleet Needs says "+13 trucks," pool has none compatible, mod b
 
 ---
 
+## Local Hub Map: schematic overview of a hub's own network
+
+### Status
+
+Explicitly deferred by the player -- "I wouldn't build it yet... the current management logic is becoming genuinely powerful, while a map renderer could swallow a lot of development time for relatively little additional intelligence." Not started. Revisit once the underlying logic (Fleet Needs, Truck Pool, Route Optimizer) is live-tested and stable.
+
+### The idea
+
+A small schematic on OVERVIEW showing the currently-viewed hub in the centre, its real truck stations as nodes around it, lines drawn between them, simple status indicators for overloaded/under-used routes. Clicking a node reuses the existing camera-jump (`game.gui.setCamera`, already proven). The Route Optimizer's own suggestions (Decision 188) could then be shown visually -- "Hub -> A -> suggested B" highlighted, with the existing (potentially redundant) "Hub -> B" line shown separately -- instead of only as plain text distance/name in a popup.
+
+### Why this is more feasible than it might look, whenever it's picked up
+
+Real, working precedent already found this session while researching `ScrollArea` (Decision 173): the "Small Minimap" mod (Workshop 3256290611) renders real station positions as pixels/nodes and draws lines between them inside this exact raw GUI system (`api.gui.comp.AbsoluteLayout`, per-entity pixel placement, real line-drawing components). Position data is also already proven accessible per station (`game.interface.getEntity(stationGroupId).position`, used by `route_optimizer.lua` and the camera-jump feature). So this isn't "hope a rendering API exists" -- it's "adapt a pattern already read and confirmed working," the same category of confidence Decisions 173/174/187/188 were all built on.
+
+### What's NOT yet known
+
+Real layout math (mapping in-game world coordinates to a small fixed-size GUI panel, choosing a scale/projection) is genuinely new work this project hasn't done -- the minimap mod's own version of this is a real, somewhat involved piece of its code, not a one-liner. Worth reading that part of its source properly before estimating effort, rather than assuming it's as simple as the position/line-drawing primitives underneath it.
+
+---
+
 `○` = Player has the wheel.

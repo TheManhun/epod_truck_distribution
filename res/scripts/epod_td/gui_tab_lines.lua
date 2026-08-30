@@ -418,7 +418,8 @@ end
 -- `actionButtons[3]` is Push Full Reallocation (Decision 146),
 -- `actionButtons[4]` is Fleet Needs Report (Decision 171),
 -- `actionButtons[5]` is Send Spare Truck to Pool (Decision 187),
--- `actionButtons[6]` is Suggest Alternative Route (Decision 188).
+-- `actionButtons[6]` is Suggest Alternative Route (Decision 188),
+-- `actionButtons[7]` is Enable Alt Terminals (Decision 191).
 function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, setStatus)
 
     setStatus = setStatus or function() end
@@ -786,22 +787,22 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
 
         if operation_lock.isRunning() then
 
-            slot.label:setText("[ Send Spare Truck to Pool (busy) ]", 560)
+            slot.label:setText("[ Send to Pool (busy) ]", 560)
             slot.handler = nil
 
         elseif expandedLineInfo == nil then
 
-            slot.label:setText("[ Send Spare Truck to Pool: expand a line first ]", 560)
+            slot.label:setText("[ Send to Pool: pick a line ]", 560)
             slot.handler = nil
 
         elseif expandedPlanLine == nil or expandedPlanLine.delta >= 0 then
 
-            slot.label:setText("[ Send Spare Truck to Pool: no spare truck on this line ]", 560)
+            slot.label:setText("[ Send to Pool: no spare truck ]", 560)
             slot.handler = nil
 
         else
 
-            slot.label:setText("[ Send Spare Truck to Pool ]", 560)
+            slot.label:setText("[ Send to Pool ]", 560)
             pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
 
             slot.handler = function()
@@ -888,17 +889,17 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
 
         if operation_lock.isRunning() then
 
-            slot.label:setText("[ Suggest Alternative Route (busy) ]", 560)
+            slot.label:setText("[ Alt Route (busy) ]", 560)
             slot.handler = nil
 
         elseif expandedLineInfo == nil then
 
-            slot.label:setText("[ Suggest Alternative Route: expand a line first ]", 560)
+            slot.label:setText("[ Alt Route: pick a line ]", 560)
             slot.handler = nil
 
         else
 
-            slot.label:setText("[ Suggest Alternative Route ]", 560)
+            slot.label:setText("[ Alt Route ]", 560)
             pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
 
             slot.handler = function()
@@ -1007,6 +1008,121 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
                         and "[ Add Stop & Retire Old Line ]"
                         or "[ Add Stop ]"
                 )
+
+            end
+
+        end
+
+    end
+
+    -- Decision 191: "Enable Alt Terminals" -- same "acts on whichever
+    -- line is currently expanded" pattern as Decisions 187/188. Gives
+    -- that ONE line every other terminal at the hub as a fallback (via
+    -- terminal_allocator.setLineAlternativeTerminals), so its trucks
+    -- aren't all forced onto its single dedicated terminal when others
+    -- sit idle. No preview popup -- this is a single deterministic
+    -- action with nothing to choose, same "one click, no confirm step"
+    -- simplicity as Re-Organize Terminals itself. Deliberately NOT
+    -- wired into hub_setup.lua's automatic chain yet -- this exact
+    -- field crashed the game twice before (Decision 56/57); stays
+    -- manual-only until it survives a genuine live test.
+    if actionButtons ~= nil and actionButtons[7] ~= nil then
+
+        local slot = actionButtons[7]
+
+        local expandedLineInfo = nil
+
+        if state.expandedLineKey ~= nil then
+
+            for _, lineInfo in ipairs(managedLines) do
+
+                if lineInfo.id == state.expandedLineKey then
+                    expandedLineInfo = lineInfo
+                    break
+                end
+
+            end
+
+        end
+
+        if operation_lock.isRunning() then
+
+            slot.label:setText("[ Alt Terminals (busy) ]", 560)
+            slot.handler = nil
+
+        elseif expandedLineInfo == nil then
+
+            slot.label:setText("[ Alt Terminals: pick a line ]", 560)
+            slot.handler = nil
+
+        else
+
+            slot.label:setText("[ Enable Alt Terminals ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+            slot.handler = function()
+
+                if operation_lock.isRunning() then
+                    log.info("LINES TAB: another hub operation is still running -- ignoring click.")
+                    return
+                end
+
+                local terminalCount = stations.getTerminalCount(hubStationGroupId)
+
+                if terminalCount == nil or terminalCount == 0 then
+                    log.info("LINES TAB: could not determine a real terminal count for this hub -- ignoring click.")
+                    return
+                end
+
+                local hubStopIndex = nil
+
+                local okLine, targetLine = pcall(lines.get, expandedLineInfo.id)
+                local stops = okLine and targetLine ~= nil and lines.safeField(targetLine, "stops") or nil
+                local stopCount = lines.safeLength(stops)
+
+                for index = 1, stopCount do
+
+                    local stop = stops[index]
+
+                    if stop ~= nil and lines.safeField(stop, "stationGroup") == hubStationGroupId then
+                        hubStopIndex = index
+                        break
+                    end
+
+                end
+
+                if hubStopIndex == nil then
+                    log.info("LINES TAB: could not find this hub's own stop on '" .. tostring(expandedLineInfo.name) .. "' -- ignoring click.")
+                    return
+                end
+
+                operation_lock.begin()
+                setStatus("Enabling alternative terminals...")
+
+                local okApply, errApply =
+                    pcall(
+                        terminal_allocator.setLineAlternativeTerminals,
+                        expandedLineInfo.id,
+                        hubStopIndex,
+                        terminalCount,
+                        expandedLineInfo.name,
+
+                        function(success)
+                            operation_lock.finish()
+                            setStatus("")
+                            log.info(
+                                "LINES TAB: enable alt terminals "
+                                    .. (success and "succeeded" or "failed")
+                                    .. " for line " .. tostring(expandedLineInfo.id)
+                            )
+                        end
+                    )
+
+                if not okApply then
+                    operation_lock.finish()
+                    setStatus("")
+                    log.info("LINES TAB: enable alt terminals crashed: " .. tostring(errApply))
+                end
 
             end
 

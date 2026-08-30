@@ -3488,6 +3488,48 @@ Wording fixed to match reality: "N truck(s)... would be consolidated onto the co
 
 Not yet live-tested (caught before the first live test, exactly the point of a pre-test review). Both fixes are conservative by construction -- worst case behavior changed from "might retire the wrong line" to "leaves it alone and says why."
 
+## Decision 190 — LINES action-button row too wide with 6 buttons
+
+### What happened
+
+Player's live screenshot: LINES now carries 6 action buttons (Decisions 187/188 added the last two), and the row visibly pushed the whole window uncomfortably wide -- the two newest buttons' own instructional label text ("Send Spare Truck to Pool: expand a line first", "Suggest Alternative Route: expand a line first") was also getting clipped at the shared `ACTION_BUTTON_WIDTH`. `CONTENT_FIT_WIDTH`'s own formula (`LINES_ACTION_BUTTON_COUNT * ACTION_BUTTON_WIDTH` is the widest single thing in the window, Decision 177) meant six buttons at the original 260px each was always going to be the dominant driver of window width.
+
+### Decision
+
+`ACTION_BUTTON_WIDTH` trimmed 260 -> 230 (a moderate cut -- the four original LINES buttons' own labels were already fitting comfortably at 260, so a modest reduction was judged low-risk for them). Paired with shortening the two newest buttons' own label text, matching this codebase's own established precedent for exactly this situation (`TAB_SHORT_LABELS`, Decision 136 -- short labels once space gets tight): "Send Spare Truck to Pool" -> "Send to Pool", "Suggest Alternative Route" -> "Alt Route", across every state (enabled, busy, disabled/no-selection) each button can show.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 191 — `alternativeTerminals` re-attempted with a real field fix; manual test button, not automatic yet
+
+### What happened
+
+Player's real problem: a heavy managed line (many trucks) all funnels through its one dedicated terminal at a hub, physically blocking that terminal even when the hub's other terminals sit idle -- found via a live screenshot of TF2's own native Line Manager, where the fork-icon "alternative terminals" picker showed every terminal unticked except the line's own dedicated one. Player wanted this automated for distribution-hub lines.
+
+This is the exact feature Decision 56/57 tried twice and crashed the live game both times, then paused pending "real documentation of StationTerminal's fields, or testing exclusively against a disposable line." Neither had happened since -- until this session found a full offline copy of the official API docs bundled inside workshop mod 3360333659 (`tf2-api/docs/modules/api.type.md`), something the live wiki apparently lacked at the time of the original research. The real field list:
+
+```
+StationTerminal
+  station:  int   -- the station INDEX within the StationGroup (NOT an entity)
+  terminal: int   -- the terminal index within that station
+```
+
+This explains Decision 57's second crash precisely: its `.station` fallback wrote the raw hub StationGroup *entity ID* where the engine actually expected a small station-index integer -- the write succeeded (no Lua error), but the value was semantically wrong, and the game crashed later during real pathfinding. `Line.Stop.station` is documented identically ("the station (within the station group)"), and an Explore pass this session confirmed `lines.makeNativeStopCopy` already copies a stop's real `.station` value faithfully -- so the correct identity value for a new `StationTerminal` entry is simply the hub stop's own existing `.station` field, not a guess and not an entity id.
+
+### Decision
+
+Added `terminal_allocator.M.setLineAlternativeTerminals(lineId, hubStopIndex, terminalCount, label, onComplete)`, structurally a sibling of `setLineHubTerminal`: re-reads the line, copies every stop via `makeNativeStopCopy`, and for the hub's own stop builds `api.type.StationTerminal` entries for every terminal `0..terminalCount-1` except the line's current primary terminal, using the hub stop's own `.station` value as the identity field. Carries forward Decision 56's hard-learned safety rule verbatim: a `StationTerminal` is only ever appended if BOTH the `.terminal` write and the `.station` write are confirmed to have actually succeeded via `pcall` -- any terminal where either write fails is skipped and logged, never appended incomplete or with an unconfirmed value. Re-reads the line after a successful `updateLine` and logs the persisted `alternativeTerminals` count, so the log gives a clear yes/no on whether it stuck.
+
+Exposed as a new 7th LINES action button, "Enable Alt Terminals" (`gui_tab_lines.lua`), acting on whichever line is currently expanded -- same one-click pattern as Send to Pool/Alt Route, no preview popup needed since there's nothing to choose. **Deliberately kept manual-only, NOT wired into `hub_setup.lua`'s automatic chain** -- this exact field crashed the game twice before; it needs a genuine live test on a low-stakes line before it's trusted to run automatically across every future hub.
+
+Since a 7th button in LINES' existing single action row would have immediately undone Decision 190's just-applied width fix, the action buttons now span two rows (`buildLinesPanel`, `LINES_ACTION_ROW_COUNT = ceil(LINES_ACTION_BUTTON_COUNT / 2)`), and `CONTENT_FIT_WIDTH`/`CONTENT_FIT_HEIGHT` were updated to match the new two-row layout instead of assuming one row of 7.
+
+### Consequence
+
+Not yet live-tested. `M.testAlternativeTerminals` (Decision 56/57's original disposable research function) is left untouched in `terminal_allocator.lua` as dead/manual-only code. If "Enable Alt Terminals" survives a live test without a crash, promoting it into `hub_setup.lua`'s automatic chain (as a new stage right after Re-Organize Terminals) is a small, obvious follow-up -- not bundled into this change.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

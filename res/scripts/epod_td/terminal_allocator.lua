@@ -276,6 +276,328 @@ end
 
 
 -- ============================================================
+-- ALTERNATIVE TERMINALS: give ONE line every other terminal at the
+-- hub as a fallback, so a heavy line's trucks aren't all forced to
+-- queue for its single dedicated terminal when others sit idle.
+--
+-- Decision 56/57's research crashed the game twice guessing at
+-- StationTerminal's real fields -- once for an incomplete object
+-- (missing identity field), once for a complete object with the WRONG
+-- identity value (the raw hub StationGroup entity ID, where the field
+-- actually wants a small station-INDEX integer). Confirmed via a real
+-- offline copy of the official API docs (workshop mod 3360333659's
+-- bundled tf2-api/docs/modules/api.type.md, which the live wiki
+-- apparently lacked at the time of that research):
+--   StationTerminal.station  = int, the station INDEX within the
+--                               StationGroup (NOT an entity id)
+--   StationTerminal.terminal = int, the terminal index within that
+--                               station
+-- Line.Stop.station is documented the same way ("the station (within
+-- the station group)"), and every real stop already carries this
+-- correct value on its own .station field -- makeNativeStopCopy
+-- already copies it faithfully (lines.lua). So the correct identity
+-- value is simply the hub stop's OWN existing .station field, not a
+-- guess and not an entity id.
+--
+-- Deliberately manual-only (a single LINES-tab button acting on one
+-- expanded line at a time), NOT wired into hub_setup.lua's automatic
+-- chain -- given this exact field has crashed the game twice before,
+-- this needs a genuine live test on a low-stakes line first. Promote
+-- to automatic only after that survives.
+-- ============================================================
+function M.setLineAlternativeTerminals(lineId, hubStopIndex, terminalCount, label, onComplete)
+
+    local targetLine = lines.get(lineId)
+
+    if targetLine == nil then
+
+        log.info(
+            "ALT TERMINALS FAILED (could not re-read line): "
+                .. tostring(label)
+        )
+
+        onComplete(false)
+        return
+
+    end
+
+    local stops = lines.safeField(targetLine, "stops")
+    local stopCount = lines.safeLength(stops)
+
+    local sourceStop = stops[hubStopIndex]
+
+    if sourceStop == nil then
+
+        log.info(
+            "ALT TERMINALS FAILED (hub stop index out of range): "
+                .. tostring(label)
+        )
+
+        onComplete(false)
+        return
+
+    end
+
+    local stationIndex = lines.safeField(sourceStop, "station")
+    local primaryTerminal = lines.safeField(sourceStop, "terminal")
+
+    if stationIndex == nil then
+
+        log.info(
+            "ALT TERMINALS FAILED (hub stop has no real station index): "
+                .. tostring(label)
+        )
+
+        onComplete(false)
+        return
+
+    end
+
+    local okType, StationTerminalType =
+        pcall(function()
+            return api.type.StationTerminal
+        end)
+
+    if not okType or StationTerminalType == nil then
+
+        log.info(
+            "ALT TERMINALS FAILED (api.type.StationTerminal not accessible): "
+                .. tostring(label)
+        )
+
+        onComplete(false)
+        return
+
+    end
+
+    local newLine = api.type.Line.new()
+    local newStops = lines.safeField(newLine, "stops")
+
+    local waitingTime = lines.safeField(targetLine, "waitingTime")
+
+    if waitingTime ~= nil then
+        pcall(function()
+            newLine.waitingTime = waitingTime
+        end)
+    end
+
+    vehicles.copyLineVehicleInfo(targetLine, newLine)
+
+    local requestedTerminals = {}
+    local appendedCount = 0
+
+    for index = 1, stopCount do
+
+        local stop = stops[index]
+
+        if stop ~= nil then
+
+            local nativeStop = lines.makeNativeStopCopy(stop)
+
+            if index == hubStopIndex then
+
+                local alternatives =
+                    lines.safeField(nativeStop, "alternativeTerminals")
+
+                if alternatives == nil then
+
+                    log.info(
+                        "ALT TERMINALS FAILED (alternativeTerminals field not accessible): "
+                            .. tostring(label)
+                    )
+
+                    onComplete(false)
+                    return
+
+                end
+
+                for terminalIndex = 0, terminalCount - 1 do
+
+                    if terminalIndex ~= primaryTerminal then
+
+                        local okNew, stationTerminal =
+                            pcall(function()
+                                return StationTerminalType.new()
+                            end)
+
+                        if okNew then
+
+                            -- LIVE-CONFIRMED DANGEROUS (Decision 56/57):
+                            -- never append unless BOTH the terminal
+                            -- index AND the station identity field are
+                            -- confirmed to have actually written --
+                            -- pcall succeeding proves nothing about
+                            -- whether the resulting object is
+                            -- semantically valid, only that the write
+                            -- itself didn't throw.
+                            local okSetTerminal =
+                                pcall(function()
+                                    stationTerminal.terminal = terminalIndex
+                                end)
+
+                            local okSetStation =
+                                pcall(function()
+                                    stationTerminal.station = stationIndex
+                                end)
+
+                            if okSetTerminal and okSetStation then
+
+                                local okAppend =
+                                    pcall(function()
+                                        alternatives[#alternatives + 1] = stationTerminal
+                                    end)
+
+                                if okAppend then
+
+                                    appendedCount = appendedCount + 1
+                                    requestedTerminals[#requestedTerminals + 1] = terminalIndex
+
+                                else
+
+                                    log.info(
+                                        "ALT TERMINALS: terminal "
+                                            .. tostring(terminalIndex)
+                                            .. " append FAILED for "
+                                            .. tostring(label)
+                                    )
+
+                                end
+
+                            else
+
+                                log.info(
+                                    "ALT TERMINALS: terminal "
+                                        .. tostring(terminalIndex)
+                                        .. " SKIPPED (set terminal="
+                                        .. tostring(okSetTerminal)
+                                        .. ", set station="
+                                        .. tostring(okSetStation)
+                                        .. ") for "
+                                        .. tostring(label)
+                                )
+
+                            end
+
+                        end
+
+                    end
+
+                end
+
+            end
+
+            local okAppendStop, appendErr =
+                lines.appendNativeStop(newStops, nativeStop)
+
+            if not okAppendStop then
+
+                log.info(
+                    "ALT TERMINALS FAILED appending stop ("
+                        .. tostring(label)
+                        .. "): "
+                        .. tostring(appendErr)
+                )
+
+                onComplete(false)
+                return
+
+            end
+
+        end
+
+    end
+
+    if appendedCount == 0 then
+
+        log.info(
+            "ALT TERMINALS: no alternative terminals could be safely set for "
+                .. tostring(label)
+                .. " -- nothing to apply."
+        )
+
+        onComplete(false)
+        return
+
+    end
+
+    local okCommand, commandOrError =
+        pcall(api.cmd.make.updateLine, lineId, newLine)
+
+    if not okCommand then
+
+        log.info(
+            "ALT TERMINALS COMMAND ERROR ("
+                .. tostring(label)
+                .. "): "
+                .. tostring(commandOrError)
+        )
+
+        onComplete(false)
+        return
+
+    end
+
+    local okSend, sendErr =
+        pcall(function()
+
+            api.cmd.sendCommand(commandOrError, function(cmd, success)
+
+                log.info(
+                    "ALT TERMINALS RESULT ("
+                        .. tostring(label)
+                        .. "): "
+                        .. tostring(success)
+                        .. " -> requested terminals {"
+                        .. table.concat(requestedTerminals, ",")
+                        .. "}"
+                )
+
+                if success then
+
+                    local reread = lines.get(lineId)
+                    local rereadStops = reread ~= nil and lines.safeField(reread, "stops") or nil
+                    local rereadStop =
+                        (rereadStops ~= nil and hubStopIndex ~= nil)
+                            and rereadStops[hubStopIndex]
+                            or nil
+                    local rereadAlts =
+                        rereadStop ~= nil
+                            and lines.safeField(rereadStop, "alternativeTerminals")
+                            or nil
+                    local rereadCount = lines.safeLength(rereadAlts)
+
+                    log.info(
+                        "ALT TERMINALS: re-read alternativeTerminals count = "
+                            .. tostring(rereadCount)
+                            .. " for "
+                            .. tostring(label)
+                    )
+
+                end
+
+                onComplete(success == true)
+
+            end)
+
+        end)
+
+    if not okSend then
+
+        log.info(
+            "ALT TERMINALS SEND ERROR ("
+                .. tostring(label)
+                .. "): "
+                .. tostring(sendErr)
+        )
+
+        onComplete(false)
+
+    end
+
+end
+
+
+-- ============================================================
 -- ONE-OFF, DISPOSABLE: ALTERNATIVE TERMINALS RESEARCH
 --
 -- Raised live: a single heavily-loaded line (e.g. 20 trucks all

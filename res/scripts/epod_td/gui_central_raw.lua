@@ -87,7 +87,14 @@ local M = {}
 local WINDOW_WIDTH = 560
 local ROW_WIDTH = WINDOW_WIDTH
 local MAX_ROWS = 24
-local ACTION_BUTTON_WIDTH = 260
+-- Decision 190: trimmed 260 -> 230 -- LINES now has 6 action buttons
+-- (Decision 187/188 added two more), and 6*260 was pushing the whole
+-- window uncomfortably wide (CONTENT_FIT_WIDTH's own formula is
+-- `LINES_ACTION_BUTTON_COUNT * ACTION_BUTTON_WIDTH`, the widest single
+-- thing in the window). Paired with shortening the two newest buttons'
+-- own label text (gui_tab_lines.lua) rather than relying on width
+-- alone.
+local ACTION_BUTTON_WIDTH = 230
 
 -- Decision 176: shared fixed allowance reserved for a ScrollArea's own
 -- vertical scrollbar track when sizing a scrolled box's WIDTH from its
@@ -182,15 +189,21 @@ local ACTION_BUTTON_COUNTS = {
     [tab_settings] = 2
 }
 
--- Decision 142/145/146/171/187/188: LINES' own action-button pool --
--- separate from ACTION_BUTTON_COUNTS above since LINES is built by
+-- Decision 142/145/146/171/187/188/191: LINES' own action-button pool
+-- -- separate from ACTION_BUTTON_COUNTS above since LINES is built by
 -- buildLinesPanel, never buildSimplePanel. Slot 1 is Re-Organize
 -- Terminals (Decision 142), slot 2 is Apply Fleet Plan (Decision 145,
 -- moved from SERVICES), slot 3 is Push Full Reallocation (Decision
 -- 146), slot 4 is Fleet Needs Report (Decision 171), slot 5 is Send
 -- Spare Truck to Pool (Decision 187), slot 6 is Suggest Alternative
--- Route (Decision 188).
-local LINES_ACTION_BUTTON_COUNT = 6
+-- Route (Decision 188), slot 7 is Enable Alt Terminals (Decision 191).
+--
+-- Decision 191: laid out across TWO rows (buildLinesPanel), not one --
+-- Decision 190 just trimmed the window down from 6 buttons crowding a
+-- single row; a 7th button in that same single row would have undone
+-- that fix immediately. CONTENT_FIT_WIDTH's own formula below uses
+-- half this count (rounded up) for the same reason.
+local LINES_ACTION_BUTTON_COUNT = 7
 
 -- Decision 151/161: player's request ("put it on the front page at the
 -- bottom showing only 10 stations per page") -- a full-map truck-
@@ -257,10 +270,16 @@ local TRUCK_STATION_ROWS_VIEWPORT_WIDTH =
 -- true widest single row anywhere in this window, wider than either
 -- scroll box) -- not a new live API call, just arithmetic over
 -- constants already defined above.
+-- Decision 191: LINES' action buttons now span two rows (see
+-- buildLinesPanel), so the widest single row is half the total count
+-- (rounded up), not the full count -- matches what's actually laid
+-- out on screen.
+local LINES_ACTION_ROW_COUNT = math.ceil(LINES_ACTION_BUTTON_COUNT / 2)
+
 local CONTENT_FIT_WIDTH_MARGIN = 40
 local CONTENT_FIT_WIDTH =
     math.max(
-        LINES_ACTION_BUTTON_COUNT * ACTION_BUTTON_WIDTH,
+        LINES_ACTION_ROW_COUNT * ACTION_BUTTON_WIDTH,
         LINES_GROUPS_VIEWPORT_WIDTH,
         TRUCK_STATION_ROWS_VIEWPORT_WIDTH,
         WINDOW_WIDTH
@@ -316,7 +335,8 @@ local OVERVIEW_BODY_HEIGHT =
     + ROW_HEIGHT_ESTIMATE -- Prev/Next pagination
 
 local LINES_BODY_HEIGHT =
-    ROW_HEIGHT_ESTIMATE -- action row
+    ROW_HEIGHT_ESTIMATE -- action row 1
+    + ROW_HEIGHT_ESTIMATE -- action row 2 (Decision 191: 7 buttons, two rows)
     + LINES_GROUPS_VIEWPORT_HEIGHT -- groups
     + ROW_HEIGHT_ESTIMATE -- Prev/Next pagination
 
@@ -1129,7 +1149,11 @@ local function buildLinesPanel()
     -- shows each line's own terminal number. Same "wire onClick once,
     -- dispatch through a .handler field reassigned every refresh"
     -- pattern buildSimplePanel's action buttons already use.
-    local actionRow = gui.boxLayout_create(nil, "HORIZONTAL")
+    -- Decision 191: two rows instead of one -- see LINES_ACTION_ROW_
+    -- COUNT's own comment above for why (a 7th button in a single row
+    -- would have undone Decision 190's width fix).
+    local actionRow1 = gui.boxLayout_create(nil, "HORIZONTAL")
+    local actionRow2 = gui.boxLayout_create(nil, "HORIZONTAL")
 
     state.linesActionButtons = {}
 
@@ -1156,13 +1180,18 @@ local function buildLinesPanel()
 
         end)
 
-        actionRow:addItem(button)
+        if slotIndex <= LINES_ACTION_ROW_COUNT then
+            actionRow1:addItem(button)
+        else
+            actionRow2:addItem(button)
+        end
 
         state.linesActionButtons[slotIndex] = { label = label, button = button, handler = nil }
 
     end
 
-    panelLayout:addItem(actionRow)
+    panelLayout:addItem(actionRow1)
+    panelLayout:addItem(actionRow2)
 
     -- Decision 174: group pool now lives inside its own scrollable
     -- viewport (real ScrollArea, proven in Decision 173) instead of
