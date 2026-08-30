@@ -10,6 +10,8 @@ local truck_station_finder = require("epod_td.truck_station_finder")
 local line_ownership = require("epod_td.line_ownership")
 local fleet_needs = require("epod_td.fleet_needs")
 local gui_plan_popup = require("epod_td.gui_plan_popup")
+local vehicle_pool = require("epod_td.vehicle_pool")
+local route_optimizer = require("epod_td.route_optimizer")
 local log = require("epod_td.log")
 
 local M = {}
@@ -58,11 +60,6 @@ local M = {}
 -- instead of relying on Prev/Next alone).
 local MAX_LINE_GROUPS_PER_PAGE = 24
 local MAX_DESTINATIONS_PER_LINE = 6
-
--- Decision 182: Fleet Needs Report's headline number shows red past
--- this threshold -- player's own number ("over 10"), not derived from
--- anything.
-local HIGH_NEED_THRESHOLD = 10
 
 -- Must match the window-building file's own copies of these same
 -- constants exactly -- the actual widgets are created at these
@@ -419,7 +416,9 @@ end
 -- comment). `actionButtons[1]` is Re-Organize Terminals (Decision 142),
 -- `actionButtons[2]` is Apply Fleet Plan (Decision 145),
 -- `actionButtons[3]` is Push Full Reallocation (Decision 146),
--- `actionButtons[4]` is Fleet Needs Report (Decision 171).
+-- `actionButtons[4]` is Fleet Needs Report (Decision 171),
+-- `actionButtons[5]` is Send Spare Truck to Pool (Decision 187),
+-- `actionButtons[6]` is Suggest Alternative Route (Decision 188).
 function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, setStatus)
 
     setStatus = setStatus or function() end
@@ -629,36 +628,18 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
 
                 end
 
-                local reportLines = {}
+                -- Decision 185: headline text/threshold now shared via
+                -- fleet_needs.buildHeadline (also used by OVERVIEW's own
+                -- summary row) instead of duplicated here.
+                local headline = fleet_needs.buildHeadline(report)
 
-                if not report.hasData then
+                local reportLines = {
+                    { text = headline.text, style = headline.isWarning and "warning" or nil }
+                }
 
-                    reportLines[1] = "No managed lines at this hub yet -- nothing to estimate."
+                local bestPoolClaim = nil
 
-                else
-
-                    -- Decision 182: player's request -- lead with the
-                    -- single actionable number ("Needs N more truck(s)
-                    -- for this hub") instead of a per-line breakdown --
-                    -- "the splitter can sort out where they go" once
-                    -- more trucks exist, so the player doesn't need to
-                    -- know or act on which specific line is short. Red
-                    -- (reused EpodTdDeltaNegative, gui_plan_popup.lua's
-                    -- new "warning" row style) once the total passes
-                    -- HIGH_NEED_THRESHOLD -- the player's own number,
-                    -- "over 10".
-                    if report.totalSuggestedAdditional > 0 then
-
-                        reportLines[1] = {
-                            text = "Needs " .. tostring(report.totalSuggestedAdditional) .. " more truck(s) for this hub.",
-                            style = report.totalSuggestedAdditional > HIGH_NEED_THRESHOLD and "warning" or nil
-                        }
-
-                    else
-
-                        reportLines[1] = "No truck shortage detected -- fleet currently keeps up with demand."
-
-                    end
+                if report.hasData then
 
                     reportLines[2] = ""
 
@@ -671,9 +652,72 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
                         "(Based on cargo currently waiting -- a terminal's storage cap means real demand could be higher than shown. "
                             .. "Once added, Push Full Reallocation redistributes new trucks across this hub's lines automatically.)"
 
+                    -- Decision 187: player's own idea -- check the pool
+                    -- for a compatible idle truck from another hub's
+                    -- surplus before this report implies buying
+                    -- anything. Only ONE claim is ever offered per
+                    -- report (see fleet_needs.findBestPoolClaim's own
+                    -- header) -- claiming it and reopening the report
+                    -- surfaces the next one, if any.
+                    bestPoolClaim = fleet_needs.findBestPoolClaim(report)
+
+                    if bestPoolClaim ~= nil then
+
+                        reportLines[5] = ""
+                        reportLines[6] =
+                            "A pool truck is available for '" .. tostring(bestPoolClaim.lineName)
+                                .. "' -- click below to pull it onto that line now."
+
+                    end
+
                 end
 
-                gui_plan_popup.show("Fleet Needs: " .. tostring(report.hubName), reportLines, nil)
+                local confirmHandler = nil
+                local confirmLabelText = nil
+
+                if bestPoolClaim ~= nil then
+
+                    confirmLabelText = "[ Pull Truck from Pool ]"
+
+                    confirmHandler = function()
+
+                        if operation_lock.isRunning() then
+                            log.info("LINES TAB: another hub operation is still running -- ignoring pool claim.")
+                            return
+                        end
+
+                        operation_lock.begin()
+                        setStatus("Pulling truck from pool...")
+
+                        local okClaim, errClaim =
+                            pcall(
+                                vehicle_pool.claimFromPool,
+                                bestPoolClaim.vehicleId,
+                                bestPoolClaim.lineId,
+
+                                function(success)
+                                    operation_lock.finish()
+                                    setStatus("")
+                                    log.info(
+                                        "LINES TAB: pool claim "
+                                            .. (success and "succeeded" or "failed")
+                                            .. " for vehicle " .. tostring(bestPoolClaim.vehicleId)
+                                            .. " -> line " .. tostring(bestPoolClaim.lineId)
+                                    )
+                                end
+                            )
+
+                        if not okClaim then
+                            operation_lock.finish()
+                            setStatus("")
+                            log.info("LINES TAB: pool claim crashed: " .. tostring(errClaim))
+                        end
+
+                    end
+
+                end
+
+                gui_plan_popup.show("Fleet Needs: " .. tostring(report.hubName), reportLines, confirmHandler, confirmLabelText)
 
             end
 
@@ -705,6 +749,252 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
 
         for _, planLine in ipairs(plan.lines) do
             planByLineId[planLine.id] = planLine
+        end
+
+    end
+
+    -- Decision 187: "Send Spare Truck to Pool" -- acts on whichever
+    -- line the player currently has expanded (state.expandedLineKey),
+    -- not a new per-row widget on every group -- reuses the existing
+    -- action-button pool pattern (Decision 171) rather than
+    -- restructuring gui_central_raw.lua's per-line row layout for a
+    -- 5th widget. Only meaningfully enabled when the expanded line's
+    -- own planner delta is genuinely negative (a real surplus, same
+    -- "delta = target - current" convention as the delta column
+    -- itself) -- sending a truck away from a line that's already short
+    -- would just work against Fleet Needs' own job.
+    if actionButtons ~= nil and actionButtons[5] ~= nil then
+
+        local slot = actionButtons[5]
+
+        local expandedLineInfo = nil
+
+        if state.expandedLineKey ~= nil then
+
+            for _, lineInfo in ipairs(managedLines) do
+
+                if lineInfo.id == state.expandedLineKey then
+                    expandedLineInfo = lineInfo
+                    break
+                end
+
+            end
+
+        end
+
+        local expandedPlanLine = expandedLineInfo ~= nil and planByLineId[expandedLineInfo.id] or nil
+
+        if operation_lock.isRunning() then
+
+            slot.label:setText("[ Send Spare Truck to Pool (busy) ]", 560)
+            slot.handler = nil
+
+        elseif expandedLineInfo == nil then
+
+            slot.label:setText("[ Send Spare Truck to Pool: expand a line first ]", 560)
+            slot.handler = nil
+
+        elseif expandedPlanLine == nil or expandedPlanLine.delta >= 0 then
+
+            slot.label:setText("[ Send Spare Truck to Pool: no spare truck on this line ]", 560)
+            slot.handler = nil
+
+        else
+
+            slot.label:setText("[ Send Spare Truck to Pool ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+            slot.handler = function()
+
+                if operation_lock.isRunning() then
+                    log.info("LINES TAB: another hub operation is still running -- ignoring click.")
+                    return
+                end
+
+                local candidateVehicleId = nil
+
+                for _, vehicleId in ipairs(vehicles.getVehiclesForLine(expandedLineInfo.id)) do
+
+                    if vehicles.isVehicleEmpty(vehicleId) == true then
+                        candidateVehicleId = vehicleId
+                        break
+                    end
+
+                end
+
+                if candidateVehicleId == nil then
+                    log.info("LINES TAB: no empty vehicle found on '" .. tostring(expandedLineInfo.name) .. "' to send to pool right now.")
+                    return
+                end
+
+                operation_lock.begin()
+                setStatus("Sending spare truck to pool...")
+
+                local okPool, errPool =
+                    pcall(
+                        vehicle_pool.sendToPool,
+                        candidateVehicleId,
+                        hubStationGroupId,
+
+                        function(success)
+                            operation_lock.finish()
+                            setStatus("")
+                            log.info(
+                                "LINES TAB: send to pool "
+                                    .. (success and "succeeded" or "failed")
+                                    .. " for vehicle " .. tostring(candidateVehicleId)
+                            )
+                        end
+                    )
+
+                if not okPool then
+                    operation_lock.finish()
+                    setStatus("")
+                    log.info("LINES TAB: send to pool crashed: " .. tostring(errPool))
+                end
+
+            end
+
+        end
+
+    end
+
+    -- Decision 188: "Suggest Alternative Route" -- same "acts on
+    -- whichever line is currently expanded" pattern as Decision 187's
+    -- Send Spare Truck to Pool, not a new per-row widget. Read-only
+    -- preview shown via gui_plan_popup first (route_optimizer.
+    -- previewAlternativeRoute mirrors the real decision logic exactly,
+    -- same "never promise something the real pass wouldn't do" rule
+    -- hub_setup.previewConversion already established) -- nothing
+    -- mutates until the player clicks Confirm.
+    if actionButtons ~= nil and actionButtons[6] ~= nil then
+
+        local slot = actionButtons[6]
+
+        local expandedLineInfo = nil
+
+        if state.expandedLineKey ~= nil then
+
+            for _, lineInfo in ipairs(managedLines) do
+
+                if lineInfo.id == state.expandedLineKey then
+                    expandedLineInfo = lineInfo
+                    break
+                end
+
+            end
+
+        end
+
+        if operation_lock.isRunning() then
+
+            slot.label:setText("[ Suggest Alternative Route (busy) ]", 560)
+            slot.handler = nil
+
+        elseif expandedLineInfo == nil then
+
+            slot.label:setText("[ Suggest Alternative Route: expand a line first ]", 560)
+            slot.handler = nil
+
+        else
+
+            slot.label:setText("[ Suggest Alternative Route ]", 560)
+            pcall(slot.button.setStyleClassList, slot.button, { "EpodTdPrimaryButton" })
+
+            slot.handler = function()
+
+                if operation_lock.isRunning() then
+                    log.info("LINES TAB: another hub operation is still running -- ignoring click.")
+                    return
+                end
+
+                local okPreview, preview =
+                    pcall(route_optimizer.previewAlternativeRoute, hubStationGroupId, expandedLineInfo.id)
+
+                if not okPreview or preview == nil then
+
+                    gui_plan_popup.show(
+                        "Alternative Route: " .. tostring(expandedLineInfo.name),
+                        { "No nearby, cargo-compatible alternative route found for this line right now." },
+                        nil
+                    )
+
+                    return
+
+                end
+
+                local previewLines = {
+                    "This line could also serve '" .. tostring(preview.candidateName) .. "'.",
+                    ""
+                }
+
+                if preview.candidateLineId ~= nil and preview.candidateVehicleCount > 0 then
+
+                    previewLines[#previewLines + 1] =
+                        tostring(preview.candidateVehicleCount)
+                            .. " truck(s) on '" .. tostring(preview.candidateName)
+                            .. "'s own current line could be freed up if that line is retired."
+
+                else
+
+                    previewLines[#previewLines + 1] =
+                        "'" .. tostring(preview.candidateName) .. "' has no separate line of its own right now."
+
+                end
+
+                previewLines[#previewLines + 1] = ""
+                previewLines[#previewLines + 1] =
+                    "(Adding a stop increases this line's own round-trip time -- not calculated here.)"
+
+                gui_plan_popup.show(
+                    "Alternative Route: " .. tostring(expandedLineInfo.name),
+                    previewLines,
+
+                    function()
+
+                        if operation_lock.isRunning() then
+                            log.info("LINES TAB: another hub operation is still running -- ignoring click.")
+                            return
+                        end
+
+                        operation_lock.begin()
+                        setStatus("Adding alternative stop to line...")
+
+                        local okApply, errApply =
+                            pcall(
+                                route_optimizer.applyAlternativeRoute,
+                                hubStationGroupId,
+                                expandedLineInfo.id,
+                                preview,
+
+                                function(text)
+                                    setStatus(text)
+                                end,
+
+                                function(success)
+                                    operation_lock.finish()
+                                    setStatus("")
+                                    log.info(
+                                        "LINES TAB: alternative route "
+                                            .. (success and "applied" or "failed")
+                                            .. " for line " .. tostring(expandedLineInfo.id)
+                                    )
+                                end
+                            )
+
+                        if not okApply then
+                            operation_lock.finish()
+                            setStatus("")
+                            log.info("LINES TAB: alternative route crashed: " .. tostring(errApply))
+                        end
+
+                    end,
+
+                    "[ Add Stop & Retire Old Line ]"
+                )
+
+            end
+
         end
 
     end

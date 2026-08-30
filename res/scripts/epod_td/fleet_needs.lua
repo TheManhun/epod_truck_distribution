@@ -1,5 +1,7 @@
 local planner = require("epod_td.planner")
 local stations = require("epod_td.stations")
+local vehicles = require("epod_td.vehicles")
+local vehicle_pool = require("epod_td.vehicle_pool")
 
 local M = {}
 
@@ -134,14 +136,54 @@ function M.estimateFleetNeeds(hubStationGroupId)
 
         totalSuggestedAdditional = totalSuggestedAdditional + suggested
 
+        -- Decision 187: player's own idea -- before this line's
+        -- shortfall implies buying anything, check the truck pool
+        -- (vehicle_pool.lua) for a compatible idle vehicle from
+        -- another hub's surplus. Cargo type is read from any real
+        -- vehicle already on this line (`vehicles.getCompatibleCargoTypes`,
+        -- already proven for cross-line reassignment safety elsewhere)
+        -- -- a line with 0 current vehicles has nothing to sample from
+        -- and simply gets no pool match, same as "no data" elsewhere in
+        -- this module.
+        local poolMatch = nil
+
+        if suggested > 0 then
+
+            local okSampleVehicles, sampleVehicleIds = pcall(vehicles.getVehiclesForLine, candidate.id)
+
+            if okSampleVehicles and sampleVehicleIds ~= nil and #sampleVehicleIds > 0 then
+
+                local okCargoTypes, cargoTypes = pcall(vehicles.getCompatibleCargoTypes, sampleVehicleIds[1])
+
+                if okCargoTypes and cargoTypes ~= nil then
+
+                    for _, cargoType in ipairs(cargoTypes) do
+
+                        local okMatch, matchEntry = pcall(vehicle_pool.findPoolVehicleForCargoType, cargoType)
+
+                        if okMatch and matchEntry ~= nil then
+                            poolMatch = matchEntry
+                            break
+                        end
+
+                    end
+
+                end
+
+            end
+
+        end
+
         resultLines[#resultLines + 1] = {
+            lineId = candidate.id,
             name = candidate.name,
             waiting = candidate.waiting,
             currentVehicleCount = candidate.currentVehicleCount,
             activityTier = candidate.activityTier,
             loadFactor = loadFactor,
             suggestedAdditional = suggested,
-            reason = reason
+            reason = reason,
+            poolMatchVehicleId = poolMatch ~= nil and poolMatch.vehicleId or nil
         }
 
     end
@@ -163,6 +205,71 @@ function M.estimateFleetNeeds(hubStationGroupId)
         totalSuggestedAdditional = totalSuggestedAdditional,
         baselineRatio = baselineRatio
     }
+
+end
+
+
+-- Decision 182: the report's headline shows red once the total passes
+-- this many trucks -- player's own number ("over 10"), not derived
+-- from anything.
+M.HIGH_NEED_THRESHOLD = 10
+
+
+-- Decision 185: shared by every consumer of estimateFleetNeeds's result
+-- that wants the same one-line headline (the LINES tab's Fleet Needs
+-- Report popup, and now OVERVIEW's own summary row) -- kept in one
+-- place so the phrasing/threshold can't drift between the two.
+-- `isWarning` is true once the total passes HIGH_NEED_THRESHOLD; the
+-- caller decides what to actually do with that (a popup row style, a
+-- summary row style, anything else).
+function M.buildHeadline(report)
+
+    if report == nil or not report.hasData then
+        return { text = "No managed lines at this hub yet -- nothing to estimate.", isWarning = false }
+    end
+
+    if report.totalSuggestedAdditional > 0 then
+
+        return {
+            text = "Needs " .. tostring(report.totalSuggestedAdditional) .. " more truck(s) for this hub.",
+            isWarning = report.totalSuggestedAdditional > M.HIGH_NEED_THRESHOLD
+        }
+
+    end
+
+    return { text = "No truck shortage detected -- fleet currently keeps up with demand.", isWarning = false }
+
+end
+
+
+-- Decision 187: the single best pool claim to offer via the report's
+-- one Confirm button -- `resultLines` is already sorted worst-need-
+-- first (M.estimateFleetNeeds' own table.sort), so the first entry
+-- carrying a poolMatchVehicleId is the most useful one to offer. Only
+-- ever surfaces ONE match per report -- claiming it and reopening the
+-- report picks the next one, rather than trying to claim several at
+-- once through a single-button popup.
+function M.findBestPoolClaim(report)
+
+    if report == nil or not report.hasData then
+        return nil
+    end
+
+    for _, lineInfo in ipairs(report.lines) do
+
+        if lineInfo.poolMatchVehicleId ~= nil then
+
+            return {
+                lineId = lineInfo.lineId,
+                lineName = lineInfo.name,
+                vehicleId = lineInfo.poolMatchVehicleId
+            }
+
+        end
+
+    end
+
+    return nil
 
 end
 

@@ -1115,24 +1115,38 @@ end
 -- (e.g. "64/64" vs "10/25" -- current load over total capacity) and
 -- asked whether it could inform this mod's own fleet-needs estimate.
 -- Sums real per-vehicle cargoLoad against real per-vehicle
--- allCapacities across every vehicle currently on a line -- the same
--- fields getCargoLoad/getAllCapacities above already proved accessible
--- for other purposes, just summed at the line level instead of read
--- per-vehicle. Returns {totalLoad, totalCapacity, vehicleCount} --
--- computing the ratio is the caller's job (totalCapacity can
--- legitimately be 0: an empty line, or a vehicle type whose capacity
--- could not be read).
+-- allCapacities -- the same fields getCargoLoad/getAllCapacities above
+-- already proved accessible for other purposes, just summed at the
+-- line level instead of read per-vehicle. Returns {totalLoad,
+-- totalCapacity, vehicleCount, loadedVehicleCount} -- computing the
+-- ratio is the caller's job (totalCapacity can legitimately be 0: no
+-- vehicle currently carrying anything, or a vehicle type whose
+-- capacity could not be read).
 --
 -- Deliberately a snapshot, same limitation as demand.scan()'s waiting
--- total -- one instant, not a trend. But it catches a real blind spot
--- that waiting-cargo-only reporting has: a line running consistently
--- FULL can show near-zero waiting at the origin (every unit gets
--- picked up as fast as it appears), which would read as "no shortage"
--- under a waiting-only signal despite the fleet genuinely being maxed
--- out.
+-- total -- one instant, not a trend.
+--
+-- DEADHEADING FIX: a real, simple round-trip line (Quarry -> Factory
+-- -> Quarry) always has roughly HALF its fleet running empty on the
+-- return leg at any instant -- pure geometry of a back-and-forth
+-- route, not a shortage signal. Averaging cargoLoad/allCapacities
+-- across EVERY vehicle (the original version of this function) let
+-- that empty return leg permanently drag the ratio toward ~50%, even
+-- on a line where every actually-loaded truck is genuinely at 100% --
+-- exactly the "line running consistently full" case this signal exists
+-- to catch, silently defeated by its own averaging. Fixed per a
+-- player-suggested pattern from other modders' scripts: only vehicles
+-- CURRENTLY carrying cargo (cargoLoad summing > 0) count toward the
+-- ratio at all -- an empty deadheading vehicle contributes to neither
+-- totalLoad nor totalCapacity, so the result reads as "how full are
+-- the trucks that are actually working right now," not diluted by however
+-- many are mid-return-trip. (The other option raised -- filtering by
+-- which leg/direction a vehicle is on -- would need reliable per-
+-- vehicle direction data this project has no proven API access to; this
+-- simpler filter needs nothing beyond cargoLoad, already proven.)
 function M.getLineLoadFactor(lineId)
 
-    local result = { totalLoad = 0, totalCapacity = 0, vehicleCount = 0 }
+    local result = { totalLoad = 0, totalCapacity = 0, vehicleCount = 0, loadedVehicleCount = 0 }
 
     local vehicleIds = M.getVehiclesForLine(lineId)
 
@@ -1141,21 +1155,31 @@ function M.getLineLoadFactor(lineId)
         result.vehicleCount = result.vehicleCount + 1
 
         local cargoLoad = M.getCargoLoad(vehicleId)
+        local vehicleLoad = 0
 
         if cargoLoad ~= nil then
 
             for _, amount in pairs(cargoLoad) do
-                result.totalLoad = result.totalLoad + (amount or 0)
+                vehicleLoad = vehicleLoad + (amount or 0)
             end
 
         end
 
-        local allCapacities = M.getAllCapacities(vehicleId)
+        -- Deadheading (empty) vehicle -- excluded entirely, not counted
+        -- as "zero load against full capacity" the way it used to be.
+        if vehicleLoad > 0 then
 
-        if allCapacities ~= nil then
+            result.loadedVehicleCount = result.loadedVehicleCount + 1
+            result.totalLoad = result.totalLoad + vehicleLoad
 
-            for _, amount in pairs(allCapacities) do
-                result.totalCapacity = result.totalCapacity + (amount or 0)
+            local allCapacities = M.getAllCapacities(vehicleId)
+
+            if allCapacities ~= nil then
+
+                for _, amount in pairs(allCapacities) do
+                    result.totalCapacity = result.totalCapacity + (amount or 0)
+                end
+
             end
 
         end
@@ -1405,6 +1429,99 @@ function M.reverseVehicle(
 
         log.info(
             "REVERSE VEHICLE SEND ERROR: "
+                .. tostring(
+                    sendError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    return true
+
+end
+
+
+-- ============================================================
+-- SEND TO DEPOT (Decision 187)
+--
+-- Real, proven command confirmed by reading another installed Workshop
+-- mod's source (Line Manager, Workshop 2581894757, api_helper.
+-- sendVehicleToDepot) -- `api.cmd.make.sendToDepot(vehicleId,
+-- sellOnArrival)` sends a vehicle to its nearest depot automatically.
+-- The engine picks which depot; this mod never has to compute depot
+-- distance itself. Same command-then-send pcall pattern as setLine/
+-- reverseVehicle above, nothing new structurally.
+-- ============================================================
+
+function M.sendToDepot(
+    vehicleId,
+    sellOnArrival,
+    callback
+)
+
+    local okCommand,
+        commandOrError =
+            pcall(
+                api.cmd.make.sendToDepot,
+                vehicleId,
+                sellOnArrival == true
+            )
+
+    if not okCommand then
+
+        log.info(
+            "SEND TO DEPOT COMMAND ERROR: "
+                .. tostring(
+                    commandOrError
+                )
+        )
+
+        if callback ~= nil then
+            callback(false)
+        end
+
+        return false
+    end
+
+    local command =
+        commandOrError
+
+    local okSend,
+        sendError =
+            pcall(
+                function()
+
+                    api.cmd.sendCommand(
+                        command,
+
+                        function(cmd, success)
+
+                            log.info(
+                                "SEND TO DEPOT RESULT: "
+                                    .. tostring(
+                                        success
+                                    )
+                            )
+
+                            if callback ~= nil then
+                                callback(success)
+                            end
+
+                        end
+                    )
+
+                end
+            )
+
+    if not okSend then
+
+        log.info(
+            "SEND TO DEPOT SEND ERROR: "
                 .. tostring(
                     sendError
                 )

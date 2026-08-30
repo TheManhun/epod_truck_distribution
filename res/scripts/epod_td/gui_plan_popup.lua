@@ -177,11 +177,17 @@ local ROW_STYLE_CLASSES = {
     warning = { "EpodTdDeltaNegative" }
 }
 
-function M.show(title, lines, confirmHandler)
+-- Decision 187: `confirmLabelText`, if given, relabels the Confirm
+-- button for this one showing (e.g. "[ Pull 1 Truck from Pool ]" on
+-- the Fleet Needs Report) instead of the default "[ Confirm ]" --
+-- reused as-is by every OTHER caller, which just omits it.
+function M.show(title, lines, confirmHandler, confirmLabelText)
 
     local window = ensureWindow()
 
     pcall(state.titleLabel.setText, state.titleLabel, tostring(title or ""), WINDOW_WIDTH)
+
+    pcall(state.confirmButtonLabel.setText, state.confirmButtonLabel, tostring(confirmLabelText or "[ Confirm ]"), 220)
 
     local rowIndex = 0
 

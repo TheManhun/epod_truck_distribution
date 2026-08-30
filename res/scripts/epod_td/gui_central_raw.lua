@@ -182,13 +182,15 @@ local ACTION_BUTTON_COUNTS = {
     [tab_settings] = 2
 }
 
--- Decision 142/145/146/171: LINES' own action-button pool -- separate
--- from ACTION_BUTTON_COUNTS above since LINES is built by
+-- Decision 142/145/146/171/187/188: LINES' own action-button pool --
+-- separate from ACTION_BUTTON_COUNTS above since LINES is built by
 -- buildLinesPanel, never buildSimplePanel. Slot 1 is Re-Organize
 -- Terminals (Decision 142), slot 2 is Apply Fleet Plan (Decision 145,
 -- moved from SERVICES), slot 3 is Push Full Reallocation (Decision
--- 146), slot 4 is Fleet Needs Report (Decision 171).
-local LINES_ACTION_BUTTON_COUNT = 4
+-- 146), slot 4 is Fleet Needs Report (Decision 171), slot 5 is Send
+-- Spare Truck to Pool (Decision 187), slot 6 is Suggest Alternative
+-- Route (Decision 188).
+local LINES_ACTION_BUTTON_COUNT = 6
 
 -- Decision 151/161: player's request ("put it on the front page at the
 -- bottom showing only 10 stations per page") -- a full-map truck-

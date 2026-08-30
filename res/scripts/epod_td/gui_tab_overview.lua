@@ -6,6 +6,7 @@ local hub_setup = require("epod_td.hub_setup")
 local operation_lock = require("epod_td.operation_lock")
 local truck_station_finder = require("epod_td.truck_station_finder")
 local gui_plan_popup = require("epod_td.gui_plan_popup")
+local fleet_needs = require("epod_td.fleet_needs")
 local log = require("epod_td.log")
 
 local M = {}
@@ -837,6 +838,38 @@ function M.refresh(
 
     if not autoRedistributeOn then
         pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, { "EpodTdWarningText" })
+    end
+
+    -- Decision 185: player's request -- surface Fleet Needs' own
+    -- headline right on OVERVIEW's existing hub summary, so the player
+    -- can see at a glance whether a hub needs more trucks without a
+    -- separate trip to LINES -> Fleet Needs Report. Same
+    -- fleet_needs.buildHeadline the popup itself uses (Decision 182),
+    -- so the phrasing/threshold can't drift between the two. Cheap
+    -- enough to compute every refresh -- estimateFleetNeeds is a pure
+    -- read reusing planner.lua's already-computed candidate list, no
+    -- heavier than the totalVehicles/totalWaiting loop just above.
+    rowIndex = rowIndex + 1
+
+    local okFleetNeeds, fleetNeedsReport = pcall(fleet_needs.estimateFleetNeeds, hubStationGroupId)
+
+    if okFleetNeeds and fleetNeedsReport ~= nil then
+
+        local headline = fleet_needs.buildHeadline(fleetNeedsReport)
+
+        rows[rowIndex].label:setText("Fleet Needs: " .. tostring(headline.text), 560)
+
+        pcall(
+            rows[rowIndex].label.setStyleClassList,
+            rows[rowIndex].label,
+            headline.isWarning and { "EpodTdDeltaNegative" } or {}
+        )
+
+    else
+
+        rows[rowIndex].label:setText("Fleet Needs: could not be estimated right now.", 560)
+        pcall(rows[rowIndex].label.setStyleClassList, rows[rowIndex].label, {})
+
     end
 
     setRowsVisibleUpTo(rows, rowIndex)

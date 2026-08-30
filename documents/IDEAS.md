@@ -1626,4 +1626,24 @@ Removes the last practical reason a player would need to leave the GUI and hunt 
 
 ---
 
+## Buying New Trucks When the Pool is Empty
+
+### Status
+
+Explicitly deferred (Phase 2) from the Truck Pool feature (Decision 187) -- the pool (send a surplus truck to a depot, let another hub's Fleet Needs Report pull it) is built and player-triggered on both ends; this is what happens when Fleet Needs finds a real shortfall and the pool has no compatible match.
+
+### Origin
+
+Player: "Line manager does it somehow it buys and sells trucks doesn't it?" Confirmed real by reading Line Manager's actual source (Workshop 2581894757): `api.cmd.make.buyVehicle(player, depot_id, transportVehicleConfig)` genuinely purchases a vehicle, cloning an existing vehicle's `transportVehicleConfig` so no vehicle-catalog picker is needed. `api.cmd.make.sellVehicle` is the real counterpart.
+
+### Why this wasn't built alongside the pool
+
+Buying needs a depot that can actually *reach* the specific target line -- unlike `sendToDepot` (used by the pool's "send" side), which lets the engine pick the nearest depot automatically, buying requires the CALLER to already know which depot to buy into. Line Manager's own code shows this is the genuinely hard part: it caches depot lookups per line, and still needs a stuck-vehicle retry loop (buy, try to assign, if the new vehicle stays stuck in the depot because that depot can't reach the line, sell it again and try a different depot next time). Not a quick add on top of the pool.
+
+### If it does pan out
+
+Real closed loop: Fleet Needs says "+13 trucks," pool has none compatible, mod buys them directly using the exact model already running that specific line -- gated behind an explicit player click, same as every other mutating action in this mod, never automatic (this mod has never spent the player's money without a direct click, and that shouldn't change here either).
+
+---
+
 `○` = Player has the wheel.

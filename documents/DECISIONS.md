@@ -3391,6 +3391,83 @@ Extracted into a new `buildScrollableSummaryRows(panelLayout)`, placed right bef
 
 Not yet live-tested (no behavior change expected). Committed and pushed alongside this session's other changes.
 
+## Decision 185 — Fleet Needs headline surfaced directly on OVERVIEW's hub summary
+
+### What happened
+
+Player: "What you think about adding to this screen the Fleet report.. Maybe... on one simple screen the user can see at a glance how the hub is performing?" Recommended starting with the simpler version (append the headline as an extra summary row) rather than a true two-column layout, since OVERVIEW's summary rows are a single vertical pool (`buildScrollableSummaryRows`) and restructuring that into real side-by-side columns would be a bigger, riskier change for mostly cosmetic gain -- player agreed to try the simpler version first.
+
+### Decision
+
+Extracted the headline-building logic (previously inline in the LINES tab's Fleet Needs Report popup handler, Decision 182) into a new shared `fleet_needs.buildHeadline(report)`, returning `{ text, isWarning }` -- both the popup and OVERVIEW's new row now call this same function instead of each independently constructing the "Needs N more truck(s)..." string, so the phrasing and the red threshold (`fleet_needs.M.HIGH_NEED_THRESHOLD`, moved from a duplicated local constant in `gui_tab_lines.lua` to one canonical location) can never drift between the two. `gui_tab_lines.lua`'s own popup handler and local `HIGH_NEED_THRESHOLD` constant were updated/removed accordingly.
+
+`gui_tab_overview.lua` now calls `fleet_needs.estimateFleetNeeds` once per refresh (a pure read reusing `planner.lua`'s already-computed candidate list -- no heavier than the existing totalVehicles/totalWaiting loop just above it) and appends "Fleet Needs: <headline>" as one more row in the existing summary list, right after "Auto Redistribute: ON/OFF" -- styled red (`EpodTdDeltaNegative`, same class the popup itself uses) when the total exceeds the threshold. Not a real two-column layout -- deliberately deferred per the above tradeoff discussion.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 186 — Fixed deadheading (empty return leg) silently diluting the load-factor signal
+
+### What happened
+
+Player raised a real, well-known logistics problem unprompted: a simple back-and-forth line (Quarry -> Factory -> Quarry) always has roughly half its fleet running empty on the return leg at any given instant -- pure geometry of the route, not a shortage signal. `vehicles.getLineLoadFactor` (Decision 172) summed `cargoLoad`/`allCapacities` across EVERY vehicle on a line, so that permanently-empty return leg dragged the ratio toward ~50% even on a line where every actually-loaded truck was genuinely at 100% capacity -- silently defeating the exact "line running consistently full" case this signal exists to catch (Fleet Needs' `NEAR_CAPACITY_LOAD_FACTOR = 0.9` threshold would rarely if ever fire). Player offered two known fixes other modders use: filter by which leg/direction a vehicle is on, or the simpler "ignore any vehicle with `cargoLoad == 0`" shortcut.
+
+### Decision
+
+Took the simpler shortcut -- this project has no proven API access to a vehicle's current leg/direction, while `cargoLoad` was already confirmed reliable. `getLineLoadFactor` now excludes an empty (deadheading) vehicle from BOTH `totalLoad` and `totalCapacity` entirely, rather than counting it as "zero load against full capacity." The ratio now reads as "how full are the trucks that are actually carrying something right now," not diluted by however many are mid-return-trip. New `loadedVehicleCount` field added alongside the existing `vehicleCount` (unchanged, still every vehicle on the line -- `planner.lua`'s own `currentVehicleCount` reuse of this field is unaffected). `fleet_needs.lua` needed no changes -- it already guards `totalCargoCapacity > 0` before computing a ratio, so the edge case of every vehicle happening to be empty at the exact snapshot moment already degrades safely to "no load data" rather than a false 0%.
+
+### Consequence
+
+Not yet live-tested.
+
+## Decision 187 — Truck Pool: send surplus trucks to a depot, other hubs can pull them
+
+### What happened
+
+Player: "I want to send excess trucks to the depo lol then other hubs could call them if they need them haha." Building on the earlier "does Line Manager buy/sell trucks?" question, this became the actual scoped plan (approved via EnterPlanMode): a shared cross-hub pool, with buying new trucks explicitly deferred to a documented Phase 2 (`IDEAS.md`) rather than built now. This is the first genuinely CROSS-HUB feature in this mod -- every other action (Split, Assign & Balance, Push Full Reallocation, Fleet Needs) is deliberately hub-scoped, with real guard code elsewhere (`line_ownership.lua`, Decisions 45/48) specifically written to stop one hub's actions leaking into another's. The pool is a deliberate, explicit exception, kept narrow and player-triggered on both ends.
+
+Real mechanics confirmed by reading Line Manager's actual source (Workshop 2581894757), not guessed: `api.cmd.make.sendToDepot(vehicleId, sellOnArrival)` sends a vehicle to its NEAREST depot automatically -- the engine picks the depot, this mod never computes depot distance/location itself. That single fact is why "send to pool" was buildable now while actually buying a new vehicle (which needs a depot that can reach a SPECIFIC target line -- the genuinely hard part Line Manager's own code works around with depot-lookup caching and a stuck-vehicle retry loop) was not.
+
+### Decision
+
+New `vehicles.sendToDepot(vehicleId, sellOnArrival, callback)` -- same command-then-send pcall pattern as `setLine`/`reverseVehicle` already use, nothing structurally new.
+
+New module `vehicle_pool.lua`, following the exact persistence pattern `hub_registry.lua`/`managed_registry.lua`/`line_ownership.lua` already use: direct file I/O (`io.open`), fresh read every call (no module-level cache -- Decision 35's multi-instance bug is why none of those cache), validate-on-load (drop any stored entry whose vehicle no longer exists, or is no longer actually empty). Stores `{ vehicleId, sourceHubId, sentAtGameTime, cargoTypes }` per pooled vehicle (cargo types from the already-proven `vehicles.getCompatibleCargoTypes`, compared as strings since this project has never confirmed whether the game's real cargo-type keys are numbers or strings). `M.sendToPool`/`M.claimFromPool` both use the same hold (`setManualDeparture`) -> real command -> release sequence every other reassignment in this codebase already uses (`dispatcher.lua`'s own `moveOneVehicle`) -- `claimFromPool` reassigns via the already-proven `vehicles.setLine`, no buy and no depot lookup needed for a vehicle already sitting parked.
+
+**LINES tab, new 5th action button, "Send Spare Truck to Pool"** (`LINES_ACTION_BUTTON_COUNT` 4 -> 5): acts on whichever line the player currently has expanded (`state.expandedLineKey`), not a new per-row widget on every group -- reuses the existing action-button pool pattern (Decision 171) instead of restructuring `gui_central_raw.lua`'s per-line row layout. Only meaningfully enabled when the expanded line's own planner delta is genuinely negative (a real surplus) -- finds one real, currently-empty vehicle on that line (same pattern `dispatcher.lua`'s own `findMovableVehicle` uses) and calls `vehicle_pool.sendToPool`.
+
+**Fleet Needs Report, extended**: `fleet_needs.lua`'s per-line loop now checks the pool (via a sample vehicle's cargo type on that line) for a compatible idle truck before the report ever implies buying anything. `fleet_needs.findBestPoolClaim(report)` returns the single best match (the worst-need line, per the report's own existing sort, that has one) -- only ONE claim is ever offered per report; claiming it and reopening the report surfaces the next one, rather than trying to claim several through one popup. `gui_plan_popup.lua`'s `M.show` gained an optional 4th `confirmLabelText` argument (defaults to `"[ Confirm ]"`, every other caller unaffected) so this report can relabel the existing Confirm button to `"[ Pull Truck from Pool ]"` instead of adding a whole new action-button slot -- exactly the reuse the approved plan called for.
+
+### Consequence
+
+Not yet live-tested. Known, accepted limitation from the approved plan: `findPoolVehicleForCargoType` doesn't reserve a match between separate calls within one report pass, so two different under-served lines needing the same cargo type could theoretically both report the SAME not-yet-claimed pool vehicle as available (a cosmetic over-count risk in the report text) -- the actual claim itself is always for one specific real vehicle a player explicitly triggers, so this can't cause a double-assignment, only a momentarily optimistic report line.
+
+## Decision 188 — Alternative Route Suggestion: opportunistic extra stop + redundant-line cleanup
+
+### What happened
+
+Building directly on the Truck Pool (Decision 187), player: "this idea might free up more trucks... a line might be deleted as the return truck can do it" -- a line's truck picking up cargo from a nearby station on its way back, potentially making a whole separate line redundant. Scoped as a player-confirmed SUGGESTION (approved via EnterPlanMode), never automatic, same rule as every mutating action in this mod.
+
+Found this is closely related to `chain_builder.lua` ("Build Supply Chains"), which already merges two of a hub's own single-destination lines into one multi-stop line -- but its own candidate detection is **recipe-based** (`findChainCandidates`: a producer's output cargo type matches a consumer industry's most-needed input, via `industry_recipes.lua`), completely independent of physical distance between the two stations. This is a genuinely different, **proximity-based** detection (two stations that happen to be geographically close, regardless of any recipe relationship) layered on top of the same proven execution machinery `chain_builder.lua` already uses -- that file is untouched, still solving its own real, different problem.
+
+### Decision
+
+New module `route_optimizer.lua`, built entirely from already-proven primitives, no new unproven API surface:
+- Position: `game.interface.getEntity(stationGroupId).position` (a `{x,y,z}`-shaped table indexed `[1]`/`[2]`/`[3]`), fetched fresh per station -- confirmed `truck_station_finder.scan()`'s own cached results do NOT carry position (an incorrect assumption in the original plan, corrected during implementation); the same fresh-fetch pattern `gui_tab_overview.lua`'s own camera-jump handler already uses.
+- Distance: a local `distanceSquared(a, b)` duplicating `industry_naming.lua`'s own (private) 2D squared-distance formula -- too trivial to justify a cross-module dependency.
+- Cargo compatibility: `stations.getUnloadedCargoTypes` + `vehicles.isCompatibleWithCargoType`, the exact pair `dispatcher.lua`'s own `vehicleCompatibleWithAny` already uses -- duplicated locally (`vehicleCompatibleWithAny`) for the same reason.
+- Modifying a real, already-existing line's stops: `api.type.Line.new()` + `lines.makeNativeStopCopy` (copies a REAL stop object) + `lines.appendNativeStop` + `api.cmd.make.updateLine` -- the exact sequence already live in `terminal_allocator.lua`'s `setLineHubTerminal` and `line_splitter.lua`'s `buildSingleDestinationLine`. Real limitation carried over honestly: every real usage of `makeNativeStopCopy` in this codebase copies from a stop object on a line that ALREADY exists -- there is no proven pattern anywhere for building a `Line.Stop` from scratch for a station with zero current lines. Such a candidate is simply skipped (`applyAlternativeRoute` checks `preview.candidateLineId ~= nil` before attempting anything).
+- Migrate vehicles off the now-redundant line, delete it once empty: `migrateEmptyVehiclesNext`/`deleteIfEmpty`, duplicated from `chain_builder.lua`'s own `M.migrateVehiclesAndCleanup` (both were `local`, not exported, so duplication rather than reuse) -- same hold -> setLine -> release sequence, same `vehicles.isVehicleEmpty` guard, never deletes a line still carrying real traffic.
+
+`M.findNearbyStopCandidate(hubStationGroupId, lineInfo)` searches every station `truck_station_finder.scan()` currently knows about (a fresh scan on click, same cost profile as the existing Refresh button) for the nearest one within `SEARCH_RADIUS` (400, a starting guess) of the line's own real destination, not already served by this hub, cargo-compatible with a vehicle already on the line. `M.previewAlternativeRoute` is a pure read mirroring the real decision logic exactly (same "never promise something the real pass wouldn't do" rule `hub_setup.previewConversion` already established), including a REAL count of how many vehicles are on the candidate's own separate line (the ones that could be freed up), not a guess. `M.applyAlternativeRoute` does the real mutation, gated entirely behind the preview.
+
+**LINES tab, new 6th action button, "Suggest Alternative Route"** (`LINES_ACTION_BUTTON_COUNT` 5 -> 6): same "acts on whichever line is currently expanded" pattern Decision 187's Send Spare Truck to Pool already established -- no new per-row widgets. Opens `gui_plan_popup` with the real preview numbers and an honest caveat ("Adding a stop increases this line's own round-trip time -- not calculated here"), Confirm relabeled `"[ Add Stop & Retire Old Line ]"` via the same `confirmLabelText` mechanism Decision 187 added.
+
+### Consequence
+
+Not yet live-tested. This is the first time this session's work REWRITES an existing real line's stop list (as opposed to creating brand-new lines or reassigning vehicles) -- genuinely higher-risk than anything built so far. `SEARCH_RADIUS` is an untuned starting guess. Recommend testing on a low-stakes/small line first before trusting it on a busy hub.
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:
