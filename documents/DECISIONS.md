@@ -3468,6 +3468,26 @@ New module `route_optimizer.lua`, built entirely from already-proven primitives,
 
 Not yet live-tested. This is the first time this session's work REWRITES an existing real line's stop list (as opposed to creating brand-new lines or reassigning vehicles) -- genuinely higher-risk than anything built so far. `SEARCH_RADIUS` is an untuned starting guess. Recommend testing on a low-stakes/small line first before trusting it on a busy hub.
 
+## Decision 189 — Pre-live-test review caught a real ownership gap and a wording bug in Decision 188
+
+### What happened
+
+Before any live test, a careful code review of Decision 188 (route_optimizer.lua) caught two real problems:
+
+1. **Wording didn't match the code.** The preview said "N truck(s)... could be freed up if that line is retired," but `migrateEmptyVehiclesNext` actually moves those empty trucks ONTO the combined line -- they become part of the surviving route's own fleet, not freed into any pool. Genuinely misleading -- a player reading "freed up" would reasonably expect those trucks to be independently available afterwards.
+
+2. **A real safety gap, same bug family as Decisions 45/48** (the exact class of cross-hub leakage this codebase has hit and fixed before): `previewAlternativeRoute` took `candidateLines[1].id` -- WHICHEVER real line happens to serve the nearby candidate station -- and `applyAlternativeRoute` would migrate its vehicles and potentially DELETE it, with no check that this line was actually this hub's own to touch. Detection is deliberately allowed to look at any station across the whole map (that's the entire point of a proximity-based suggestion), but retiring a line is a far more consequential action than suggesting a stop -- it should never touch a line that genuinely belongs to a DIFFERENT hub, or one this mod never built at all (an unmanaged, hand-built player line).
+
+### Decision
+
+New `candidateCleanupEligible` field on the preview result: true only when the candidate's own line is BOTH a real managed line (`managed_registry.isManaged`) AND owned by either nobody yet or this SAME hub (`line_ownership.getOwner` -- the pure-read form; `isOwnedByOther` has a documented lazy-claim side effect and must never be called from a preview path, same rule this codebase has followed since that function was built). Finding a real stop object to COPY still works regardless of ownership (a harmless read, needed either way to add the stop) -- only the migrate+delete step in `applyAlternativeRoute` is now gated on `candidateCleanupEligible`. When it's false, the stop still gets added (the player's actual ask -- "this line can also serve X" -- is still satisfied) but the candidate's existing line is left completely untouched, and the popup says so explicitly ("its existing service is outside this hub's management -- its existing line will not be changed") instead of silently doing something more conservative than what was shown.
+
+Wording fixed to match reality: "N truck(s)... would be consolidated onto the combined route. Fleet Needs Report may identify real surplus afterwards" -- ties correctly into Decision 187 instead of implying a pool hand-off that doesn't happen here. Confirm button label also now conditional -- `"[ Add Stop & Retire Old Line ]"` only when cleanup is actually eligible, `"[ Add Stop ]"` otherwise, so the button never promises more than it will do.
+
+### Consequence
+
+Not yet live-tested (caught before the first live test, exactly the point of a pre-test review). Both fixes are conservative by construction -- worst case behavior changed from "might retire the wrong line" to "leaves it alone and says why."
+
 ## Appendix — open runtime-verification items
 
 The following items are design decisions that require runtime verification before they can be confirmed:

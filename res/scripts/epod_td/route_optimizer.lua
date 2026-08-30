@@ -4,6 +4,7 @@ local stations = require("epod_td.stations")
 local vehicles = require("epod_td.vehicles")
 local truck_station_finder = require("epod_td.truck_station_finder")
 local managed_registry = require("epod_td.managed_registry")
+local line_ownership = require("epod_td.line_ownership")
 
 local M = {}
 
@@ -263,18 +264,40 @@ function M.previewAlternativeRoute(hubStationGroupId, lineId)
         return nil
     end
 
-    -- How many vehicles currently serve the candidate on its OWN
-    -- separate line -- these are the ones that COULD be freed up if
-    -- that line goes empty after migration. A real count, not a guess.
+    -- `candidateLineId` (whichever real line currently serves the
+    -- candidate station) is needed just to find a real stop object to
+    -- COPY -- a pure read, harmless regardless of who owns that line.
+    -- Cleanup (migrating its vehicles and possibly deleting it) is a
+    -- different, much more consequential question -- gated separately
+    -- below via `candidateCleanupEligible`.
     local okCandidateLines, candidateLines =
         pcall(vehicles.getManagedLinesForStation, candidate.stationGroupId)
 
     local candidateLineId = nil
     local candidateVehicleCount = 0
+    local candidateCleanupEligible = false
 
     if okCandidateLines and candidateLines ~= nil and #candidateLines > 0 then
+
         candidateLineId = candidateLines[1].id
         candidateVehicleCount = candidateLines[1].vehicleCount or 0
+
+        -- Cleanup only offered when this line is DEMONSTRABLY this
+        -- hub's own -- a real managed line (managed_registry.isManaged)
+        -- whose recorded owner (line_ownership.getOwner, the pure-read
+        -- form -- isOwnedByOther has a real lazy-claim side effect and
+        -- must never be called from a preview path) is either unclaimed
+        -- or this SAME hub. Detection can look at any nearby station on
+        -- the map; retiring a line is a different, far more
+        -- consequential action that must never touch a line genuinely
+        -- managed by a DIFFERENT hub, or a line this mod never built at
+        -- all (an unmanaged, hand-built player line).
+        local isManaged = managed_registry.isManaged(candidateLineId)
+        local owner = line_ownership.getOwner(candidateLineId)
+
+        candidateCleanupEligible =
+            isManaged and (owner == nil or owner == hubStationGroupId)
+
     end
 
     return {
@@ -283,7 +306,8 @@ function M.previewAlternativeRoute(hubStationGroupId, lineId)
         candidateStationGroupId = candidate.stationGroupId,
         candidateName = candidate.name,
         candidateLineId = candidateLineId,
-        candidateVehicleCount = candidateVehicleCount
+        candidateVehicleCount = candidateVehicleCount,
+        candidateCleanupEligible = candidateCleanupEligible
     }
 
 end
@@ -497,6 +521,31 @@ function M.applyAlternativeRoute(hubStationGroupId, lineId, preview, onStatusUpd
                 if not success then
                     onComplete(false)
                     return
+                end
+
+                -- Cleanup (migrating vehicles off the candidate's own
+                -- line and possibly deleting it) only ever runs when
+                -- M.previewAlternativeRoute already confirmed this
+                -- specific line is demonstrably THIS hub's own
+                -- (candidateCleanupEligible -- managed_registry.
+                -- isManaged + line_ownership.getOwner, computed fresh
+                -- in the preview, never assumed here). A line that
+                -- belongs to a different hub, or one this mod never
+                -- built at all, is left completely untouched -- the
+                -- stop was already added above regardless, so the
+                -- player's ask ("this line can also serve X") is still
+                -- satisfied even when cleanup isn't safe to offer.
+                if not preview.candidateCleanupEligible then
+
+                    log.info(
+                        "ROUTE OPTIMIZER: candidate's own line "
+                            .. tostring(preview.candidateLineId)
+                            .. " is outside this hub's management -- stop added, existing line left untouched."
+                    )
+
+                    onComplete(true)
+                    return
+
                 end
 
                 onStatusUpdate("Retiring redundant line if now empty...")

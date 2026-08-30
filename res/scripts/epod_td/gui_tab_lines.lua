@@ -928,12 +928,25 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
                     ""
                 }
 
-                if preview.candidateLineId ~= nil and preview.candidateVehicleCount > 0 then
+                -- Decision 189: wording corrected to match what the
+                -- code actually does -- migrateEmptyVehiclesNext moves
+                -- the candidate's empty trucks ONTO this combined line,
+                -- it does not free them into any pool. Fleet Needs
+                -- Report is the real place a genuine surplus would show
+                -- up afterwards, if one exists.
+                if not preview.candidateCleanupEligible then
+
+                    previewLines[#previewLines + 1] =
+                        "'" .. tostring(preview.candidateName)
+                            .. "'s existing service is outside this hub's management -- its existing line will not be changed."
+
+                elseif preview.candidateLineId ~= nil and preview.candidateVehicleCount > 0 then
 
                     previewLines[#previewLines + 1] =
                         tostring(preview.candidateVehicleCount)
                             .. " truck(s) on '" .. tostring(preview.candidateName)
-                            .. "'s own current line could be freed up if that line is retired."
+                            .. "'s own current line would be consolidated onto the combined route. "
+                            .. "Fleet Needs Report may identify real surplus afterwards."
 
                 else
 
@@ -990,7 +1003,9 @@ function M.refresh(rows, hubStationGroupId, actionButtons, groups, pagination, s
 
                     end,
 
-                    "[ Add Stop & Retire Old Line ]"
+                    preview.candidateCleanupEligible
+                        and "[ Add Stop & Retire Old Line ]"
+                        or "[ Add Stop ]"
                 )
 
             end
